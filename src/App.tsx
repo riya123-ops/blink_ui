@@ -5,6 +5,7 @@ import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { BlinkLogo } from './components/BlinkLogo'
 import {
   GenerationDownloadScreen,
+  IdeAndToolsScreen,
   IntegrationsScreen,
   PlatformDeliveryScreen,
   ProjectPreviewScreen,
@@ -36,8 +37,8 @@ import {
 import { roleLabel } from './wizard/stakeholders'
 import { stepIndex } from './wizard/steps'
 import {
-  GENERATION_STEP_DEFS,
   defaultWizardState,
+  generationStepDefs,
   syncEmailsFromStakeholders,
   wizardToSetupForm,
   type WizardState,
@@ -221,7 +222,7 @@ export default function App() {
     setLoading(true)
     setStatus(null)
     const start = Date.now()
-    const steps = GENERATION_STEP_DEFS.map((s) => ({ ...s, status: 'pending' as const }))
+    const steps = generationStepDefs(state.ideTool).map((s) => ({ ...s, status: 'pending' as const }))
     patch({ generationSteps: steps, generationComplete: false })
     setStep('generation')
 
@@ -233,7 +234,7 @@ export default function App() {
     }
 
     try {
-      for (const def of GENERATION_STEP_DEFS.slice(0, -1)) {
+      for (const def of generationStepDefs(state.ideTool).slice(0, -1)) {
         advanceStep(def.id, 'running')
         await new Promise((r) => setTimeout(r, 350))
         advanceStep(def.id, 'done')
@@ -316,6 +317,8 @@ export default function App() {
         return <RepositoriesScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':
         return <TechnologyPerRepoScreen state={state} onUpdate={patch} />
+      case 'ide-and-tools':
+        return <IdeAndToolsScreen state={state} onUpdate={patch} />
       case 'platform-delivery':
         return <PlatformDeliveryScreen state={state} onUpdate={patch} />
       case 'integrations':

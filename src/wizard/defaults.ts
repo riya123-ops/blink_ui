@@ -46,6 +46,45 @@ export const ARCHITECTURE_OPTIONS = [
   { id: 'event-driven', label: 'Event Driven' },
 ]
 
+export const IDE_TOOL_OPTIONS = [
+  {
+    id: 'cursor',
+    label: 'Cursor',
+    description: 'AI-native IDE with agent and slash commands',
+    enabled: true,
+  },
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    description: 'Anthropic CLI coding agent in the terminal',
+    enabled: false,
+  },
+  {
+    id: 'vscode-claude',
+    label: 'VS Code + Claude',
+    description: 'Visual Studio Code with the Claude extension',
+    enabled: false,
+  },
+  {
+    id: 'vscode-copilot',
+    label: 'VS Code + Copilot',
+    description: 'Visual Studio Code with GitHub Copilot',
+    enabled: false,
+  },
+]
+
+export function ideOverlayPath(ideTool: string): string {
+  switch (ideTool) {
+    case 'claude-code':
+      return '.claude/'
+    case 'vscode-claude':
+    case 'vscode-copilot':
+      return '.vscode/'
+    default:
+      return '.cursor/ai-sdlc/'
+  }
+}
+
 export const DEFAULT_INTEGRATIONS: IntegrationItem[] = [
   { id: 'github', label: 'GitHub', category: 'Git Provider', icon: '🐙', connected: true },
   { id: 'jira', label: 'Jira', category: 'Issue Tracker', icon: '📋', connected: true },

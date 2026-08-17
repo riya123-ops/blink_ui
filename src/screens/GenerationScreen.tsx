@@ -1,4 +1,5 @@
 import { CheckCircle2, Circle, Download, Loader2, XCircle } from 'lucide-react'
+import { IDE_TOOL_OPTIONS, ideOverlayPath } from '../wizard/defaults'
 import type { GenerationStep, WizardState } from '../wizard/types'
 
 interface Props {
@@ -37,7 +38,7 @@ export function GenerationScreen({ state, loading, onGenerate, onDownloadAgain }
               <li>Build configuration (Gradle/Maven + Vite)</li>
               <li>Application configuration (YAML/Properties)</li>
               <li>Spring Boot starter + React scaffold</li>
-              <li>AI-SDLC workspace overlay &amp; Cursor commands</li>
+              <li>AI-SDLC workspace overlay &amp; {IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'Cursor'} commands</li>
             </ul>
             <button type="button" className="primary-btn" disabled={loading} onClick={onGenerate}>
               {loading ? 'Generating…' : 'Generate Project'}
@@ -79,7 +80,7 @@ export function GenerationScreen({ state, loading, onGenerate, onDownloadAgain }
           <div className="output-tree">
             <div><strong>{state.artifactName}-workspace/</strong></div>
             <div className="tree-indent">├── automation_sdlc/</div>
-            <div className="tree-indent">├── .cursor/ai-sdlc/</div>
+            <div className="tree-indent">├── {ideOverlayPath(state.ideTool)}</div>
             <div className="tree-indent">├── {state.artifactName}-api/ <span className="muted">(Spring Boot {state.springBootVersion})</span></div>
             <div className="tree-indent">└── {state.artifactName}-web/ <span className="muted">(React + TS + Vite)</span></div>
           </div>

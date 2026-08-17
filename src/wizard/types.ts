@@ -33,6 +33,7 @@ export type WizardStep =
   | 'project-shape'
   | 'repositories'
   | 'technology-per-repo'
+  | 'ide-and-tools'
   | 'platform-delivery'
   | 'integrations'
   | 'review-resolve'
@@ -94,6 +95,7 @@ export interface WizardState extends SetupForm {
   architectureStyle: string
   repositories: RepoDefinition[]
   repoTechnologies: RepoTechnology[]
+  ideTool: string
   cloudProvider: string
   environments: Record<string, boolean>
   containerization: string
@@ -169,6 +171,7 @@ export const defaultWizardState: WizardState = {
   architectureStyle: 'microservices',
   repositories: defaultRepos,
   repoTechnologies: defaultRepoTechnologies(defaultRepos),
+  ideTool: 'cursor',
   cloudProvider: 'aws',
   environments: { dev: true, qa: true, staging: true, prod: true },
   containerization: 'docker',
@@ -186,14 +189,31 @@ export const defaultWizardState: WizardState = {
   generationTimeSec: 0,
 }
 
-export const GENERATION_STEP_DEFS = [
-  { id: 'overlay', label: 'AI-SDLC workspace overlay created' },
-  { id: 'backend', label: 'Spring Boot backend scaffolded' },
-  { id: 'frontend', label: 'React + TypeScript + Vite frontend scaffolded' },
-  { id: 'framework', label: 'Automation SDLC framework installed' },
-  { id: 'commands', label: 'Cursor slash commands installed' },
-  { id: 'package', label: 'Project packaged for download' },
-]
+function ideCommandsLabel(ideTool: string): string {
+  switch (ideTool) {
+    case 'claude-code':
+      return 'Claude Code commands installed'
+    case 'vscode-claude':
+      return 'VS Code + Claude configuration installed'
+    case 'vscode-copilot':
+      return 'VS Code + Copilot configuration installed'
+    default:
+      return 'Cursor slash commands installed'
+  }
+}
+
+export function generationStepDefs(ideTool = 'cursor') {
+  return [
+    { id: 'overlay', label: 'AI-SDLC workspace overlay created' },
+    { id: 'backend', label: 'Spring Boot backend scaffolded' },
+    { id: 'frontend', label: 'React + TypeScript + Vite frontend scaffolded' },
+    { id: 'framework', label: 'Automation SDLC framework installed' },
+    { id: 'commands', label: ideCommandsLabel(ideTool) },
+    { id: 'package', label: 'Project packaged for download' },
+  ]
+}
+
+export const GENERATION_STEP_DEFS = generationStepDefs('cursor')
 
 export function wizardToSetupForm(state: WizardState): SetupForm {
   const ba = state.stakeholderAssignments.find((a) => a.roleId === 'ba')
@@ -242,6 +262,7 @@ export function computeReadiness(state: WizardState): number {
   if (mandatoryAnswered && state.questions.length > 0) score += 15
   if (state.repositories.length >= 2) score += 10
   if (state.repoTechnologies.every((t) => t.status === 'confirmed')) score += 10
+  if (state.ideTool) score += 5
   if (state.cloudProvider && state.cicd) score += 10
   if (state.integrations.some((i) => i.connected)) score += 5
   return Math.min(score, 100)

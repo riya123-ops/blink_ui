@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronLeft, Download, ExternalLink, FolderTree, Pencil, Plus, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, Download, ExternalLink, FolderTree, Monitor, Pencil, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
 import {
   ARCHITECTURE_OPTIONS,
   GENERATION_CHECKLIST,
+  IDE_TOOL_OPTIONS,
   PROVENANCE_LOG,
   REPO_MODEL_OPTIONS,
   TOPOLOGY_OPTIONS,
+  ideOverlayPath,
 } from '../wizard/defaults'
 import { computeReadiness, type WizardState, type WizardStep } from '../wizard/types'
 import { buildReviewIssues } from '../wizard/reviewIssues'
@@ -200,6 +202,55 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
           </table>
         </div>
       </section>
+    </div>
+  )
+}
+
+const IDE_ICONS = {
+  cursor: Sparkles,
+  'claude-code': Terminal,
+  'vscode-claude': Code2,
+  'vscode-copilot': Bot,
+} as const
+
+export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
+  return (
+    <div className="screen">
+      <div className="screen-header">
+        <h2>IDE and Tools</h2>
+        <p>Choose the IDE and AI coding assistant for this project.</p>
+      </div>
+      <section className="card">
+        <h3 className="card-title">Development Environment</h3>
+        <div className="ide-grid">
+          {IDE_TOOL_OPTIONS.map((opt) => {
+            const Icon = IDE_ICONS[opt.id as keyof typeof IDE_ICONS] ?? Monitor
+            const selected = state.ideTool === opt.id
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`ide-card ${selected ? 'active' : ''} ${opt.enabled ? '' : 'disabled'}`}
+                disabled={!opt.enabled}
+                onClick={() => opt.enabled && onUpdate({ ideTool: opt.id })}
+              >
+                <span className="ide-icon">
+                  <Icon size={22} />
+                </span>
+                <strong>{opt.label}</strong>
+                <span className="ide-desc">{opt.description}</span>
+                {!opt.enabled && <span className="ide-soon">Coming soon</span>}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+      <div className="summary-cards">
+        <div className="summary-card">
+          <strong>Selected</strong>
+          <span>{IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'None'}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -461,6 +512,7 @@ export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: Wi
           <div>
             <p><strong>{state.projectName || 'Untitled'}</strong> — {state.description || 'No description'}</p>
             <p>Stack: Java Spring Boot + React + TypeScript + Vite</p>
+            <p>IDE: {IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'Cursor'}</p>
             <p>Model: {state.repositoryModel} · {state.architectureStyle}</p>
           </div>
         )}
@@ -592,7 +644,7 @@ export function GenerationDownloadScreen({
               <div className="output-tree">
                 <div><strong>{state.artifactName || 'project'}-workspace/</strong></div>
                 <div className="tree-indent">├── automation_sdlc/</div>
-                <div className="tree-indent">├── .cursor/ai-sdlc/</div>
+                <div className="tree-indent">├── {ideOverlayPath(state.ideTool)}</div>
                 {state.repositories.slice(0, 4).map((r, i, arr) => (
                   <div className="tree-indent" key={r.id}>
                     {i === arr.length - 1 ? '└──' : '├──'} {r.name}/

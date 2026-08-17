@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <circle cx="24" cy="24" r="22" fill="url(#blinkBg)" />
+  <path d="M14 28c4-8 16-12 24-8-6 2-10 8-10 14 0 2 .5 4 1.5 5.5C24 42 14 36 14 28Z" fill="url(#blinkSwirl1)" opacity="0.9"/>
+  <path d="M34 20c-6 4-10 10-8 18 2-4 6-7 11-7 3 0 5.5-1 7.5-3C41 24 38 21 34 20Z" fill="url(#blinkSwirl2)" opacity="0.85"/>
+  <circle cx="24" cy="24" r="4.5" fill="#fff"/>
+  <circle cx="24" cy="24" r="2" fill="#1e3a5f"/>
+  <defs>
+    <linearGradient id="blinkBg" x1="8" y1="8" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="blinkSwirl1" x1="14" y1="20" x2="38" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34d399"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="blinkSwirl2" x1="26" y1="18" x2="44" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+</svg>

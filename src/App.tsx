@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { BlinkLogo } from './components/BlinkLogo'
@@ -279,6 +279,15 @@ export default function App() {
     if (zipBlob && state.downloadFilename) downloadBlob(zipBlob, state.downloadFilename)
   }, [zipBlob, state.downloadFilename])
 
+  const handleQuickDownload = useCallback(() => {
+    if (loading) return
+    if (zipBlob && state.downloadFilename && state.generationComplete) {
+      handleDownloadAgain()
+      return
+    }
+    void runGeneration()
+  }, [loading, zipBlob, state.downloadFilename, state.generationComplete, handleDownloadAgain, runGeneration])
+
   const renderScreen = () => {
     switch (step) {
       case 'welcome':
@@ -351,6 +360,7 @@ export default function App() {
   const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = step === 'generation' && state.generationComplete
+  const showQuickDownload = !isWelcome && stepIndex(step) > stepIndex('project-stakeholders')
 
   return (
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}`}>
@@ -368,6 +378,17 @@ export default function App() {
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
+        {showQuickDownload && (
+          <button
+            type="button"
+            className="quick-download-btn"
+            disabled={loading}
+            onClick={handleQuickDownload}
+          >
+            <Download size={16} />
+            Download Project
+          </button>
+        )}
         {isSuccessScreen && (
           <header className="top-bar success-top-bar">
             <BlinkLogo size="sm" />
@@ -375,10 +396,12 @@ export default function App() {
         )}
         {!isSuccessScreen && !isWelcome && (
           <header className="top-bar">
-            <BlinkLogo size="sm" />
-            <span className="step-indicator">
-              Step {stepIndex(step) + 1} of {STEP_ORDER.length}
-            </span>
+            <div className="top-bar-start">
+              <BlinkLogo size="sm" />
+              <span className="step-indicator">
+                Step {stepIndex(step) + 1} of {STEP_ORDER.length}
+              </span>
+            </div>
           </header>
         )}
 

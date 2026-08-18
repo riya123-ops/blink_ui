@@ -47,8 +47,7 @@ export function stepIndex(step: WizardStep): number {
   return WIZARD_STEPS.findIndex((s) => s.id === step)
 }
 
-export function canNavigateToStep(target: WizardStep, current: WizardStep, completedThrough: number): boolean {
-  const targetIdx = stepIndex(target)
-  const currentIdx = stepIndex(current)
-  return targetIdx <= Math.max(currentIdx, completedThrough)
+export function canNavigateToStep(target: WizardStep, current: WizardStep, _completedThrough: number): boolean {
+  if (current === 'welcome') return target === 'welcome'
+  return stepIndex(target) >= 0
 }

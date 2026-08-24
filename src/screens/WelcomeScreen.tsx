@@ -9,21 +9,15 @@ interface Props {
 }
 
 const FEATURES = [
-  { icon: Rocket, label: 'Faster Setup', desc: 'Launch in minutes', color: 'blue' },
-  { icon: ShieldCheck, label: 'Best Practices', desc: 'Built-in standards', color: 'green' },
-  { icon: Layers, label: 'Flexible Stack', desc: 'Any technology', color: 'blue' },
-  { icon: CheckCircle2, label: 'Consistent Quality', desc: 'Every project', color: 'green' },
+  { icon: Rocket, label: 'Faster Setup', desc: 'Initialize projects in minutes', color: 'blue' },
+  { icon: ShieldCheck, label: 'Best Practices', desc: 'Industry standard templates', color: 'green' },
+  { icon: Layers, label: 'Flexible Stack', desc: 'Support for modern technologies', color: 'blue' },
+  { icon: CheckCircle2, label: 'Consistent Quality', desc: 'Built-in guidelines and structure', color: 'green' },
 ]
 
 export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
   return (
     <div className="welcome-page">
-      <div className="welcome-bg" aria-hidden="true">
-        <div className="wave wave-blue" />
-        <div className="wave wave-green" />
-        <div className="circuit-pattern" />
-      </div>
-
       <AppHeader />
 
       <div className="welcome-body">
@@ -106,7 +100,7 @@ export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
         <span className="footer-trust">
           <ShieldCheck size={14} /> Secure • Scalable • Smart
         </span>
-        <span className="footer-copy">© 2026 TalentServ. All rights reserved.</span>
+        <span className="footer-copy">© 2024 TalentServ. All rights reserved.</span>
       </footer>
     </div>
   )

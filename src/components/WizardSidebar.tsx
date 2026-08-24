@@ -1,3 +1,4 @@
+import { TalentServLogo } from './TalentServLogo'
 import { BlinkLogo } from './BlinkLogo'
 import { STEP_ORDER, WIZARD_STEPS, canNavigateToStep, stepIndex } from '../wizard/steps'
 import type { WizardStep } from '../wizard/types'
@@ -11,24 +12,12 @@ interface Props {
 export function WizardSidebar({ currentStep, completedThrough, onNavigate }: Props) {
   return (
     <>
-      <svg className="sidebar-wave" viewBox="0 0 320 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M0 120 Q80 80 160 110 T320 90 L320 200 L0 200 Z" fill="url(#sidebarBlue)" />
-        <path d="M0 150 Q100 120 200 140 T320 130 L320 200 L0 200 Z" fill="url(#sidebarGreen)" opacity="0.7" />
-        <defs>
-          <linearGradient id="sidebarBlue" x1="0" y1="90" x2="320" y2="200" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#2563eb" stopOpacity="0.12" />
-            <stop offset="1" stopColor="#06b6d4" stopOpacity="0.06" />
-          </linearGradient>
-          <linearGradient id="sidebarGreen" x1="0" y1="120" x2="320" y2="200" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#10b981" stopOpacity="0.1" />
-            <stop offset="1" stopColor="#34d399" stopOpacity="0.04" />
-          </linearGradient>
-        </defs>
-      </svg>
-
       <div className="brand sidebar-brand">
-        <BlinkLogo size="md" />
-        <span className="brand-tag">AI-Powered SDLC Platform</span>
+        <div className="sidebar-brand-row">
+          <TalentServLogo size="sm" />
+          <span className="brand-divider" />
+          <BlinkLogo size="sm" />
+        </div>
       </div>
 
       <nav className="nav-card">

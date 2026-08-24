@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
-import { BlinkLogo } from './components/BlinkLogo'
+import { ThemeBackground } from './components/ThemeBackground'
 import {
   GenerationDownloadScreen,
   IdeAndToolsScreen,
@@ -364,6 +364,7 @@ export default function App() {
 
   return (
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}`}>
+      <ThemeBackground />
       {!isWelcome && (
         <aside className="sidebar">
           <WizardSidebar
@@ -378,30 +379,24 @@ export default function App() {
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
-        {showQuickDownload && (
-          <button
-            type="button"
-            className="quick-download-btn"
-            disabled={loading}
-            onClick={handleQuickDownload}
-          >
-            <Download size={16} />
-            Download Project
-          </button>
-        )}
-        {isSuccessScreen && (
-          <header className="top-bar success-top-bar">
-            <BlinkLogo size="sm" />
-          </header>
-        )}
         {!isSuccessScreen && !isWelcome && (
           <header className="top-bar">
             <div className="top-bar-start">
-              <BlinkLogo size="sm" />
               <span className="step-indicator">
                 Step {stepIndex(step) + 1} of {STEP_ORDER.length}
               </span>
             </div>
+            {showQuickDownload && (
+              <button
+                type="button"
+                className="header-download-btn"
+                disabled={loading}
+                onClick={handleQuickDownload}
+              >
+                <Download size={16} />
+                Download Project
+              </button>
+            )}
           </header>
         )}
 

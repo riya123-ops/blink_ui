@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { downloadWorkspace, saveProject, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -28,7 +29,6 @@ import {
   validateStakeholderResponses,
 } from './screens/StakeholderResponsesScreen'
 import { WelcomeScreen } from './screens/WelcomeScreen'
-import { toApiPayload } from './types'
 import {
   assigneeForQuestion,
   generateQuestionsFromRequirements,
@@ -39,15 +39,9 @@ import { stepIndex } from './wizard/steps'
 import {
   defaultWizardState,
   generationStepDefs,
-  syncEmailsFromStakeholders,
-  wizardToSetupForm,
   type WizardState,
   type WizardStep,
 } from './wizard/types'
-
-function slugify(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-')
-}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -80,6 +74,7 @@ export default function App() {
   const [completedThrough, setCompletedThrough] = useState(0)
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [zipBlob, setZipBlob] = useState<Blob | null>(null)
 
@@ -104,18 +99,50 @@ export default function App() {
     }
   }, [step, state])
 
-  const goNext = useCallback(() => {
+  const projectPayload = useCallback((): ProjectPayload => ({
+    projectType: state.projectType,
+    projectName: state.projectName,
+    description: state.description,
+    stakeholders: state.stakeholderAssignments.map((row) => ({
+      roleCode: row.roleId,
+      name: row.personName,
+      email: row.personEmail,
+    })),
+  }), [state.projectType, state.projectName, state.description, state.stakeholderAssignments])
+
+  const persistProject = useCallback(async (): Promise<string> => {
+    const saved = await saveProject(projectPayload(), state.projectId)
+    const id = String(saved.id)
+    patch({ projectId: id })
+    return id
+  }, [projectPayload, state.projectId, patch])
+
+  const goNext = useCallback(async () => {
     const err = validateCurrentStep()
     if (err) {
       setStatus({ type: 'error', message: err })
       return
     }
-    setStatus(null)
+    if (step === 'project-stakeholders') {
+      setSaving(true)
+      setStatus(null)
+      try {
+        const id = await persistProject()
+        setStatus({ type: 'success', message: `Project saved (id ${id}).` })
+      } catch (e) {
+        setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
+        return
+      } finally {
+        setSaving(false)
+      }
+    } else {
+      setStatus(null)
+    }
     const idx = stepIndex(step)
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) setStep(nextStep)
-  }, [step, validateCurrentStep])
+  }, [step, validateCurrentStep, persistProject])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -241,22 +268,15 @@ export default function App() {
       }
 
       advanceStep('package', 'running')
-      const form = wizardToSetupForm(syncEmailsFromStakeholders(state))
-      const response = await fetch('/api/setup-new-workspace/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toApiPayload(form)),
-      })
-
-      if (!response.ok) {
-        advanceStep('package', 'error')
-        throw new Error((await response.text()) || `Setup failed (${response.status})`)
+      let projectId = state.projectId
+      if (!projectId) {
+        projectId = await persistProject()
       }
-
-      const blob = await response.blob()
-      const filename =
-        response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] ??
-        `${slugify(state.artifactName)}-workspace.zip`
+      const { blob, filename } = await downloadWorkspace({
+        projectId,
+        file: state.requirementFile,
+        requirementsText: state.requirementsText,
+      })
 
       setZipBlob(blob)
       advanceStep('package', 'done')
@@ -269,11 +289,12 @@ export default function App() {
       })
       setStatus({ type: 'success', message: 'Project generated and downloaded.' })
     } catch (e) {
+      advanceStep('package', 'error')
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Generation failed.' })
     } finally {
       setLoading(false)
     }
-  }, [state, patch])
+  }, [state, patch, persistProject])
 
   const handleDownloadAgain = useCallback(() => {
     if (zipBlob && state.downloadFilename) downloadBlob(zipBlob, state.downloadFilename)
@@ -414,8 +435,8 @@ export default function App() {
           )}
           <div className="action-spacer" />
           {showNext && (
-            <button type="button" className="primary-btn" onClick={goNext}>
-              Save &amp; Continue <ChevronRight size={14} />
+            <button type="button" className="primary-btn" disabled={saving || loading} onClick={() => void goNext()}>
+              {saving ? 'Saving…' : 'Save & Continue'} <ChevronRight size={14} />
             </button>
           )}
         </div>

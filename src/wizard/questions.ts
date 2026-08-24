@@ -22,25 +22,25 @@ export function generateQuestionsFromRequirements(state: WizardState): Stakehold
     })
   }
 
-  add('Which authentication mechanism should be used (OAuth2, SAML, JWT, or other)?', 'sc', true)
-  add('What is the expected maximum concurrent user count?', 'sa', true)
-  add('Are there regulatory or data-retention requirements (GDPR, HIPAA, etc.)?', 'sc', true)
-  add('Is multi-factor authentication required for all users?', 'sc', false)
+  add('Which authentication mechanism should be used (OAuth2, SAML, JWT, or other)?', 'security_champion', true)
+  add('What is the expected maximum concurrent user count?', 'platform_architect', true)
+  add('Are there regulatory or data-retention requirements (GDPR, HIPAA, etc.)?', 'security_champion', true)
+  add('Is multi-factor authentication required for all users?', 'security_champion', false)
 
   if (text.includes('payment') || text.includes('billing')) {
-    add('Which payment gateway or billing provider should be integrated?', 'po', true)
+    add('Which payment gateway or billing provider should be integrated?', 'product_owner', true)
   }
 
   if (text.includes('api') || text.includes('integration')) {
-    add('Should external APIs be exposed as REST, GraphQL, or gRPC?', 'tl', true)
+    add('Should external APIs be exposed as REST, GraphQL, or gRPC?', 'tech_lead', true)
   }
 
   if (state.projectType === 'existing') {
-    add('Are there legacy modules that must remain unchanged during migration?', 'tl', true)
+    add('Are there legacy modules that must remain unchanged during migration?', 'tech_lead', true)
   }
 
-  add('What are the primary acceptance criteria for the first release?', 'po', true)
-  add('Which environments are required (dev, staging, production)?', 'devops', false)
+  add('What are the primary acceptance criteria for the first release?', 'product_owner', true)
+  add('Which environments are required (dev, staging, production)?', 'sre', false)
 
   return questions
 }

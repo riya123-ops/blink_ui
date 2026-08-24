@@ -62,7 +62,9 @@ export function apiUrl(path: string): string {
 }
 
 export async function fetchStakeholderRoles(): Promise<StakeholderRoleDto[]> {
-  const response = await fetch(apiUrl('/stakeholder-roles'))
+  const url = apiUrl('/stakeholder-roles')
+  console.info(`[blink] GET ${url}`)
+  const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<StakeholderRoleDto[]>
 }

@@ -1,17 +1,36 @@
 export interface StakeholderRoleDef {
   id: string
   label: string
+  defaultName?: string
+  defaultEmail?: string
 }
 
+/** Local copy of blink-backend/src/main/resources/stakeholders.yaml (used if the API is unreachable). */
 export const STAKEHOLDER_ROLES: StakeholderRoleDef[] = [
-  { id: 'ba', label: 'Business Analyst' },
-  { id: 'po', label: 'Product Owner' },
-  { id: 'sa', label: 'Solution Architect' },
-  { id: 'tl', label: 'Tech Lead' },
-  { id: 'sc', label: 'Security Champion' },
-  { id: 'qa', label: 'QA' },
-  { id: 'devops', label: 'DevOps' },
+  { id: 'product_owner', label: 'Product Owner', defaultName: 'Rohit Naik', defaultEmail: 'rohit.naik@talentserv.co.in' },
+  { id: 'business_analyst', label: 'Business Analyst', defaultName: 'Rohit Naik', defaultEmail: 'rohit.naik@talentserv.co.in' },
+  { id: 'ux_designer', label: 'UX Designer', defaultName: 'Riya Bajpai', defaultEmail: 'riya.bajpai@talentserv.co.in' },
+  { id: 'platform_architect', label: 'Platform Architect', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'tech_lead', label: 'Tech Lead', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'backend_developer', label: 'Backend Developer', defaultName: 'Nisha Dhore', defaultEmail: 'nisha.dhore@talentserv.co.in' },
+  { id: 'frontend_developer', label: 'Frontend Developer', defaultName: 'Pradnya Gajarmal', defaultEmail: 'pradnya.gajarmal@talentserv.co.in' },
+  { id: 'dba', label: 'DBA', defaultName: 'Ashwin Kumar', defaultEmail: 'ashwin.kumar@talentserv.co.in' },
+  { id: 'sre', label: 'SRE', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'qa_lead', label: 'QA Lead', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'qa_engineer', label: 'QA Engineer', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'security_champion', label: 'Security Champion', defaultName: 'Riya Bajpai', defaultEmail: 'riya.bajpai@talentserv.co.in' },
+  { id: 'compliance_approver', label: 'Compliance Approver', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
+  { id: 'release_approver', label: 'Release Approver', defaultName: 'Atul Maurya', defaultEmail: 'atul.maurya@talentserv.co.in' },
 ]
+
+export function assignmentsFromRoles(roles: StakeholderRoleDef[]) {
+  return roles.map((role) => ({
+    id: `sa-${role.id}`,
+    roleId: role.id,
+    personName: role.defaultName ?? '',
+    personEmail: role.defaultEmail ?? '',
+  }))
+}
 
 export interface PersonRecord {
   id: string
@@ -19,15 +38,14 @@ export interface PersonRecord {
   email: string
 }
 
-/** Sample directory for person search (V1 mock). */
-export const SAMPLE_PEOPLE: PersonRecord[] = [
-  { id: 'p1', name: 'Atul Sharma', email: 'atul.sharma@example.com' },
-  { id: 'p2', name: 'Priya Mehta', email: 'priya.mehta@example.com' },
-  { id: 'p3', name: 'James Chen', email: 'james.chen@example.com' },
-  { id: 'p4', name: 'Sarah Johnson', email: 'sarah.johnson@example.com' },
-  { id: 'p5', name: 'Michael Brown', email: 'michael.brown@example.com' },
-  { id: 'p6', name: 'Emily Davis', email: 'emily.davis@example.com' },
-]
+const uniquePeople = new Map<string, PersonRecord>()
+for (const role of STAKEHOLDER_ROLES) {
+  const email = role.defaultEmail?.toLowerCase()
+  if (!email || uniquePeople.has(email)) continue
+  uniquePeople.set(email, { id: email, name: role.defaultName ?? '', email: role.defaultEmail ?? '' })
+}
+
+export const SAMPLE_PEOPLE: PersonRecord[] = [...uniquePeople.values()]
 
 export function searchPeople(query: string): PersonRecord[] {
   const q = query.trim().toLowerCase()
@@ -38,5 +56,5 @@ export function searchPeople(query: string): PersonRecord[] {
 }
 
 export function roleLabel(roleId: string): string {
-  return STAKEHOLDER_ROLES.find((r) => r.id === roleId)?.label ?? roleId
+  return STAKEHOLDER_ROLES.find((r) => r.id === roleId)?.label ?? roleId.replaceAll('_', ' ')
 }

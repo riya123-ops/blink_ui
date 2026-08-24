@@ -11,11 +11,11 @@ interface Props {
 
 function handleFile(file: File | undefined, onUpdate: Props['onUpdate']) {
   if (!file) return
-  onUpdate({ requirementFileName: file.name, requirementsText: '' })
+  onUpdate({ requirementFileName: file.name, requirementFile: file, requirementsText: '' })
 }
 
 function clearFile(onUpdate: Props['onUpdate'], fileInputRef: React.RefObject<HTMLInputElement | null>) {
-  onUpdate({ requirementFileName: null, requirementsText: '' })
+  onUpdate({ requirementFileName: null, requirementFile: null, requirementsText: '' })
   if (fileInputRef.current) fileInputRef.current.value = ''
 }
 
@@ -85,7 +85,7 @@ export function RequirementsScreen({ state, onUpdate, onAnalyze, analyzing }: Pr
                 rows={6}
                 placeholder="Paste your requirements here…"
                 value={state.requirementsText}
-                onChange={(e) => onUpdate({ requirementsText: e.target.value, requirementFileName: null })}
+                onChange={(e) => onUpdate({ requirementsText: e.target.value, requirementFileName: null, requirementFile: null })}
               />
             </div>
           </>

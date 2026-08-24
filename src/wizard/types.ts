@@ -23,6 +23,7 @@ import {
   type RepoDefinition,
   type RepoTechnology,
 } from './defaults'
+import { assignmentsFromRoles, STAKEHOLDER_ROLES } from './stakeholders'
 
 export type WizardStep =
   | 'welcome'
@@ -81,6 +82,9 @@ export interface WizardState extends SetupForm {
   testingFramework: string
   requirementsText: string
   requirementFileName: string | null
+  requirementFile: File | null
+  projectId: string | null
+  stakeholdersCatalogLoaded: boolean
   existingSourceMode: 'none' | 'zip' | 'git' | 'connect'
   gitRepositoryUrl: string
   sourceZipName: string | null
@@ -114,12 +118,7 @@ export interface WizardState extends SetupForm {
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
-  return [
-    { id: 'sa-1', roleId: 'po', personName: 'Priya Mehta', personEmail: 'priya.mehta@example.com' },
-    { id: 'sa-2', roleId: 'tl', personName: 'Atul Sharma', personEmail: 'atul.sharma@example.com' },
-    { id: 'sa-3', roleId: 'ba', personName: 'Sarah Johnson', personEmail: 'sarah.johnson@example.com' },
-    { id: 'sa-4', roleId: 'sc', personName: 'James Chen', personEmail: 'james.chen@example.com' },
-  ]
+  return assignmentsFromRoles(STAKEHOLDER_ROLES)
 }
 
 const javaDbTypes = defaultDatabaseTypes()
@@ -157,6 +156,9 @@ export const defaultWizardState: WizardState = {
   testingFramework: 'junit-mockito',
   requirementsText: '',
   requirementFileName: null,
+  requirementFile: null,
+  projectId: null,
+  stakeholdersCatalogLoaded: false,
   existingSourceMode: 'none',
   gitRepositoryUrl: '',
   sourceZipName: null,
@@ -216,9 +218,9 @@ export function generationStepDefs(ideTool = 'cursor') {
 export const GENERATION_STEP_DEFS = generationStepDefs('cursor')
 
 export function wizardToSetupForm(state: WizardState): SetupForm {
-  const ba = state.stakeholderAssignments.find((a) => a.roleId === 'ba')
-  const po = state.stakeholderAssignments.find((a) => a.roleId === 'po')
-  const sc = state.stakeholderAssignments.find((a) => a.roleId === 'sc')
+  const ba = state.stakeholderAssignments.find((a) => a.roleId === 'business_analyst' || a.roleId === 'ba')
+  const po = state.stakeholderAssignments.find((a) => a.roleId === 'product_owner' || a.roleId === 'po')
+  const sc = state.stakeholderAssignments.find((a) => a.roleId === 'security_champion' || a.roleId === 'sc')
 
   return {
     ...state,
@@ -233,9 +235,9 @@ export function wizardToSetupForm(state: WizardState): SetupForm {
 export function syncEmailsFromStakeholders(state: WizardState): WizardState {
   const next = { ...state }
   for (const a of state.stakeholderAssignments) {
-    if (a.roleId === 'ba') next.baEmail = a.personEmail
-    if (a.roleId === 'po') next.poEmail = a.personEmail
-    if (a.roleId === 'sc') next.securityEmail = a.personEmail
+    if (a.roleId === 'ba' || a.roleId === 'business_analyst') next.baEmail = a.personEmail
+    if (a.roleId === 'po' || a.roleId === 'product_owner') next.poEmail = a.personEmail
+    if (a.roleId === 'sc' || a.roleId === 'security_champion') next.securityEmail = a.personEmail
   }
   return next
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, Download, ExternalLink, FolderTree, Monitor, Pencil, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, ExternalLink, FolderTree, Monitor, Pencil, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
 import {
   ARCHITECTURE_OPTIONS,
   GENERATION_CHECKLIST,
@@ -7,7 +7,6 @@ import {
   PROVENANCE_LOG,
   REPO_MODEL_OPTIONS,
   TOPOLOGY_OPTIONS,
-  ideOverlayPath,
 } from '../wizard/defaults'
 import { computeReadiness, type WizardState, type WizardStep } from '../wizard/types'
 import { buildReviewIssues } from '../wizard/reviewIssues'
@@ -538,12 +537,10 @@ export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: Wi
 export function GenerationDownloadScreen({
   state,
   loading,
-  onDownload,
   onBack,
 }: {
   state: WizardState
   loading: boolean
-  onDownload: () => void
   onBack?: () => void
 }) {
   if (!state.generationComplete && loading) {
@@ -565,7 +562,7 @@ export function GenerationDownloadScreen({
     return (
       <div className="screen screen-ref">
         <div className="screen-header"><h2>Generation / Download</h2></div>
-        <section className="card ref-card"><p>Complete Project Preview and click Generate Project to begin.</p></section>
+        <section className="card ref-card"><p>Click Download Project to generate and download the workspace.</p></section>
       </div>
     )
   }
@@ -607,9 +604,6 @@ export function GenerationDownloadScreen({
             </div>
 
             <div className="success-actions row">
-              <button type="button" className="primary-btn xl" onClick={onDownload}>
-                <Download size={18} /> Download Project ZIP
-              </button>
               <button type="button" className="secondary-btn outline-purple" disabled>
                 <ExternalLink size={16} /> Export to Git Repository
               </button>
@@ -642,14 +636,11 @@ export function GenerationDownloadScreen({
             <div className="output-preview-box">
               <h4>Generated Structure</h4>
               <div className="output-tree">
-                <div><strong>{state.artifactName || 'project'}-workspace/</strong></div>
+                <div><strong>MY_PILOT_DEMO/</strong></div>
+                <div className="tree-indent">├── .cursor/</div>
                 <div className="tree-indent">├── automation_sdlc/</div>
-                <div className="tree-indent">├── {ideOverlayPath(state.ideTool)}</div>
-                {state.repositories.slice(0, 4).map((r, i, arr) => (
-                  <div className="tree-indent" key={r.id}>
-                    {i === arr.length - 1 ? '└──' : '├──'} {r.name}/
-                  </div>
-                ))}
+                <div className="tree-indent">├── blink_ui/</div>
+                <div className="tree-indent">└── blink_backend/</div>
               </div>
             </div>
           </div>

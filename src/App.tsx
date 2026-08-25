@@ -76,7 +76,6 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
-  const [zipBlob, setZipBlob] = useState<Blob | null>(null)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -278,7 +277,6 @@ export default function App() {
         requirementsText: state.requirementsText,
       })
 
-      setZipBlob(blob)
       advanceStep('package', 'done')
       downloadBlob(blob, filename)
       patch({
@@ -296,18 +294,14 @@ export default function App() {
     }
   }, [state, patch, persistProject])
 
-  const handleDownloadAgain = useCallback(() => {
-    if (zipBlob && state.downloadFilename) downloadBlob(zipBlob, state.downloadFilename)
-  }, [zipBlob, state.downloadFilename])
-
   const handleQuickDownload = useCallback(() => {
     if (loading) return
-    if (zipBlob && state.downloadFilename && state.generationComplete) {
-      handleDownloadAgain()
+    if (!state.requirementsText.trim() && !state.requirementFileName) {
+      setStatus({ type: 'error', message: 'Upload a document or paste requirements first.' })
       return
     }
     void runGeneration()
-  }, [loading, zipBlob, state.downloadFilename, state.generationComplete, handleDownloadAgain, runGeneration])
+  }, [loading, state.requirementsText, state.requirementFileName, runGeneration])
 
   const renderScreen = () => {
     switch (step) {
@@ -370,7 +364,6 @@ export default function App() {
           <GenerationDownloadScreen
             state={state}
             loading={loading}
-            onDownload={handleDownloadAgain}
             onBack={() => setStep('welcome')}
           />
         )
@@ -381,7 +374,11 @@ export default function App() {
   const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = step === 'generation' && state.generationComplete
-  const showQuickDownload = !isWelcome && stepIndex(step) > stepIndex('project-stakeholders')
+  const showQuickDownload =
+    !isWelcome &&
+    step !== 'project-preview' &&
+    step !== 'generation' &&
+    stepIndex(step) > stepIndex('project-stakeholders')
 
   return (
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}`}>

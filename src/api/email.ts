@@ -1,3 +1,5 @@
+import { apiUrl } from './blink'
+
 export interface SendQuestionPayload {
   question_id: string
   question: string
@@ -23,7 +25,7 @@ export interface SendQuestionsResponse {
 export async function sendStakeholderQuestions(
   questions: SendQuestionPayload[],
 ): Promise<SendQuestionsResponse> {
-  const response = await fetch('/api/stakeholder-questions/send', {
+  const response = await fetch(apiUrl('/stakeholder-questions/send'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questions }),

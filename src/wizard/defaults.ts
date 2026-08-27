@@ -5,7 +5,54 @@ export interface RepoDefinition {
   description: string
   owner: string
   dependencies: string
+  htmlUrl?: string
+  createStatus?: 'created' | 'exists' | 'failed'
+  createMessage?: string
 }
+
+export interface WorkspaceEntry {
+  name: string
+  kind: 'file' | 'directory'
+}
+
+export function workspaceRootName(projectName: string): string {
+  const slug = githubRepoSlug(projectName)
+  return slug.endsWith('-workspace') ? slug : `${slug}-workspace`
+}
+
+const SHARED_DOWNLOAD_FOLDERS = ['.cursor', 'automation_sdlc'] as const
+
+export const EXCLUDED_DOWNLOAD_FOLDERS = ['blink_demo', 'blink_backend', 'blink-backend'] as const
+
+export function isExcludedDownloadFolder(name: string): boolean {
+  const normalized = name.trim().replace(/\\/g, '/').split('/').filter(Boolean)
+  return normalized.some((part) => (EXCLUDED_DOWNLOAD_FOLDERS as readonly string[]).includes(part))
+}
+
+export function sanitizeDownloadStructure(entries: WorkspaceEntry[] = []): WorkspaceEntry[] {
+  return entries.filter((entry) => !isExcludedDownloadFolder(entry.name))
+}
+
+export function buildDownloadStructure(repositories: { name: string }[] = []): WorkspaceEntry[] {
+  const reserved = new Set<string>([
+    'requirement.md',
+    ...SHARED_DOWNLOAD_FOLDERS,
+    ...EXCLUDED_DOWNLOAD_FOLDERS,
+  ])
+  const repos = repositories
+    .map((repo) => githubRepoSlug(repo.name))
+    .filter((name) => name && !reserved.has(name))
+    .filter((name, index, all) => all.indexOf(name) === index)
+    .map((name) => ({ name, kind: 'directory' as const }))
+  return sanitizeDownloadStructure([
+    { name: 'requirement.md', kind: 'file' },
+    { name: 'automation_sdlc', kind: 'directory' },
+    { name: '.cursor', kind: 'directory' },
+    ...repos,
+  ])
+}
+
+export const NEXT_SDLC_COMMAND = '/setup-new-workspace'
 
 export interface RepoTechnology {
   repoId: string
@@ -22,6 +69,16 @@ export interface IntegrationItem {
   category: string
   icon: string
   connected: boolean
+  account?: string
+  detail?: string
+  baseUrl?: string
+  organization?: string
+  workspace?: string
+  email?: string
+  username?: string
+  projectKey?: string
+  spaceKey?: string
+  token?: string
 }
 
 export const TOPOLOGY_OPTIONS = [
@@ -86,86 +143,93 @@ export function ideOverlayPath(ideTool: string): string {
 }
 
 export const DEFAULT_INTEGRATIONS: IntegrationItem[] = [
-  { id: 'github', label: 'GitHub', category: 'Git Provider', icon: '🐙', connected: true },
-  { id: 'jira', label: 'Jira', category: 'Issue Tracker', icon: '📋', connected: true },
-  { id: 'github-actions', label: 'GitHub Actions', category: 'CI/CD', icon: '⚙️', connected: true },
-  { id: 'ecr', label: 'AWS ECR', category: 'Artifact Registry', icon: '📦', connected: true },
-  { id: 'prometheus', label: 'Prometheus + Grafana', category: 'Observability', icon: '📈', connected: true },
-  { id: 'elk', label: 'ELK Stack', category: 'Logging', icon: '📝', connected: true },
-  { id: 'teams', label: 'Microsoft Teams', category: 'Communication', icon: '💬', connected: true },
-  { id: 'slack', label: 'Slack', category: 'ChatOps', icon: '🔔', connected: true },
-  { id: 'sonarqube', label: 'SonarQube', category: 'Code Quality', icon: '🔍', connected: true },
+  { id: 'github', label: 'GitHub', category: 'Code management', icon: '🐙', connected: false },
+  { id: 'jira', label: 'Jira', category: 'Issue Tracker', icon: '📋', connected: false },
+  { id: 'confluence', label: 'Confluence', category: 'Documentation', icon: '📘', connected: false },
+  { id: 'bitbucket', label: 'Bitbucket', category: 'Git Provider', icon: '🪣', connected: false },
 ]
 
-export function defaultRepositories(artifact: string): RepoDefinition[] {
-  const slug = artifact || 'blink-app'
-  return [
-    {
-      id: 'repo-customer',
-      name: 'customer-service',
-      purpose: 'Service',
-      description: 'Customer domain service — CRUD, profiles, preferences',
-      owner: 'Atul Sharma',
-      dependencies: 'auth-service, PostgreSQL',
-    },
-    {
-      id: 'repo-auth',
-      name: 'auth-service',
-      purpose: 'Service',
-      description: 'Authentication & authorization (OAuth2/JWT)',
-      owner: 'James Chen',
-      dependencies: 'PostgreSQL, Redis',
-    },
-    {
-      id: 'repo-gateway',
-      name: 'api-gateway',
-      purpose: 'Edge',
-      description: 'API gateway — routing, rate limiting, auth passthrough',
-      owner: 'Atul Sharma',
-      dependencies: 'auth-service, customer-service',
-    },
-    {
-      id: 'repo-web',
-      name: `${slug}-web`,
-      purpose: 'Frontend',
-      description: 'React + TypeScript + Vite SPA',
-      owner: 'Priya Mehta',
-      dependencies: 'api-gateway',
-    },
-    {
-      id: 'repo-api',
-      name: `${slug}-api`,
-      purpose: 'Backend API',
-      description: 'Spring Boot core REST API (Java 21)',
-      owner: 'Atul Sharma',
-      dependencies: 'PostgreSQL',
-    },
-  ]
+export function githubRepoSlug(projectName: string): string {
+  const slug = projectName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return slug || 'project'
+}
+
+const REPO_VARIANTS = [
+  {
+    id: 'repo-backend',
+    suffix: 'backend',
+    purpose: 'Backend',
+    description: 'Application API and business services',
+  },
+  {
+    id: 'repo-frontend',
+    suffix: 'frontend',
+    purpose: 'Frontend',
+    description: 'Web UI',
+  },
+  {
+    id: 'repo-db',
+    suffix: 'db',
+    purpose: 'Database',
+    description: 'Schema, migrations, and data scripts',
+  },
+  {
+    id: 'repo-infra',
+    suffix: 'infra',
+    purpose: 'Infrastructure',
+    description: 'Provisioning, environments, and delivery',
+  },
+] as const
+
+export function defaultRepositories(projectName: string): RepoDefinition[] {
+  const slug = githubRepoSlug(projectName)
+  return REPO_VARIANTS.map((variant) => ({
+    id: variant.id,
+    name: `${slug}-${variant.suffix}`,
+    purpose: variant.purpose,
+    description: variant.description,
+    owner: '',
+    dependencies: '',
+  }))
 }
 
 export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology[] {
   return repos.map((repo) => {
     const name = repo.name.toLowerCase()
-    const isWeb = repo.purpose === 'Frontend' || name.includes('web')
-    const isMobile = name.includes('mobile')
-    if (isWeb) {
+    const purpose = repo.purpose.toLowerCase()
+    if (purpose === 'frontend' || name.endsWith('-frontend') || name.includes('web')) {
       return {
         repoId: repo.id,
         language: 'TypeScript',
         framework: 'React 19 + Vite',
         database: '—',
         buildTool: 'npm / Vite',
-        status: 'confirmed',
+        status: 'confirmed' as const,
       }
     }
-    if (isMobile) {
+    if (purpose === 'database' || name.endsWith('-db')) {
       return {
         repoId: repo.id,
-        language: 'Kotlin',
-        framework: 'Android / Compose',
+        language: 'SQL',
+        framework: 'PostgreSQL',
+        database: 'PostgreSQL',
+        buildTool: 'Flyway / Liquibase',
+        status: 'confirmed' as const,
+      }
+    }
+    if (purpose === 'infrastructure' || name.endsWith('-infra')) {
+      return {
+        repoId: repo.id,
+        language: 'HCL',
+        framework: 'Terraform',
         database: '—',
-        buildTool: 'Gradle',
-        status: 'recommendation',
+        buildTool: 'Terraform',
+        status: 'confirmed' as const,
       }
     }
     return {
@@ -174,7 +238,7 @@ export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology
       framework: 'Spring Boot 3.4',
       database: 'PostgreSQL',
       buildTool: 'Gradle',
-      status: 'confirmed',
+      status: 'confirmed' as const,
     }
   })
 }

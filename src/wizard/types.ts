@@ -22,21 +22,22 @@ import {
   type IntegrationItem,
   type RepoDefinition,
   type RepoTechnology,
+  type WorkspaceEntry,
 } from './defaults'
 import { assignmentsFromRoles, STAKEHOLDER_ROLES } from './stakeholders'
 
 export type WizardStep =
   | 'welcome'
   | 'project-stakeholders'
+  | 'integrations'
+  | 'repositories'
   | 'requirements'
   | 'stakeholder-questions'
   | 'stakeholder-responses'
   | 'project-shape'
-  | 'repositories'
   | 'technology-per-repo'
   | 'ide-and-tools'
   | 'platform-delivery'
-  | 'integrations'
   | 'review-resolve'
   | 'project-preview'
   | 'generation'
@@ -98,6 +99,7 @@ export interface WizardState extends SetupForm {
   repositoryModel: string
   architectureStyle: string
   repositories: RepoDefinition[]
+  repositoriesTouched: boolean
   repoTechnologies: RepoTechnology[]
   ideTool: string
   cloudProvider: string
@@ -113,6 +115,8 @@ export interface WizardState extends SetupForm {
   generationSteps: GenerationStep[]
   generationComplete: boolean
   downloadFilename: string | null
+  downloadStructure: WorkspaceEntry[]
+  nextSdlcCommand: string | null
   filesGenerated: number
   generationTimeSec: number
 }
@@ -124,7 +128,7 @@ function defaultStakeholderAssignments(): StakeholderAssignment[] {
 const javaDbTypes = defaultDatabaseTypes()
 const javaDbSelected = { ...javaDbTypes, postgresql: true }
 const javaLibs = defaultLibrariesForLanguage('java')
-const defaultRepos = defaultRepositories('blink-app')
+const defaultRepos = defaultRepositories('')
 
 export const defaultWizardState: WizardState = {
   projectType: 'new',
@@ -172,6 +176,7 @@ export const defaultWizardState: WizardState = {
   repositoryModel: 'multi-repo',
   architectureStyle: 'microservices',
   repositories: defaultRepos,
+  repositoriesTouched: false,
   repoTechnologies: defaultRepoTechnologies(defaultRepos),
   ideTool: 'cursor',
   cloudProvider: 'aws',
@@ -187,6 +192,8 @@ export const defaultWizardState: WizardState = {
   generationSteps: [],
   generationComplete: false,
   downloadFilename: null,
+  downloadStructure: [],
+  nextSdlcCommand: null,
   filesGenerated: 0,
   generationTimeSec: 0,
 }
@@ -243,8 +250,8 @@ export function syncEmailsFromStakeholders(state: WizardState): WizardState {
 }
 
 export function syncRepositoriesFromArtifact(state: WizardState): WizardState {
-  const slug = state.artifactName || 'blink-app'
-  const repos = defaultRepositories(slug)
+  if (state.repositoriesTouched) return state
+  const repos = defaultRepositories(state.projectName)
   return {
     ...state,
     repositories: repos,
@@ -270,4 +277,4 @@ export function computeReadiness(state: WizardState): number {
   return Math.min(score, 100)
 }
 
-export type { ProjectType, BuildTool, BackendLanguage, BackendFramework, ConfigFormat }
+export type { ProjectType, BuildTool, BackendLanguage, BackendFramework, ConfigFormat, WorkspaceEntry }

@@ -48,7 +48,9 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
           ? 'stakeholder-questions'
           : pendingMandatory.length
             ? 'stakeholder-responses'
-            : 'requirements',
+            : !state.requirementsAnalyzed
+              ? 'requirements'
+              : 'integrations',
       details: missingDetails,
     })
   }

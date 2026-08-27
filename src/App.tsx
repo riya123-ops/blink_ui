@@ -1,13 +1,12 @@
 import { useCallback, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, saveProject, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, saveProject, createRepositories, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
   GenerationDownloadScreen,
   IdeAndToolsScreen,
-  IntegrationsScreen,
   PlatformDeliveryScreen,
   ProjectPreviewScreen,
   ProjectShapeScreen,
@@ -20,6 +19,7 @@ import {
   validateProjectStakeholders,
 } from './screens/ProjectStakeholdersScreen'
 import { RequirementsScreen, validateRequirements } from './screens/RequirementsScreen'
+import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import {
   StakeholderQuestionsScreen,
   validateStakeholderQuestions,
@@ -36,6 +36,7 @@ import {
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
 import { stepIndex } from './wizard/steps'
+import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
 import {
   defaultWizardState,
   generationStepDefs,
@@ -76,6 +77,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [creatingRepos, setCreatingRepos] = useState(false)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -116,6 +118,63 @@ export default function App() {
     return id
   }, [projectPayload, state.projectId, patch])
 
+  const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
+    const github = state.integrations.find((item) => item.id === 'github')
+    if (!github?.connected || !github.token) {
+      setStatus({ type: 'error', message: 'Connect GitHub on the Integrations screen first.' })
+      return false
+    }
+    const pending = state.repositories.filter(
+      (repo) => repo.name.trim() && repo.createStatus !== 'created' && repo.createStatus !== 'exists',
+    )
+    if (!pending.length) {
+      if (!state.repositories.some((repo) => repo.name.trim())) {
+        setStatus({ type: 'error', message: 'Add at least one repository name.' })
+        return false
+      }
+      return true
+    }
+    setCreatingRepos(true)
+    setStatus(null)
+    try {
+      const result = await createRepositories({
+        provider: 'github',
+        token: github.token,
+        organization: github.organization,
+        repositories: pending.map((repo) => ({ name: repo.name.trim(), description: repo.description })),
+      })
+      patch({
+        repositories: state.repositories.map((repo) => {
+          const created = result.repositories.find((item) => item.name === repo.name.trim())
+          if (!created) return repo
+          return {
+            ...repo,
+            htmlUrl: created.htmlUrl ?? repo.htmlUrl,
+            createStatus: created.status as 'created' | 'exists' | 'failed',
+            createMessage: created.message,
+          }
+        }),
+      })
+      const created = result.repositories.filter((item) => item.status === 'created').length
+      const exists = result.repositories.filter((item) => item.status === 'exists').length
+      const failed = result.repositories.filter((item) => item.status === 'failed').length
+      if (failed && !created && !exists) {
+        setStatus({ type: 'error', message: result.repositories.map((item) => item.message).join(' ') })
+        return false
+      }
+      setStatus({
+        type: failed ? 'info' : 'success',
+        message: `GitHub: ${created} created, ${exists} already existed, ${failed} failed.`,
+      })
+      return failed === 0
+    } catch (e) {
+      setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not create GitHub repositories.' })
+      return false
+    } finally {
+      setCreatingRepos(false)
+    }
+  }, [state.integrations, state.repositories, patch])
+
   const goNext = useCallback(async () => {
     const err = validateCurrentStep()
     if (err) {
@@ -134,6 +193,18 @@ export default function App() {
       } finally {
         setSaving(false)
       }
+    } else if (step === 'repositories') {
+      if (!state.repositories.some((repo) => repo.name.trim())) {
+        setStatus({ type: 'error', message: 'Keep at least one repository, or add one.' })
+        return
+      }
+      const github = state.integrations.find((item) => item.id === 'github')
+      if (github?.connected && github.token) {
+        const created = await handleCreateGithubRepos()
+        if (!created) return
+      } else {
+        setStatus(null)
+      }
     } else {
       setStatus(null)
     }
@@ -141,7 +212,7 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) setStep(nextStep)
-  }, [step, validateCurrentStep, persistProject])
+  }, [step, validateCurrentStep, persistProject, state.repositories, state.integrations, handleCreateGithubRepos])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -249,6 +320,8 @@ export default function App() {
     setStatus(null)
     const start = Date.now()
     const steps = generationStepDefs(state.ideTool).map((s) => ({ ...s, status: 'pending' as const }))
+    const fromIdx = stepIndex(step)
+    setCompletedThrough((prev) => Math.max(prev, fromIdx))
     patch({ generationSteps: steps, generationComplete: false })
     setStep('generation')
 
@@ -271,18 +344,29 @@ export default function App() {
       if (!projectId) {
         projectId = await persistProject()
       }
-      const { blob, filename } = await downloadWorkspace({
+      const repositories = (
+        state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName)
+      ).map((repo) => ({
+        name: repo.name,
+        purpose: repo.purpose,
+        description: repo.description,
+      }))
+      const { blob, filename, structure, fileCount, nextCommand } = await downloadWorkspace({
         projectId,
         file: state.requirementFile,
         requirementsText: state.requirementsText,
+        repositories,
       })
 
       advanceStep('package', 'done')
       downloadBlob(blob, filename)
+      const fallbackStructure = buildDownloadStructure(repositories)
       patch({
         downloadFilename: filename,
+        downloadStructure: structure.length ? structure : fallbackStructure,
+        nextSdlcCommand: nextCommand || NEXT_SDLC_COMMAND,
         generationComplete: true,
-        filesGenerated: 1248,
+        filesGenerated: fileCount || structure.length,
         generationTimeSec: Math.round((Date.now() - start) / 1000),
       })
       setStatus({ type: 'success', message: 'Project generated and downloaded.' })
@@ -292,7 +376,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [state, patch, persistProject])
+  }, [state, patch, persistProject, step])
 
   const handleQuickDownload = useCallback(() => {
     if (loading) return
@@ -322,6 +406,16 @@ export default function App() {
         )
       case 'project-stakeholders':
         return <ProjectStakeholdersScreen state={state} onUpdate={patch} />
+      case 'integrations':
+        return <IntegrationsScreen state={state} onUpdate={patch} />
+      case 'repositories':
+        return (
+          <RepositoriesScreen
+            state={state}
+            onUpdate={patch}
+            creating={creatingRepos}
+          />
+        )
       case 'requirements':
         return <RequirementsScreen state={state} onUpdate={patch} onAnalyze={handleAnalyze} />
       case 'stakeholder-questions':
@@ -337,16 +431,12 @@ export default function App() {
         return <StakeholderResponsesScreen state={state} onSimulateResponses={handleSimulateResponses} />
       case 'project-shape':
         return <ProjectShapeScreen state={state} onUpdate={patch} />
-      case 'repositories':
-        return <RepositoriesScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':
         return <TechnologyPerRepoScreen state={state} onUpdate={patch} />
       case 'ide-and-tools':
         return <IdeAndToolsScreen state={state} onUpdate={patch} />
       case 'platform-delivery':
         return <PlatformDeliveryScreen state={state} onUpdate={patch} />
-      case 'integrations':
-        return <IntegrationsScreen state={state} onUpdate={patch} />
       case 'review-resolve':
         return (
           <ReviewResolveScreen
@@ -364,6 +454,8 @@ export default function App() {
           <GenerationDownloadScreen
             state={state}
             loading={loading}
+            exporting={creatingRepos}
+            onExportGithub={() => void handleCreateGithubRepos()}
             onBack={() => setStep('welcome')}
           />
         )
@@ -374,11 +466,13 @@ export default function App() {
   const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = step === 'generation' && state.generationComplete
+  const generationIdx = stepIndex('generation')
+  const currentSkipped = state.generationComplete && stepIndex(step) > completedThrough && stepIndex(step) < generationIdx
   const showQuickDownload =
     !isWelcome &&
     step !== 'project-preview' &&
     step !== 'generation' &&
-    stepIndex(step) > stepIndex('project-stakeholders')
+    stepIndex(step) >= stepIndex('requirements')
 
   return (
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}`}>
@@ -388,6 +482,7 @@ export default function App() {
           <WizardSidebar
             currentStep={step}
             completedThrough={completedThrough}
+            generationComplete={state.generationComplete}
             onNavigate={(s) => {
               setStatus(null)
               setStep(s)
@@ -418,7 +513,7 @@ export default function App() {
           </header>
         )}
 
-        <div className={`content${isSuccessScreen ? ' content-fill' : ''}${isWelcome ? ' content-welcome' : ''}`}>
+        <div className={`content${isSuccessScreen ? ' content-fill' : ''}${isWelcome ? ' content-welcome' : ''}${currentSkipped ? ' content-skipped' : ''}`}>
           {status && !isWelcome && <div className={`status-banner ${status.type}`}>{status.message}</div>}
           {renderScreen()}
         </div>
@@ -432,8 +527,8 @@ export default function App() {
           )}
           <div className="action-spacer" />
           {showNext && (
-            <button type="button" className="primary-btn" disabled={saving || loading} onClick={() => void goNext()}>
-              {saving ? 'Saving…' : 'Save & Continue'} <ChevronRight size={14} />
+            <button type="button" className="primary-btn" disabled={saving || loading || creatingRepos} onClick={() => void goNext()}>
+              {creatingRepos ? 'Creating on GitHub…' : saving ? 'Saving…' : 'Save & Continue'} <ChevronRight size={14} />
             </button>
           )}
         </div>

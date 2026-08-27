@@ -152,11 +152,11 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
             />
           </div>
           <div className="field-group span-full">
-            <label htmlFor="description">Project Description</label>
+            <label htmlFor="description">Project Description *</label>
             <textarea
               id="description"
               rows={3}
-              placeholder="Short description of the application or intended work."
+              placeholder="Provide the short description of you requirement"
               value={state.description}
               onChange={(e) => updateField('description', e.target.value)}
             />
@@ -224,6 +224,7 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
 
 export function validateProjectStakeholders(state: WizardState): string | null {
   if (!state.projectName.trim()) return 'Project name is required.'
+  if (!state.description.trim()) return 'Project description is required.'
   if (state.stakeholderAssignments.length === 0) return 'Add at least one stakeholder.'
   const missing = state.stakeholderAssignments.find((a) => !a.personEmail.trim() || !a.personName.trim())
   if (missing) return 'Every stakeholder must have a name and email.'

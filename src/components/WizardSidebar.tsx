@@ -6,10 +6,12 @@ import type { WizardStep } from '../wizard/types'
 interface Props {
   currentStep: WizardStep
   completedThrough: number
+  generationComplete: boolean
   onNavigate: (step: WizardStep) => void
 }
 
-export function WizardSidebar({ currentStep, completedThrough, onNavigate }: Props) {
+export function WizardSidebar({ currentStep, completedThrough, generationComplete, onNavigate }: Props) {
+  const generationIdx = stepIndex('generation')
   return (
     <>
       <div className="brand sidebar-brand">
@@ -25,20 +27,23 @@ export function WizardSidebar({ currentStep, completedThrough, onNavigate }: Pro
           {WIZARD_STEPS.map((step) => {
             const idx = stepIndex(step.id)
             const isActive = currentStep === step.id
-            const isDone = idx < stepIndex(currentStep) || idx <= completedThrough
+            const skipped = generationComplete && idx > completedThrough && idx < generationIdx
+            const isDone =
+              !skipped &&
+              !isActive &&
+              (idx <= completedThrough || (generationComplete && step.id === 'generation'))
             const clickable = canNavigateToStep(step.id, currentStep, completedThrough)
             const Icon = step.icon
             return (
               <li
                 key={step.id}
-                className={`nav-item ${isActive ? 'active' : ''} ${isDone && !isActive ? 'done' : ''} ${clickable ? 'clickable' : ''}`}
+                className={`nav-item ${isActive ? 'active' : ''} ${isDone ? 'done' : ''} ${skipped ? 'skipped' : ''} ${clickable ? 'clickable' : ''}`}
                 onClick={() => clickable && onNavigate(step.id)}
                 onKeyDown={(e) => e.key === 'Enter' && clickable && onNavigate(step.id)}
                 role={clickable ? 'button' : undefined}
                 tabIndex={clickable ? 0 : undefined}
               >
-                <span className="step-num">{isDone && !isActive ? '✓' : step.number}</span>
-                <Icon size={14} />
+                <Icon size={14} color={skipped ? '#94a3b8' : step.iconColor} />
                 <span className="nav-label">{step.label}</span>
               </li>
             )

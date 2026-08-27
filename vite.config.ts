@@ -4,6 +4,7 @@ import net from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { integrationsConnectPlugin } from './vite.integrations'
 
 const LOCAL_API = 'http://localhost:8090'
 const RENDER_API = 'https://blink-backend-af7x.onrender.com'
@@ -59,7 +60,7 @@ function apiFallbackProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), apiFallbackProxy()],
+  plugins: [react(), integrationsConnectPlugin(), apiFallbackProxy()],
   server: {
     port: 5173,
   },

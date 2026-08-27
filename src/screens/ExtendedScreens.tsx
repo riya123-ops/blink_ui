@@ -1,12 +1,19 @@
-import { useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, ExternalLink, FolderTree, Monitor, Pencil, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, Copy, ExternalLink, File, Folder, Monitor, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
 import {
   ARCHITECTURE_OPTIONS,
   GENERATION_CHECKLIST,
   IDE_TOOL_OPTIONS,
+  NEXT_SDLC_COMMAND,
   PROVENANCE_LOG,
   REPO_MODEL_OPTIONS,
   TOPOLOGY_OPTIONS,
+  defaultRepositories,
+  defaultRepoTechnologies,
+  githubRepoSlug,
+  workspaceRootName,
+  buildDownloadStructure,
+  sanitizeDownloadStructure,
 } from '../wizard/defaults'
 import { computeReadiness, type WizardState, type WizardStep } from '../wizard/types'
 import { buildReviewIssues } from '../wizard/reviewIssues'
@@ -85,28 +92,54 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
   )
 }
 
-export function RepositoriesScreen({ state, onUpdate }: ScreenProps) {
-  const updateRepo = (id: string, field: string, value: string) => {
+export function RepositoriesScreen({
+  state,
+  onUpdate,
+  creating,
+}: ScreenProps & {
+  creating?: boolean
+}) {
+  useEffect(() => {
+    if (state.repositoriesTouched) return
+    const repos = defaultRepositories(state.projectName)
+    onUpdate({ repositories: repos, repoTechnologies: defaultRepoTechnologies(repos) })
+  }, [state.projectName, state.repositoriesTouched, onUpdate])
+
+  const markTouched = (repositories: WizardState['repositories']) => {
+    const keptIds = new Set(repositories.map((repo) => repo.id))
+    const existingTech = state.repoTechnologies.filter((tech) => keptIds.has(tech.repoId))
+    const missing = repositories.filter((repo) => !existingTech.some((tech) => tech.repoId === repo.id))
     onUpdate({
-      repositories: state.repositories.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
+      repositories,
+      repositoriesTouched: true,
+      repoTechnologies: [...existingTech, ...defaultRepoTechnologies(missing)],
     })
+  }
+
+  const updateRepo = (id: string, field: string, value: string) => {
+    markTouched(state.repositories.map((r) => (r.id === id ? { ...r, [field]: value } : r)))
   }
 
   const addRepo = () => {
     const id = `repo-${Date.now()}`
-    onUpdate({
-      repositories: [
-        ...state.repositories,
-        { id, name: 'new-service', purpose: 'Service', description: '', owner: 'Tech Lead', dependencies: '' },
-      ],
-    })
+    const slug = githubRepoSlug(state.projectName)
+    markTouched([
+      ...state.repositories,
+      { id, name: `${slug}-service`, purpose: 'Service', description: '', owner: '', dependencies: '' },
+    ])
   }
+
+  const github = state.integrations.find((item) => item.id === 'github')
+  const githubReady = Boolean(github?.connected && github.token)
 
   return (
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Repositories</h2>
-        <p>Define logical repositories / components.</p>
+        <p>
+          Four repos are named from <strong>{state.projectName || 'your project'}</strong>. Edit or delete any you do not
+          need. {githubReady ? 'Save & Continue will create them on GitHub.' : 'Connect GitHub on Integrations to create them on Save & Continue.'}
+        </p>
       </div>
       <section className="card ref-card">
         <div className="card-title-row">
@@ -122,6 +155,7 @@ export function RepositoriesScreen({ state, onUpdate }: ScreenProps) {
                 <th>Description</th>
                 <th>Owner</th>
                 <th>Dependencies</th>
+                <th>GitHub</th>
                 <th className="col-action">Actions</th>
               </tr>
             </thead>
@@ -133,9 +167,26 @@ export function RepositoriesScreen({ state, onUpdate }: ScreenProps) {
                   <td><input className="table-input wide" value={repo.description} onChange={(e) => updateRepo(repo.id, 'description', e.target.value)} /></td>
                   <td><input className="table-input" value={repo.owner} onChange={(e) => updateRepo(repo.id, 'owner', e.target.value)} /></td>
                   <td><input className="table-input" value={repo.dependencies} onChange={(e) => updateRepo(repo.id, 'dependencies', e.target.value)} /></td>
+                  <td>
+                    {repo.htmlUrl ? (
+                      <a className="repo-link" href={repo.htmlUrl} target="_blank" rel="noreferrer">
+                        {repo.createStatus === 'exists' ? 'Exists' : 'Created'}
+                      </a>
+                    ) : repo.createStatus === 'failed' ? (
+                      <span className="repo-status failed">{repo.createMessage || 'Failed'}</span>
+                    ) : creating ? (
+                      <span className="muted">Creating…</span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td className="col-action">
-                    <button type="button" className="icon-btn edit" title="Edit"><Pencil size={14} /></button>
-                    <button type="button" className="icon-btn" title="Delete" onClick={() => onUpdate({ repositories: state.repositories.filter((r) => r.id !== repo.id) })}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Delete"
+                      onClick={() => markTouched(state.repositories.filter((r) => r.id !== repo.id))}
+                    >
                       <Trash2 size={14} />
                     </button>
                   </td>
@@ -143,6 +194,13 @@ export function RepositoriesScreen({ state, onUpdate }: ScreenProps) {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="github-create-bar">
+          <p>
+            {githubReady
+              ? `GitHub connected as ${github?.account ?? 'your account'}${github?.organization ? ` / ${github.organization}` : ''}.`
+              : 'GitHub is not connected. Repos stay local until you connect it on Integrations.'}
+          </p>
         </div>
       </section>
     </div>
@@ -351,46 +409,6 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
   )
 }
 
-export function IntegrationsScreen({ state, onUpdate }: ScreenProps) {
-  return (
-    <div className="screen screen-ref">
-      <div className="screen-header">
-        <h2>Integrations</h2>
-        <p>Configure external systems and tools.</p>
-      </div>
-      <section className="card ref-card">
-        <div className="integration-grid ref">
-          {state.integrations.map((item, idx) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`integration-card ref ${item.connected ? 'connected' : ''}`}
-              onClick={() => {
-                const next = [...state.integrations]
-                next[idx] = { ...item, connected: !item.connected }
-                onUpdate({ integrations: next })
-              }}
-            >
-              <span className="int-icon">{item.icon}</span>
-              <div className="int-body">
-                <strong>{item.label}</strong>
-                <span className="int-category">{item.category}</span>
-              </div>
-              <span className={item.connected ? 'connected-label' : 'disconnected-label'}>
-                {item.connected ? '✓ Connected' : 'Connect'}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="info-note">
-          <AlertTriangle size={14} />
-          <span>Note: Credentials / secrets for these tools should <strong>NOT</strong> be included in the downloadable YAML or generated project.</span>
-        </div>
-      </section>
-    </div>
-  )
-}
-
 export function ReviewResolveScreen({
   state,
   onNavigate,
@@ -538,11 +556,17 @@ export function GenerationDownloadScreen({
   state,
   loading,
   onBack,
+  exporting,
+  onExportGithub,
 }: {
   state: WizardState
   loading: boolean
   onBack?: () => void
+  exporting?: boolean
+  onExportGithub?: () => void
 }) {
+  const [copied, setCopied] = useState(false)
+
   if (!state.generationComplete && loading) {
     return (
       <div className="screen screen-ref gen-loading">
@@ -569,7 +593,30 @@ export function GenerationDownloadScreen({
 
   const timeStr = state.generationTimeSec
     ? `${String(Math.floor(state.generationTimeSec / 60)).padStart(2, '0')}:${String(state.generationTimeSec % 60).padStart(2, '0')} min`
-    : '02:48 min'
+    : '00:00 min'
+  const structure = sanitizeDownloadStructure(
+    state.downloadStructure.length
+      ? state.downloadStructure
+      : buildDownloadStructure(
+          state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName),
+        ),
+  )
+  const nextCommand = state.nextSdlcCommand || NEXT_SDLC_COMMAND
+  const github = state.integrations.find((item) => item.id === 'github')
+  const githubReady = Boolean(github?.connected && github.token)
+  const fileCount = state.filesGenerated > 0 ? state.filesGenerated : structure.length
+  const rootName =
+    state.downloadFilename?.replace(/\.zip$/i, '') || workspaceRootName(state.projectName)
+
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(nextCommand)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setCopied(false)
+    }
+  }
 
   return (
     <div className="screen screen-ref success-screen success-screen-full">
@@ -594,7 +641,7 @@ export function GenerationDownloadScreen({
 
             <div className="gen-stats ref inline-stats">
               <div className="stat-block">
-                <strong>{state.filesGenerated?.toLocaleString() || '1,248'}</strong>
+                <strong>{fileCount.toLocaleString()}</strong>
                 <span>Files Generated</span>
               </div>
               <div className="stat-block">
@@ -603,13 +650,29 @@ export function GenerationDownloadScreen({
               </div>
             </div>
 
+            <div className="next-command-box">
+              <h4>Next SDLC command</h4>
+              <p>Unzip the bundle, open it in Cursor, then run:</p>
+              <div className="next-command-row">
+                <code>{nextCommand}</code>
+                <button type="button" className="ghost-btn" onClick={() => void copyCommand()}>
+                  <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
             <div className="success-actions row">
-              <button type="button" className="secondary-btn outline-purple" disabled>
-                <ExternalLink size={16} /> Export to Git Repository
+              <button
+                type="button"
+                className="secondary-btn outline-purple"
+                disabled={!githubReady || exporting}
+                onClick={() => onExportGithub?.()}
+              >
+                <ExternalLink size={16} /> {exporting ? 'Creating repos…' : 'Export to GitHub'}
               </button>
-              <button type="button" className="ghost-btn" disabled>
-                <FolderTree size={15} /> View Project Structure
-              </button>
+              {!githubReady && (
+                <span className="muted">Connect GitHub on Integrations to create repositories.</span>
+              )}
             </div>
 
             {onBack && (
@@ -634,13 +697,17 @@ export function GenerationDownloadScreen({
             </div>
 
             <div className="output-preview-box">
-              <h4>Generated Structure</h4>
-              <div className="output-tree">
-                <div><strong>MY_PILOT_DEMO/</strong></div>
-                <div className="tree-indent">├── .cursor/</div>
-                <div className="tree-indent">├── automation_sdlc/</div>
-                <div className="tree-indent">├── blink_ui/</div>
-                <div className="tree-indent">└── blink_backend/</div>
+              <h4>Generated Downloaded Structure</h4>
+              <div className="download-structure">
+                <div className="download-structure-root">{rootName}</div>
+                <ul className="download-structure-list">
+                  {structure.map((entry) => (
+                    <li key={`${entry.kind}-${entry.name}`} className={entry.kind}>
+                      {entry.kind === 'file' ? <File size={16} /> : <Folder size={16} />}
+                      <span>{entry.name}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
@@ -649,3 +716,4 @@ export function GenerationDownloadScreen({
     </div>
   )
 }
+

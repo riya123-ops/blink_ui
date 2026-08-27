@@ -29,11 +29,11 @@ function forward(base: string, req: IncomingMessage, res: ServerResponse) {
   const lib = dest.protocol === 'https:' ? https : http
   const headers = { ...req.headers, host: dest.host }
   delete headers.connection
-  const upstream = lib.request(dest, { method: req.method, headers }, (up) => {
+  const upstream = lib.request(dest, { method: req.method, headers }, (up: IncomingMessage) => {
     res.writeHead(up.statusCode ?? 502, up.headers)
     up.pipe(res)
   })
-  upstream.on('error', (err) => {
+  upstream.on('error', (err: Error) => {
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'text/plain' })
       res.end(err.message)

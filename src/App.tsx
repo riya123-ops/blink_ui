@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, saveProject, createRepositories, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -38,11 +38,14 @@ import { roleLabel } from './wizard/stakeholders'
 import { stepIndex } from './wizard/steps'
 import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
 import {
+  clearGroomingPatch,
   defaultWizardState,
   generationStepDefs,
+  type GroomAnswer,
   type WizardState,
   type WizardStep,
 } from './wizard/types'
+import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -75,6 +78,7 @@ export default function App() {
   const [completedThrough, setCompletedThrough] = useState(0)
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [grooming, setGrooming] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
@@ -205,6 +209,18 @@ export default function App() {
       } else {
         setStatus(null)
       }
+    } else if (step === 'requirements') {
+      setStatus(null)
+      const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
+      const nextState = { ...state, requirementsText: wording }
+      const questions = generateQuestionsFromRequirements(nextState)
+      patch({
+        requirementsText: wording,
+        questions,
+        requirementsAnalyzed: true,
+        responses: [],
+        questionsSent: false,
+      })
     } else {
       setStatus(null)
     }
@@ -212,7 +228,7 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) setStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state.repositories, state.integrations, handleCreateGithubRepos])
+  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -220,15 +236,131 @@ export default function App() {
     if (idx > 0) setStep(STEP_ORDER[idx - 1])
   }, [step])
 
-  const handleAnalyze = useCallback(() => {
-    if (!state.requirementsText.trim() && !state.requirementFileName) {
-      setStatus({ type: 'error', message: 'Upload a document or paste requirements first.' })
+  const handleGroomAsk = useCallback(async () => {
+    if (state.groomQuestions.length) return
+    const text = (state.groomOriginal || state.requirementsText).trim()
+    if (!text) {
+      setStatus({ type: 'error', message: 'Paste a short description first.' })
       return
     }
-    const questions = generateQuestionsFromRequirements(state)
-    patch({ questions, requirementsAnalyzed: true, responses: [], questionsSent: false })
-    setStatus({ type: 'success', message: `Generated ${questions.length} clarification questions.` })
+    setGrooming(true)
+    setStatus(null)
+    try {
+      const result = await clarifyRequirement({
+        projectId: state.projectId,
+        projectName: state.projectName,
+        requirementText: text,
+      })
+      if (result.status === 'error' || result.status === 'invalid_request') {
+        patch({
+          groomStatus: result.status,
+          groomMessage: result.message,
+          groomDraft: result.requirementDraft || text,
+          groomOriginal: state.groomOriginal || result.originalRequirement || text,
+        })
+        setStatus({ type: 'error', message: result.message })
+        return
+      }
+      patch({
+        groomStatus: result.status,
+        groomMessage: result.message,
+        groomQuestions: assignQuestionBands(result.questions ?? []),
+        groomDraft: result.requirementDraft || '',
+        groomOriginal: state.groomOriginal || result.originalRequirement || text,
+        groomAnswers: [],
+        groomConfirmed: false,
+      })
+      setStatus({
+        type: 'info',
+        message:
+          result.status === 'draft_ready'
+            ? 'This is already clear enough. Use this wording, or Start over to change the paste.'
+            : 'Answer the required questions. Important and suggestions are optional.',
+      })
+    } catch (e) {
+      patch({
+        groomStatus: 'error',
+        groomMessage: e instanceof Error ? e.message : 'Could not reach the grooming helper.',
+      })
+      setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not reach the grooming helper.' })
+    } finally {
+      setGrooming(false)
+    }
+  }, [state.groomQuestions.length, state.groomOriginal, state.requirementsText, state.projectId, state.projectName, patch])
+
+  const handleGroomPick = useCallback((questionId: string, optionId: string, optionLabel: string) => {
+    setState((prev) => {
+      const rest = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+      const next: GroomAnswer = { questionId, optionId, optionLabel }
+      return { ...prev, groomAnswers: [...rest, next], groomConfirmed: false }
+    })
+  }, [])
+
+  const handleGroomOther = useCallback((questionId: string, text: string) => {
+    setState((prev) => {
+      const rest = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+      if (!text.trim()) {
+        return { ...prev, groomAnswers: rest, groomConfirmed: false }
+      }
+      const next: GroomAnswer = { questionId, optionId: 'other', optionLabel: 'Other', otherText: text }
+      return { ...prev, groomAnswers: [...rest, next], groomConfirmed: false }
+    })
+  }, [])
+
+  const handleGroomLooksGood = useCallback(async () => {
+    if (state.groomConfirmed) return
+    if (unansweredRequired(state).length && state.groomStatus !== 'error') {
+      setStatus({ type: 'error', message: 'Answer every required question under Need clarification.' })
+      return
+    }
+    const original = (state.groomOriginal || state.requirementsText).trim()
+    const answers = state.groomAnswers.filter(
+      (item) => item.optionId !== 'other' || Boolean(item.otherText?.trim()),
+    )
+    let draft = (state.groomDraft || state.requirementsText).trim()
+    if (answers.length && state.groomStatus !== 'error') {
+      setGrooming(true)
+      setStatus(null)
+      try {
+        const result = await clarifyRequirement({
+          projectId: state.projectId,
+          projectName: state.projectName,
+          requirementText: original || draft,
+          answers,
+        })
+        if (result.status === 'error' || result.status === 'invalid_request') {
+          setStatus({ type: 'error', message: result.message })
+          patch({ groomStatus: result.status, groomMessage: result.message })
+          return
+        }
+        draft = (result.requirementDraft || draft).trim()
+      } catch (e) {
+        setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not update the wording.' })
+        return
+      } finally {
+        setGrooming(false)
+      }
+    }
+    if (!draft) return
+    const nextState = { ...state, requirementsText: draft, groomConfirmed: true, groomDraft: draft }
+    const questions = generateQuestionsFromRequirements(nextState)
+    patch({
+      requirementsText: draft,
+      groomDraft: draft,
+      groomConfirmed: true,
+      groomStatus: 'draft_ready',
+      questions,
+      requirementsAnalyzed: true,
+      responses: [],
+      questionsSent: false,
+    })
+    setStatus({ type: 'success', message: 'Requirement wording saved on this page.' })
   }, [state, patch])
+
+  const handleGroomStartOver = useCallback(() => {
+    patch(clearGroomingPatch())
+    setStatus(null)
+  }, [patch])
 
   const applySendResults = useCallback(
     (results: { question_id: string; status: string; message: string }[], deliveryMode: string, outboxDir: string | null) => {
@@ -351,7 +483,8 @@ export default function App() {
         purpose: repo.purpose,
         description: repo.description,
       }))
-      const { blob, filename, structure, fileCount, nextCommand } = await downloadWorkspace({
+      const { blob, filename, structure, fileCount, nextCommand, setupStatus, identitySource, overlayCount } =
+        await downloadWorkspace({
         projectId,
         file: state.requirementFile,
         requirementsText: state.requirementsText,
@@ -368,6 +501,9 @@ export default function App() {
         generationComplete: true,
         filesGenerated: fileCount || structure.length,
         generationTimeSec: Math.round((Date.now() - start) / 1000),
+        setupStatus: setupStatus || null,
+        setupIdentitySource: identitySource || null,
+        setupOverlayCount: overlayCount,
       })
       setStatus({ type: 'success', message: 'Project generated and downloaded.' })
     } catch (e) {
@@ -417,7 +553,22 @@ export default function App() {
           />
         )
       case 'requirements':
-        return <RequirementsScreen state={state} onUpdate={patch} onAnalyze={handleAnalyze} />
+        return (
+          <RequirementsScreen
+            state={state}
+            onUpdate={(updates) => {
+              const resetGroom =
+                'requirementsText' in updates || 'requirementFileName' in updates || 'requirementFile' in updates
+              patch(resetGroom ? { ...clearGroomingPatch(), ...updates } : updates)
+            }}
+            grooming={grooming}
+            onAsk={() => void handleGroomAsk()}
+            onPick={handleGroomPick}
+            onOther={handleGroomOther}
+            onUseWording={() => void handleGroomLooksGood()}
+            onStartOver={handleGroomStartOver}
+          />
+        )
       case 'stakeholder-questions':
         return (
           <StakeholderQuestionsScreen
@@ -483,6 +634,7 @@ export default function App() {
             currentStep={step}
             completedThrough={completedThrough}
             generationComplete={state.generationComplete}
+            groomingUnlocked={groomingComplete(state)}
             onNavigate={(s) => {
               setStatus(null)
               setStep(s)
@@ -503,7 +655,7 @@ export default function App() {
               <button
                 type="button"
                 className="header-download-btn"
-                disabled={loading}
+                disabled={loading || grooming}
                 onClick={handleQuickDownload}
               >
                 <Download size={16} />
@@ -527,7 +679,7 @@ export default function App() {
           )}
           <div className="action-spacer" />
           {showNext && (
-            <button type="button" className="primary-btn" disabled={saving || loading || creatingRepos} onClick={() => void goNext()}>
+            <button type="button" className="primary-btn" disabled={saving || loading || grooming || creatingRepos} onClick={() => void goNext()}>
               {creatingRepos ? 'Creating on GitHub…' : saving ? 'Saving…' : 'Save & Continue'} <ChevronRight size={14} />
             </button>
           )}

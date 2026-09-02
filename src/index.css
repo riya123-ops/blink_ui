@@ -1790,6 +1790,10 @@ textarea::placeholder {
   margin-top: 1.25rem;
   padding-top: 1rem;
   border-top: 1px solid #eef2f6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .card-footer-actions.right {
@@ -3571,6 +3575,201 @@ textarea::placeholder {
 .repo-status.failed {
   color: #dc2626;
   font-size: 0.72rem;
+}
+
+.groom-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.groom-compare h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.groom-draft {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--glass-border);
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--text);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.groom-question {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+}
+
+.groom-question legend {
+  padding: 0 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.groom-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.groom-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.groom-option.selected {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.groom-panel {
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--glass-border);
+}
+
+.groom-panel-intro h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.groom-panel-intro p {
+  margin: 0 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.groom-band {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.9rem 0.9rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.groom-band.required {
+  background: #fff;
+  border-color: #c7d2fe;
+}
+
+.groom-band.optional {
+  background: #f8fafc;
+  border-style: dashed;
+}
+
+.groom-band-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.groom-band-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 650;
+  font-size: 0.92rem;
+}
+
+.groom-required-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.groom-band-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.groom-band-meta .chevron {
+  transition: transform 0.15s ease;
+}
+
+.groom-band-meta .chevron.open {
+  transform: rotate(180deg);
+}
+
+.groom-band-hint {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.groom-progress {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.groom-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.req-textarea.locked {
+  background: #f8fafc;
+  color: #334155;
+  cursor: default;
+}
+
+.overlay-summary-box {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.overlay-summary-box h4 {
+  color: #047857;
+}
+
+@media (max-width: 800px) {
+  .groom-compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 

@@ -28,7 +28,7 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen">
       <div className="screen-header">
         <h2>Project Shape</h2>
-        <p>Define topology, repository model, and architecture style.</p>
+        <p>Define topology, repository model, and architecture style. You will name repositories on the next step.</p>
       </div>
 
       <section className="card">
@@ -85,7 +85,7 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
 
       <div className="summary-cards">
         <div className="summary-card"><strong>Topology</strong><span>{TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}</span></div>
-        <div className="summary-card"><strong>Repos</strong><span>{state.repositories.length} planned</span></div>
+        <div className="summary-card"><strong>Repos</strong><span>Named next</span></div>
         <div className="summary-card"><strong>Architecture</strong><span>{ARCHITECTURE_OPTIONS.find((a) => a.id === state.architectureStyle)?.label}</span></div>
       </div>
     </div>
@@ -137,8 +137,11 @@ export function RepositoriesScreen({
       <div className="screen-header">
         <h2>Repositories</h2>
         <p>
-          Four repos are named from <strong>{state.projectName || 'your project'}</strong>. Edit or delete any you do not
-          need. {githubReady ? 'Save & Continue will create them on GitHub.' : 'Connect GitHub on Integrations to create them on Save & Continue.'}
+          Names follow <strong>{state.projectName || 'your project'}</strong> and the shape you just chose. Edit or delete
+          any you do not need.{' '}
+          {githubReady
+            ? 'Save & Continue will create them on GitHub.'
+            : 'Connect GitHub on Integrations to create them on Save & Continue.'}
         </p>
       </div>
       <section className="card ref-card">
@@ -660,6 +663,23 @@ export function GenerationDownloadScreen({
                 </button>
               </div>
             </div>
+
+            {(state.setupStatus || state.setupOverlayCount > 0) && (
+              <div className="next-command-box overlay-summary-box">
+                <h4>Workspace overlay</h4>
+                {state.setupOverlayCount > 0 ? (
+                  <p>
+                    {state.setupOverlayCount} file{state.setupOverlayCount === 1 ? '' : 's'} added under{' '}
+                    <code>.cursor/ai-sdlc</code>
+                    {state.setupIdentitySource
+                      ? ` from ${state.setupIdentitySource === 'requirement' ? 'your requirement' : 'the project description'}.`
+                      : '.'}
+                  </p>
+                ) : (
+                  <p>Blink could not add the extra workspace notes this time. Your zip still downloaded.</p>
+                )}
+              </div>
+            )}
 
             <div className="success-actions row">
               <button

@@ -2473,6 +2473,42 @@ textarea::placeholder {
   padding: 3rem 1rem;
 }
 
+.gen-progress {
+  width: min(420px, 100%);
+  margin: 1.25rem auto 0;
+  text-align: left;
+}
+
+.gen-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.gen-progress-copy strong {
+  color: var(--text-navy, #1e3a5f);
+  font-variant-numeric: tabular-nums;
+}
+
+.gen-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  overflow: hidden;
+}
+
+.gen-progress-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  transition: width 0.35s ease;
+}
+
 .gen-spinner {
   width: 48px;
   height: 48px;
@@ -2491,6 +2527,19 @@ textarea::placeholder {
   text-align: left;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.gen-progress-list li.done {
+  color: var(--ts-green-deep, #087a38);
+}
+
+.gen-progress-list li.running {
+  color: var(--text-navy, #1e3a5f);
+  font-weight: 600;
+}
+
+.gen-progress-list li.error {
+  color: #b91c1c;
 }
 
 /* ══════════════════════════════════════
@@ -2918,6 +2967,64 @@ textarea::placeholder {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 0.7rem;
+}
+
+.folder-prep {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 220px;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.folder-prep-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.folder-prep-copy strong {
+  color: var(--text-navy, #1e3a5f);
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-prep-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  overflow: hidden;
+}
+
+.folder-prep-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  transition: width 0.35s ease;
+}
+
+.folder-prep.is-waiting .folder-prep-bar-fill {
+  width: 35% !important;
+  animation: folder-prep-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes folder-prep-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
+.folder-prep.is-ready {
+  color: var(--ts-green-deep, #087a38);
+}
+
+.folder-prep.is-failed {
+  color: #b45309;
 }
 
 .header-download-btn,

@@ -27,7 +27,7 @@ function forward(base: string, req: IncomingMessage, res: ServerResponse) {
   const lib = http
   const headers = { ...req.headers, host: dest.host }
   delete headers.connection
-  const upstream = lib.request(dest, { method: req.method, headers, timeout: 120_000 }, (up: IncomingMessage) => {
+  const upstream = lib.request(dest, { method: req.method, headers, timeout: 240_000 }, (up: IncomingMessage) => {
     res.writeHead(up.statusCode ?? 502, up.headers)
     up.pipe(res)
   })
@@ -70,6 +70,7 @@ function apiFallbackProxy(): Plugin {
 export default defineConfig({
   plugins: [react(), integrationsConnectPlugin(), apiFallbackProxy()],
   server: {
+    host: '127.0.0.1',
     port: 5173,
   },
 })

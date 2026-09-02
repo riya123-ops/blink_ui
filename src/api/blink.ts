@@ -40,6 +40,9 @@ export interface ProjectDto {
   status: string
   projectType: 'new' | 'existing'
   stakeholders: StakeholderDto[]
+  workspaceKey?: string | null
+  workspaceUrl?: string | null
+  workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
 }
 
 async function readError(response: Response): Promise<string> {
@@ -114,17 +117,57 @@ export async function fetchStakeholderRoles(): Promise<StakeholderRoleDto[]> {
   return response.json() as Promise<StakeholderRoleDto[]>
 }
 
+export async function fetchWorkspaceStatus(projectName: string): Promise<{
+  workspaceKey?: string | null
+  status?: 'preparing' | 'ready' | 'failed' | null
+  filesCopied: number
+  filesTotal: number
+  percent: number
+  exists: boolean
+}> {
+  const url = apiUrl(`/projects/workspace-status?projectName=${encodeURIComponent(projectName)}`)
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<{
+    workspaceKey?: string | null
+    status?: 'preparing' | 'ready' | 'failed' | null
+    filesCopied: number
+    filesTotal: number
+    percent: number
+    exists: boolean
+  }>
+}
+
+export async function fetchProject(id: string): Promise<ProjectDto> {
+  const url = apiUrl(`/projects/${id}`)
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ProjectDto>
+}
+
 export async function saveProject(payload: ProjectPayload, projectId?: string | null): Promise<ProjectDto> {
   const url = projectId ? apiUrl(`/projects/${projectId}`) : apiUrl('/projects')
   const method = projectId ? 'PUT' : 'POST'
   console.info(`[blink] ${method} ${url}`, payload)
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!response.ok) throw new Error(await readError(response))
-  return response.json() as Promise<ProjectDto>
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 20_000)
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    return response.json() as Promise<ProjectDto>
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Could not save the project. Try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 export interface IntegrationConnectPayload {
@@ -213,6 +256,7 @@ export interface DownloadResult {
   setupStatus: string
   identitySource: string
   overlayCount: number
+  folderStatus: string
 }
 
 function parseStructureHeader(header: string | null): WorkspaceEntryDto[] {
@@ -246,30 +290,46 @@ export async function downloadWorkspace(options: {
       form.append('repoDescription', repo.description ?? '')
     }
   }
-  const response = await fetch(apiUrl(`/projects/${options.projectId}/download`), {
-    method: 'POST',
-    body: form,
-  })
-  if (!response.ok) throw new Error(await readError(response))
-  const original = await response.blob()
-  const stripped = await stripExcludedZipFolders(original)
-  const filename =
-    response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] ?? 'project-workspace.zip'
-  const structure = sanitizeDownloadStructure(
-    parseStructureHeader(response.headers.get('X-Blink-Workspace-Structure')),
-  )
-  const headerCount = Number(response.headers.get('X-Blink-File-Count') ?? '0')
-  const fileCount = Number.isFinite(headerCount) ? Math.max(0, headerCount - stripped.removed) : 0
-  const overlayCount = Number(response.headers.get('X-Blink-Overlay-Count') ?? '0')
-  return {
-    blob: stripped.blob,
-    filename,
-    structure,
-    fileCount,
-    nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '/setup-new-workspace',
-    setupStatus: response.headers.get('X-Blink-Setup-Status')?.trim() || '',
-    identitySource: response.headers.get('X-Blink-Identity-Source')?.trim() || '',
-    overlayCount: Number.isFinite(overlayCount) ? overlayCount : 0,
+  const url = apiUrl(`/projects/${options.projectId}/download`)
+  console.info(`[blink] POST ${url}`)
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 180_000)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    console.info(`[blink] download HTTP ${response.status} bytes=${response.headers.get('content-length') ?? '?'}`)
+    const original = await response.blob()
+    const stripped = await stripExcludedZipFolders(original)
+    const filename =
+      response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] ?? 'project-workspace.zip'
+    const structure = sanitizeDownloadStructure(
+      parseStructureHeader(response.headers.get('X-Blink-Workspace-Structure')),
+    )
+    const headerCount = Number(response.headers.get('X-Blink-File-Count') ?? '0')
+    const fileCount = Number.isFinite(headerCount) ? Math.max(0, headerCount - stripped.removed) : 0
+    const overlayCount = Number(response.headers.get('X-Blink-Overlay-Count') ?? '0')
+    return {
+      blob: stripped.blob,
+      filename,
+      structure,
+      fileCount,
+      nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '/setup-new-workspace',
+      setupStatus: response.headers.get('X-Blink-Setup-Status')?.trim() || '',
+      identitySource: response.headers.get('X-Blink-Identity-Source')?.trim() || '',
+      overlayCount: Number.isFinite(overlayCount) ? overlayCount : 0,
+      folderStatus: response.headers.get('X-Blink-Folder-Status')?.trim() || '',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Download took too long. Try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
   }
 }
 

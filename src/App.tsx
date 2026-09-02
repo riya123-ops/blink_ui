@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -82,6 +82,8 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
+  const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
+  const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -115,12 +117,54 @@ export default function App() {
     })),
   }), [state.projectType, state.projectName, state.description, state.stakeholderAssignments])
 
-  const persistProject = useCallback(async (): Promise<string> => {
+  const persistProject = useCallback(async (): Promise<{
+    id: string
+    workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
+  }> => {
     const saved = await saveProject(projectPayload(), state.projectId)
     const id = String(saved.id)
     patch({ projectId: id })
-    return id
+    if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
+      setFolderPrep(saved.workspaceStatus)
+    }
+    return { id, workspaceStatus: saved.workspaceStatus }
   }, [projectPayload, state.projectId, patch])
+
+  useEffect(() => {
+    if (folderPrep !== 'preparing' || !state.projectName.trim()) return
+    let cancelled = false
+    const check = async () => {
+      try {
+        const progress = await fetchWorkspaceStatus(state.projectName)
+        if (cancelled) return
+        setFolderProgress({
+          percent: progress.percent ?? 0,
+          copied: progress.filesCopied ?? 0,
+          total: progress.filesTotal ?? 0,
+        })
+        if (progress.status === 'ready' || (progress.exists && progress.status !== 'preparing' && progress.status !== 'failed')) {
+          setFolderProgress((prev) => ({ ...prev, percent: 100 }))
+          setFolderPrep('ready')
+          return
+        }
+        if (progress.status === 'failed') setFolderPrep('failed')
+      } catch {
+        /* keep the note until a later poll succeeds */
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => void check(), 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [state.projectName, folderPrep])
+
+  useEffect(() => {
+    if (folderPrep !== 'ready') return
+    const timer = window.setTimeout(() => setFolderPrep('idle'), 5000)
+    return () => window.clearTimeout(timer)
+  }, [folderPrep])
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     const github = state.integrations.find((item) => item.id === 'github')
@@ -189,8 +233,14 @@ export default function App() {
       setSaving(true)
       setStatus(null)
       try {
-        const id = await persistProject()
-        setStatus({ type: 'success', message: `Project saved (id ${id}).` })
+        const saved = await persistProject()
+        setStatus({
+          type: 'success',
+          message:
+            saved.workspaceStatus === 'preparing'
+              ? 'Saved. We are preparing your project folder — you can keep going.'
+              : 'Project saved.',
+        })
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
@@ -474,7 +524,7 @@ export default function App() {
       advanceStep('package', 'running')
       let projectId = state.projectId
       if (!projectId) {
-        projectId = await persistProject()
+        projectId = (await persistProject()).id
       }
       const repositories = (
         state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName)
@@ -483,7 +533,7 @@ export default function App() {
         purpose: repo.purpose,
         description: repo.description,
       }))
-      const { blob, filename, structure, fileCount, nextCommand, setupStatus, identitySource, overlayCount } =
+      const { blob, filename, structure, fileCount, nextCommand, setupStatus, identitySource, overlayCount, folderStatus } =
         await downloadWorkspace({
         projectId,
         file: state.requirementFile,
@@ -505,7 +555,13 @@ export default function App() {
         setupIdentitySource: identitySource || null,
         setupOverlayCount: overlayCount,
       })
-      setStatus({ type: 'success', message: 'Project generated and downloaded.' })
+      setStatus({
+        type: folderStatus === 'preparing' ? 'info' : 'success',
+        message:
+          folderStatus === 'preparing'
+            ? 'Your zip downloaded. The cloud project folder is still copying in the background.'
+            : 'Project generated and downloaded.',
+      })
     } catch (e) {
       advanceStep('package', 'error')
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Generation failed.' })
@@ -650,6 +706,43 @@ export default function App() {
               <span className="step-indicator">
                 Step {stepIndex(step) + 1} of {STEP_ORDER.length}
               </span>
+              {folderPrep === 'preparing' && (
+                <div className={`folder-prep${folderProgress.total === 0 ? ' is-waiting' : ''}`}>
+                  <div className="folder-prep-copy">
+                    <span>Preparing your project folder</span>
+                    <strong>
+                      {folderProgress.percent}%
+                      {folderProgress.total > 0
+                        ? ` · ${folderProgress.copied.toLocaleString()} / ${folderProgress.total.toLocaleString()}`
+                        : ''}
+                    </strong>
+                  </div>
+                  <div
+                    className="folder-prep-bar"
+                    role="progressbar"
+                    aria-label="Project folder progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={folderProgress.percent}
+                  >
+                    <span className="folder-prep-bar-fill" style={{ width: `${folderProgress.percent}%` }} />
+                  </div>
+                </div>
+              )}
+              {folderPrep === 'ready' && (
+                <div className="folder-prep is-ready">
+                  <div className="folder-prep-copy">
+                    <span>Your project folder is ready.</span>
+                    <strong>100%</strong>
+                  </div>
+                  <div className="folder-prep-bar" role="progressbar" aria-valuenow={100} aria-valuemin={0} aria-valuemax={100}>
+                    <span className="folder-prep-bar-fill" style={{ width: '100%' }} />
+                  </div>
+                </div>
+              )}
+              {folderPrep === 'failed' && (
+                <span className="folder-prep is-failed">We will finish your project folder when you download.</span>
+              )}
             </div>
             {showQuickDownload && (
               <button

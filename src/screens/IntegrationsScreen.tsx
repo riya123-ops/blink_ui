@@ -210,7 +210,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Integrations</h2>
-        <p>Connect GitHub, Jira, Confluence, and Bitbucket with an API token. {connectedCount} of 4 connected.</p>
+        <p>Connect GitHub, Jira, Confluence, and Bitbucket with an API token. {connectedCount} of 4 connected. GitHub is used on Repositories, after Project Shape, to create them.</p>
       </div>
       <section className="card ref-card">
         <ol className="connect-howto">

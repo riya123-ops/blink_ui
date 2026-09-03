@@ -30,11 +30,11 @@ export type WizardStep =
   | 'welcome'
   | 'project-stakeholders'
   | 'integrations'
-  | 'repositories'
   | 'requirements'
   | 'stakeholder-questions'
   | 'stakeholder-responses'
   | 'project-shape'
+  | 'repositories'
   | 'technology-per-repo'
   | 'ide-and-tools'
   | 'platform-delivery'
@@ -71,6 +71,21 @@ export interface GenerationStep {
   id: string
   label: string
   status: 'pending' | 'running' | 'done' | 'error'
+}
+
+export interface GroomQuestion {
+  id: string
+  text: string
+  options: { id: string; label: string }[]
+  allowOther: boolean
+  priority: 'need_clarification' | 'important' | 'suggestion'
+}
+
+export interface GroomAnswer {
+  questionId: string
+  optionId: string
+  optionLabel?: string
+  otherText?: string
 }
 
 export interface WizardState extends SetupForm {
@@ -119,6 +134,16 @@ export interface WizardState extends SetupForm {
   nextSdlcCommand: string | null
   filesGenerated: number
   generationTimeSec: number
+  groomStatus: string | null
+  groomMessage: string
+  groomQuestions: GroomQuestion[]
+  groomAnswers: GroomAnswer[]
+  groomDraft: string
+  groomOriginal: string
+  groomConfirmed: boolean
+  setupStatus: string | null
+  setupIdentitySource: string | null
+  setupOverlayCount: number
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -196,6 +221,16 @@ export const defaultWizardState: WizardState = {
   nextSdlcCommand: null,
   filesGenerated: 0,
   generationTimeSec: 0,
+  groomStatus: null,
+  groomMessage: '',
+  groomQuestions: [],
+  groomAnswers: [],
+  groomDraft: '',
+  groomOriginal: '',
+  groomConfirmed: false,
+  setupStatus: null,
+  setupIdentitySource: null,
+  setupOverlayCount: 0,
 }
 
 function ideCommandsLabel(ideTool: string): string {
@@ -263,7 +298,7 @@ export function computeReadiness(state: WizardState): number {
   let score = 0
   if (state.projectName) score += 10
   if (state.stakeholderAssignments.length >= 2) score += 10
-  if (state.requirementsAnalyzed) score += 15
+  if (state.groomConfirmed || state.requirementsAnalyzed) score += 15
   if (state.questionsSent) score += 15
   const mandatoryAnswered = state.questions
     .filter((q) => q.mandatory)
@@ -275,6 +310,22 @@ export function computeReadiness(state: WizardState): number {
   if (state.cloudProvider && state.cicd) score += 10
   if (state.integrations.some((i) => i.connected)) score += 5
   return Math.min(score, 100)
+}
+
+export function clearGroomingPatch(): Partial<WizardState> {
+  return {
+    groomStatus: null,
+    groomMessage: '',
+    groomQuestions: [],
+    groomAnswers: [],
+    groomDraft: '',
+    groomOriginal: '',
+    groomConfirmed: false,
+    requirementsAnalyzed: false,
+    questions: [],
+    responses: [],
+    questionsSent: false,
+  }
 }
 
 export type { ProjectType, BuildTool, BackendLanguage, BackendFramework, ConfigFormat, WorkspaceEntry }

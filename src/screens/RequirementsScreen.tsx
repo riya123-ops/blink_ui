@@ -1,12 +1,18 @@
 import { useEffect, useRef } from 'react'
-import { ChevronRight, CloudUpload, FileUp, GitBranch, Link2 } from 'lucide-react'
+import { CloudUpload, FileUp, GitBranch, Link2 } from 'lucide-react'
 import type { WizardState } from '../wizard/types'
+import { GroomingPanel } from './GroomRequirementScreen'
+import { unansweredRequired } from '../wizard/grooming'
 
 interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
-  onAnalyze: () => void
-  analyzing?: boolean
+  grooming?: boolean
+  onAsk?: () => void
+  onPick?: (questionId: string, optionId: string, optionLabel: string) => void
+  onOther?: (questionId: string, text: string) => void
+  onUseWording?: () => void
+  onStartOver?: () => void
 }
 
 function handleFile(file: File | undefined, onUpdate: Props['onUpdate']) {
@@ -19,10 +25,23 @@ function clearFile(onUpdate: Props['onUpdate'], fileInputRef: React.RefObject<HT
   if (fileInputRef.current) fileInputRef.current.value = ''
 }
 
-export function RequirementsScreen({ state, onUpdate, onAnalyze, analyzing }: Props) {
+export function RequirementsScreen({
+  state,
+  onUpdate,
+  grooming,
+  onAsk,
+  onPick,
+  onOther,
+  onUseWording,
+  onStartOver,
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const zipInputRef = useRef<HTMLInputElement>(null)
   const hasUploadedFile = Boolean(state.requirementFileName)
+  const hasPaste = Boolean(state.requirementsText.trim())
+  const pasteLocked =
+    !state.groomConfirmed &&
+    (state.groomQuestions.length > 0 || state.groomStatus === 'draft_ready' || state.groomStatus === 'need_choices')
 
   useEffect(() => {
     if (state.requirementFileName && state.requirementsText.trim()) {
@@ -34,7 +53,7 @@ export function RequirementsScreen({ state, onUpdate, onAnalyze, analyzing }: Pr
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Requirements</h2>
-        <p>How would you like to provide your requirements?</p>
+        <p>Upload a document or paste a short description. If you paste, we will ask one round of choices on this page.</p>
       </div>
 
       <section className="card ref-card">
@@ -78,17 +97,34 @@ export function RequirementsScreen({ state, onUpdate, onAnalyze, analyzing }: Pr
 
             <div className="field-group">
               <label htmlFor="requirementsText">Paste Requirements</label>
-              <p className="field-hint">Use this only if you don&apos;t have a requirement document to upload.</p>
+              <p className="field-hint">
+                {pasteLocked
+                  ? 'Your paste is locked while you answer. Start over if you need to change it.'
+                  : 'Use this only if you don\u2019t have a requirement document to upload.'}
+              </p>
               <textarea
                 id="requirementsText"
-                className="req-textarea"
+                className={`req-textarea${pasteLocked ? ' locked' : ''}`}
                 rows={6}
                 placeholder="Paste your requirements here…"
                 value={state.requirementsText}
+                readOnly={pasteLocked}
                 onChange={(e) => onUpdate({ requirementsText: e.target.value, requirementFileName: null, requirementFile: null })}
               />
             </div>
           </>
+        )}
+
+        {hasPaste && onAsk && onPick && onOther && onUseWording && onStartOver && (
+          <GroomingPanel
+            state={state}
+            loading={Boolean(grooming)}
+            onAsk={onAsk}
+            onPick={onPick}
+            onOther={onOther}
+            onUseWording={onUseWording}
+            onStartOver={onStartOver}
+          />
         )}
 
         <div className="existing-app-section">
@@ -134,16 +170,6 @@ export function RequirementsScreen({ state, onUpdate, onAnalyze, analyzing }: Pr
             />
           )}
         </div>
-
-        <div className="card-footer-actions">
-          <button type="button" className="primary-btn arrow-btn" disabled={analyzing} onClick={onAnalyze}>
-            {analyzing ? 'Analyzing…' : 'Analyze Requirements'} <ChevronRight size={16} />
-          </button>
-        </div>
-
-        {state.requirementsAnalyzed && (
-          <div className="inline-success">{state.questions.length} clarification questions generated.</div>
-        )}
       </section>
     </div>
   )
@@ -153,6 +179,16 @@ export function validateRequirements(state: WizardState): string | null {
   if (!state.requirementsText.trim() && !state.requirementFileName) {
     return 'Upload a document or paste requirements.'
   }
-  if (!state.requirementsAnalyzed) return 'Click Analyze Requirements before continuing.'
-  return null
+  if (!state.requirementsText.trim() && state.requirementFileName) {
+    return null
+  }
+  if (state.groomConfirmed) return null
+  if (!state.groomQuestions.length && state.groomStatus !== 'draft_ready' && state.groomStatus !== 'error') {
+    return 'Click Make it clearer and answer the required questions on this page.'
+  }
+  const missing = unansweredRequired(state)
+  if (missing.length) {
+    return `Answer the ${missing.length} required question${missing.length === 1 ? '' : 's'} under Need clarification.`
+  }
+  return 'Click Use this wording so Blink can rewrite from your answers.'
 }

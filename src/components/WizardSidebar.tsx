@@ -7,10 +7,17 @@ interface Props {
   currentStep: WizardStep
   completedThrough: number
   generationComplete: boolean
+  groomingUnlocked: boolean
   onNavigate: (step: WizardStep) => void
 }
 
-export function WizardSidebar({ currentStep, completedThrough, generationComplete, onNavigate }: Props) {
+export function WizardSidebar({
+  currentStep,
+  completedThrough,
+  generationComplete,
+  groomingUnlocked,
+  onNavigate,
+}: Props) {
   const generationIdx = stepIndex('generation')
   return (
     <>
@@ -32,7 +39,7 @@ export function WizardSidebar({ currentStep, completedThrough, generationComplet
               !skipped &&
               !isActive &&
               (idx <= completedThrough || (generationComplete && step.id === 'generation'))
-            const clickable = canNavigateToStep(step.id, currentStep, completedThrough)
+            const clickable = canNavigateToStep(step.id, currentStep, completedThrough, groomingUnlocked)
             const Icon = step.icon
             return (
               <li

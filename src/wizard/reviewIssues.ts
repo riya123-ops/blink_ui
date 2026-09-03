@@ -30,7 +30,11 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
   if (pendingMandatory.length) {
     missingDetails.push(`${pendingMandatory.length} mandatory response(s) still pending`)
   }
-  if (!state.requirementsAnalyzed) {
+  if (!state.requirementsText.trim() && !state.requirementFileName) {
+    missingDetails.push('Requirements not provided yet')
+  } else if (state.requirementsText.trim() && !state.groomConfirmed) {
+    missingDetails.push('Requirement wording not confirmed yet')
+  } else if (!state.requirementsAnalyzed) {
     missingDetails.push('Requirements not analyzed yet')
   }
   if (disconnectedIntegrations.length > 3) {
@@ -48,9 +52,11 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
           ? 'stakeholder-questions'
           : pendingMandatory.length
             ? 'stakeholder-responses'
-            : !state.requirementsAnalyzed
+            : state.requirementsText.trim() && !state.groomConfirmed
               ? 'requirements'
-              : 'integrations',
+              : !state.requirementsAnalyzed
+                ? 'requirements'
+                : 'integrations',
       details: missingDetails,
     })
   }

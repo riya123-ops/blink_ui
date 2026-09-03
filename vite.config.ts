@@ -1,5 +1,4 @@
 import http from 'node:http'
-import https from 'node:https'
 import net from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig, type Plugin } from 'vite'
@@ -7,7 +6,6 @@ import react from '@vitejs/plugin-react'
 import { integrationsConnectPlugin } from './vite.integrations'
 
 const LOCAL_API = 'http://localhost:8090'
-const RENDER_API = 'https://blink-backend-af7x.onrender.com'
 
 function localBackendUp(ms = 250): Promise<boolean> {
   return new Promise((resolve) => {
@@ -26,10 +24,10 @@ function localBackendUp(ms = 250): Promise<boolean> {
 
 function forward(base: string, req: IncomingMessage, res: ServerResponse) {
   const dest = new URL(req.url ?? '/', base)
-  const lib = dest.protocol === 'https:' ? https : http
+  const lib = http
   const headers = { ...req.headers, host: dest.host }
   delete headers.connection
-  const upstream = lib.request(dest, { method: req.method, headers }, (up: IncomingMessage) => {
+  const upstream = lib.request(dest, { method: req.method, headers, timeout: 240_000 }, (up: IncomingMessage) => {
     res.writeHead(up.statusCode ?? 502, up.headers)
     up.pipe(res)
   })
@@ -52,7 +50,17 @@ function apiFallbackProxy(): Plugin {
           return
         }
         void localBackendUp().then((up) => {
-          forward(up ? LOCAL_API : RENDER_API, req, res)
+          if (!up) {
+            res.writeHead(503, { 'Content-Type': 'application/json' })
+            res.end(
+              JSON.stringify({
+                message:
+                  'Local Blink API is not running on port 8090. In blink-backend run mvn spring-boot:run, then try again.',
+              }),
+            )
+            return
+          }
+          forward(LOCAL_API, req, res)
         })
       })
     },
@@ -62,6 +70,7 @@ function apiFallbackProxy(): Plugin {
 export default defineConfig({
   plugins: [react(), integrationsConnectPlugin(), apiFallbackProxy()],
   server: {
+    host: '127.0.0.1',
     port: 5173,
   },
 })

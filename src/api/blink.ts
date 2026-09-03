@@ -40,6 +40,9 @@ export interface ProjectDto {
   status: string
   projectType: 'new' | 'existing'
   stakeholders: StakeholderDto[]
+  workspaceKey?: string | null
+  workspaceUrl?: string | null
+  workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
 }
 
 async function readError(response: Response): Promise<string> {
@@ -64,6 +67,48 @@ export function apiUrl(path: string): string {
   return `${base}${suffix}`
 }
 
+function isLocalApi(): boolean {
+  const base = (import.meta.env.VITE_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
+  return base.startsWith('/') || /localhost|127\.0\.0\.1/.test(base)
+}
+
+function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    const options = Array.isArray(row.options)
+      ? row.options.flatMap((opt, optIndex) => {
+          if (!opt || typeof opt !== 'object') return []
+          const option = opt as Record<string, unknown>
+          const label = String(option.label || '').trim()
+          const id = String(option.id || '').trim()
+          if (!label || !id) return []
+          return [{ id: id || `opt-${optIndex + 1}`, label }]
+        })
+      : []
+    const text = String(row.text || '').trim()
+    const id = String(row.id || '').trim()
+    if (!id || !text || options.length < 2) return []
+    const priorityRaw = String(row.priority || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+    const priority =
+      priorityRaw === 'important' || priorityRaw === 'suggestion'
+        ? priorityRaw
+        : row.priority
+          ? ('need_clarification' as const)
+          : undefined
+    return [
+      {
+        id: id || `q-${index + 1}`,
+        text,
+        options,
+        allowOther: Boolean(row.allowOther),
+        ...(priority ? { priority } : {}),
+      },
+    ]
+  })
+}
+
 export async function fetchStakeholderRoles(): Promise<StakeholderRoleDto[]> {
   const url = apiUrl('/stakeholder-roles')
   console.info(`[blink] GET ${url}`)
@@ -72,17 +117,59 @@ export async function fetchStakeholderRoles(): Promise<StakeholderRoleDto[]> {
   return response.json() as Promise<StakeholderRoleDto[]>
 }
 
+export async function fetchWorkspaceStatus(projectName: string, projectId?: string | null): Promise<{
+  workspaceKey?: string | null
+  status?: 'preparing' | 'ready' | 'failed' | null
+  filesCopied: number
+  filesTotal: number
+  percent: number
+  exists: boolean
+}> {
+  const params = new URLSearchParams({ projectName })
+  if (projectId) params.set('projectId', projectId)
+  const url = apiUrl(`/projects/workspace-status?${params.toString()}`)
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<{
+    workspaceKey?: string | null
+    status?: 'preparing' | 'ready' | 'failed' | null
+    filesCopied: number
+    filesTotal: number
+    percent: number
+    exists: boolean
+  }>
+}
+
+export async function fetchProject(id: string): Promise<ProjectDto> {
+  const url = apiUrl(`/projects/${id}`)
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ProjectDto>
+}
+
 export async function saveProject(payload: ProjectPayload, projectId?: string | null): Promise<ProjectDto> {
   const url = projectId ? apiUrl(`/projects/${projectId}`) : apiUrl('/projects')
   const method = projectId ? 'PUT' : 'POST'
   console.info(`[blink] ${method} ${url}`, payload)
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!response.ok) throw new Error(await readError(response))
-  return response.json() as Promise<ProjectDto>
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 90_000)
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    return response.json() as Promise<ProjectDto>
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Could not save the project. Try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 export interface IntegrationConnectPayload {
@@ -168,6 +255,10 @@ export interface DownloadResult {
   structure: WorkspaceEntryDto[]
   fileCount: number
   nextCommand: string
+  setupStatus: string
+  identitySource: string
+  overlayCount: number
+  folderStatus: string
 }
 
 function parseStructureHeader(header: string | null): WorkspaceEntryDto[] {
@@ -201,25 +292,123 @@ export async function downloadWorkspace(options: {
       form.append('repoDescription', repo.description ?? '')
     }
   }
-  const response = await fetch(apiUrl(`/projects/${options.projectId}/download`), {
-    method: 'POST',
-    body: form,
-  })
-  if (!response.ok) throw new Error(await readError(response))
-  const original = await response.blob()
-  const stripped = await stripExcludedZipFolders(original)
-  const filename =
-    response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] ?? 'project-workspace.zip'
-  const structure = sanitizeDownloadStructure(
-    parseStructureHeader(response.headers.get('X-Blink-Workspace-Structure')),
+  const url = apiUrl(`/projects/${options.projectId}/download`)
+  console.info(`[blink] POST ${url}`)
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 180_000)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: form,
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    console.info(`[blink] download HTTP ${response.status} bytes=${response.headers.get('content-length') ?? '?'}`)
+    const original = await response.blob()
+    const stripped = await stripExcludedZipFolders(original)
+    const filename =
+      response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] ?? 'project-workspace.zip'
+    const structure = sanitizeDownloadStructure(
+      parseStructureHeader(response.headers.get('X-Blink-Workspace-Structure')),
+    )
+    const headerCount = Number(response.headers.get('X-Blink-File-Count') ?? '0')
+    const fileCount = Number.isFinite(headerCount) ? Math.max(0, headerCount - stripped.removed) : 0
+    const overlayCount = Number(response.headers.get('X-Blink-Overlay-Count') ?? '0')
+    return {
+      blob: stripped.blob,
+      filename,
+      structure,
+      fileCount,
+      nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '/setup-new-workspace',
+      setupStatus: response.headers.get('X-Blink-Setup-Status')?.trim() || '',
+      identitySource: response.headers.get('X-Blink-Identity-Source')?.trim() || '',
+      overlayCount: Number.isFinite(overlayCount) ? overlayCount : 0,
+      folderStatus: response.headers.get('X-Blink-Folder-Status')?.trim() || '',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Download took too long. Try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+export interface GroomOptionDto {
+  id: string
+  label: string
+}
+
+export interface GroomQuestionDto {
+  id: string
+  text: string
+  options: GroomOptionDto[]
+  allowOther: boolean
+  priority?: 'need_clarification' | 'important' | 'suggestion'
+}
+
+export interface GroomClarifyResult {
+  runId?: string
+  command?: string
+  status: string
+  message: string
+  questions: GroomQuestionDto[]
+  requirementDraft: string
+  originalRequirement: string
+  errors?: string[]
+}
+
+export async function clarifyRequirement(options: {
+  projectId?: string | null
+  projectName?: string
+  requirementText: string
+  answers?: { questionId: string; optionId: string; optionLabel?: string; otherText?: string }[]
+}): Promise<GroomClarifyResult> {
+  const url = apiUrl('/grooming/clarify')
+  const answers = options.answers?.filter(
+    (item) => item.optionId !== 'other' || Boolean(item.otherText?.trim()),
   )
-  const headerCount = Number(response.headers.get('X-Blink-File-Count') ?? '0')
-  const fileCount = Number.isFinite(headerCount) ? Math.max(0, headerCount - stripped.removed) : 0
-  return {
-    blob: stripped.blob,
-    filename,
-    structure,
-    fileCount,
-    nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '/setup-new-workspace',
+  const body = {
+    projectId: options.projectId || undefined,
+    projectName: options.projectName || undefined,
+    requirementText: options.requirementText,
+    answers: answers?.length ? answers : undefined,
+  }
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 100_000)
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(
+          isLocalApi()
+            ? 'Local Blink API does not have the grooming endpoint. Restart blink-backend on port 8090 with the latest code.'
+            : (await readError(response)) || 'Grooming is not available on this API yet.',
+        )
+      }
+      throw new Error(await readError(response))
+    }
+    const parsed = (await response.json()) as GroomClarifyResult
+    return {
+      ...parsed,
+      questions: normalizeGroomQuestions(parsed.questions),
+      requirementDraft: parsed.requirementDraft ?? '',
+      originalRequirement: parsed.originalRequirement ?? options.requirementText,
+      message: parsed.message ?? '',
+      status: parsed.status ?? 'error',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The grooming helper took too long. Try again.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
   }
 }

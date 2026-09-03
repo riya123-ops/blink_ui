@@ -16,8 +16,14 @@ export interface WorkspaceEntry {
 }
 
 export function workspaceRootName(projectName: string): string {
-  const slug = githubRepoSlug(projectName)
-  return slug.endsWith('-workspace') ? slug : `${slug}-workspace`
+  const slug = projectName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80)
+  const base = slug || 'project'
+  return base.endsWith('_workspace') ? base : `${base}_workspace`
 }
 
 const SHARED_DOWNLOAD_FOLDERS = ['.cursor', 'automation_sdlc'] as const

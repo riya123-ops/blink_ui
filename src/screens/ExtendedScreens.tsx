@@ -569,31 +569,15 @@ export function GenerationDownloadScreen({
   onExportGithub?: () => void
 }) {
   const [copied, setCopied] = useState(false)
-  const packing = state.generationSteps.some((step) => step.id === 'package' && step.status === 'running')
-  const [packBoost, setPackBoost] = useState(0)
-
-  useEffect(() => {
-    if (!packing) {
-      setPackBoost(0)
-      return
-    }
-    const timer = window.setInterval(() => {
-      setPackBoost((n) => Math.min(n + 1, 14))
-    }, 400)
-    return () => window.clearInterval(timer)
-  }, [packing])
 
   if (!state.generationComplete && loading) {
     const steps = state.generationSteps
     const total = Math.max(steps.length, 1)
     const done = steps.filter((step) => step.status === 'done').length
     const running = steps.find((step) => step.status === 'running')
-    const base = Math.round((done / total) * 100)
-    const percent = packing
-      ? Math.min(95, Math.round(((total - 1) / total) * 100) + packBoost)
-      : running
-        ? Math.min(99, base + Math.round(50 / total))
-        : base
+    const percent = running
+      ? Math.min(99, Math.round((done / total) * 100) + Math.round(50 / total))
+      : Math.round((done / total) * 100)
 
     return (
       <div className="screen screen-ref gen-loading">
@@ -601,7 +585,7 @@ export function GenerationDownloadScreen({
         <p>{running?.label || 'Scaffolding repositories, configs, and SDLC structure.'}</p>
         <div className="gen-progress">
           <div className="gen-progress-copy">
-            <span>Packaging your download</span>
+            <span>{running?.label || 'Working…'}</span>
             <strong>{percent}%</strong>
           </div>
           <div

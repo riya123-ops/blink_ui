@@ -50,17 +50,7 @@ export function assignQuestionBands(questions: IncomingQuestion[]): GroomQuestio
         priority: (index < 2 ? 'need_clarification' : index < 5 ? 'important' : 'suggestion') as GroomPriority,
       }))
   if (mapped.length === 0) return mapped
-  const requiredCount = mapped.filter((question) => question.priority === 'need_clarification').length
-  const want = Math.min(2, mapped.length)
-  if (requiredCount >= want) return mapped
-  let missing = want - requiredCount
-  return mapped.map((question) => {
-    if (missing > 0 && question.priority !== 'need_clarification') {
-      missing -= 1
-      return { ...question, priority: 'need_clarification' }
-    }
-    return question
-  })
+  return mapped
 }
 
 export function requiredGroomQuestions(questions: GroomQuestion[]): GroomQuestion[] {

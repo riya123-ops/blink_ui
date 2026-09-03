@@ -84,6 +84,7 @@ export default function App() {
   const [creatingRepos, setCreatingRepos] = useState(false)
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
+  const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -124,6 +125,7 @@ export default function App() {
     const saved = await saveProject(projectPayload(), state.projectId)
     const id = String(saved.id)
     patch({ projectId: id })
+    setFolderQuery({ name: saved.projectName || projectPayload().projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
@@ -131,18 +133,18 @@ export default function App() {
   }, [projectPayload, state.projectId, patch])
 
   useEffect(() => {
-    if (folderPrep !== 'preparing' || !state.projectName.trim()) return
+    if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
     let cancelled = false
     const check = async () => {
       try {
-        const progress = await fetchWorkspaceStatus(state.projectName)
+        const progress = await fetchWorkspaceStatus(folderQuery.name, folderQuery.id)
         if (cancelled) return
         setFolderProgress({
           percent: progress.percent ?? 0,
           copied: progress.filesCopied ?? 0,
           total: progress.filesTotal ?? 0,
         })
-        if (progress.status === 'ready' || (progress.exists && progress.status !== 'preparing' && progress.status !== 'failed')) {
+        if (progress.status === 'ready') {
           setFolderProgress((prev) => ({ ...prev, percent: 100 }))
           setFolderPrep('ready')
           return
@@ -158,7 +160,7 @@ export default function App() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [state.projectName, folderPrep])
+  }, [folderQuery, folderPrep])
 
   useEffect(() => {
     if (folderPrep !== 'ready') return
@@ -562,6 +564,12 @@ export default function App() {
             ? 'Your zip downloaded. The cloud project folder is still copying in the background.'
             : 'Project generated and downloaded.',
       })
+      if (folderStatus === 'preparing') {
+        setFolderQuery({ name: state.projectName, id: projectId })
+        setFolderPrep('preparing')
+      } else if (folderStatus === 'ready') {
+        setFolderPrep('ready')
+      }
     } catch (e) {
       advanceStep('package', 'error')
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Generation failed.' })
@@ -700,7 +708,7 @@ export default function App() {
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
-        {!isSuccessScreen && !isWelcome && (
+        {(!isSuccessScreen || folderPrep === 'preparing') && !isWelcome && (
           <header className="top-bar">
             <div className="top-bar-start">
               <span className="step-indicator">

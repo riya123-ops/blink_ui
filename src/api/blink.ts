@@ -117,7 +117,7 @@ export async function fetchStakeholderRoles(): Promise<StakeholderRoleDto[]> {
   return response.json() as Promise<StakeholderRoleDto[]>
 }
 
-export async function fetchWorkspaceStatus(projectName: string): Promise<{
+export async function fetchWorkspaceStatus(projectName: string, projectId?: string | null): Promise<{
   workspaceKey?: string | null
   status?: 'preparing' | 'ready' | 'failed' | null
   filesCopied: number
@@ -125,7 +125,9 @@ export async function fetchWorkspaceStatus(projectName: string): Promise<{
   percent: number
   exists: boolean
 }> {
-  const url = apiUrl(`/projects/workspace-status?projectName=${encodeURIComponent(projectName)}`)
+  const params = new URLSearchParams({ projectName })
+  if (projectId) params.set('projectId', projectId)
+  const url = apiUrl(`/projects/workspace-status?${params.toString()}`)
   const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<{
@@ -150,7 +152,7 @@ export async function saveProject(payload: ProjectPayload, projectId?: string | 
   const method = projectId ? 'PUT' : 'POST'
   console.info(`[blink] ${method} ${url}`, payload)
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 20_000)
+  const timer = window.setTimeout(() => controller.abort(), 90_000)
   try {
     const response = await fetch(url, {
       method,

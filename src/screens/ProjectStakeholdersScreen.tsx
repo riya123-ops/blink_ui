@@ -13,6 +13,10 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
 }
 
+/** Matches backend ProjectRequest @Size limits. */
+export const PROJECT_NAME_MAX = 255
+export const PROJECT_DESCRIPTION_MAX = 8000
+
 function slugify(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-')
 }
@@ -143,22 +147,42 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         <h3 className="card-title">Project Details</h3>
         <div className="field-grid two-col">
           <div className="field-group">
-            <label htmlFor="projectName">Project Name *</label>
+            <div className="field-label-row">
+              <label htmlFor="projectName">Project Name *</label>
+              <span
+                id="projectName-count"
+                className={`field-count${state.projectName.length >= PROJECT_NAME_MAX ? ' is-limit' : ''}`}
+              >
+                {state.projectName.length.toLocaleString()} / {PROJECT_NAME_MAX.toLocaleString()}
+              </span>
+            </div>
             <input
               id="projectName"
               placeholder="e.g. Banking Application"
               value={state.projectName}
-              onChange={(e) => updateField('projectName', e.target.value)}
+              maxLength={PROJECT_NAME_MAX}
+              aria-describedby="projectName-count"
+              onChange={(e) => updateField('projectName', e.target.value.slice(0, PROJECT_NAME_MAX))}
             />
           </div>
           <div className="field-group span-full">
-            <label htmlFor="description">Project Description *</label>
+            <div className="field-label-row">
+              <label htmlFor="description">Project Description *</label>
+              <span
+                id="description-count"
+                className={`field-count${state.description.length >= PROJECT_DESCRIPTION_MAX ? ' is-limit' : ''}`}
+              >
+                {state.description.length.toLocaleString()} / {PROJECT_DESCRIPTION_MAX.toLocaleString()}
+              </span>
+            </div>
             <textarea
               id="description"
               rows={3}
               placeholder="Provide the short description of you requirement"
               value={state.description}
-              onChange={(e) => updateField('description', e.target.value)}
+              maxLength={PROJECT_DESCRIPTION_MAX}
+              aria-describedby="description-count"
+              onChange={(e) => updateField('description', e.target.value.slice(0, PROJECT_DESCRIPTION_MAX))}
             />
           </div>
         </div>
@@ -224,7 +248,13 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
 
 export function validateProjectStakeholders(state: WizardState): string | null {
   if (!state.projectName.trim()) return 'Project name is required.'
+  if (state.projectName.length > PROJECT_NAME_MAX) {
+    return `Project name can be at most ${PROJECT_NAME_MAX.toLocaleString()} characters.`
+  }
   if (!state.description.trim()) return 'Project description is required.'
+  if (state.description.length > PROJECT_DESCRIPTION_MAX) {
+    return `Project description can be at most ${PROJECT_DESCRIPTION_MAX.toLocaleString()} characters.`
+  }
   if (state.stakeholderAssignments.length === 0) return 'Add at least one stakeholder.'
   const missing = state.stakeholderAssignments.find((a) => !a.personEmail.trim() || !a.personName.trim())
   if (missing) return 'Every stakeholder must have a name and email.'

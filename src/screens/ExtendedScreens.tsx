@@ -569,6 +569,7 @@ export function GenerationDownloadScreen({
   onExportGithub?: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [copiedMcp, setCopiedMcp] = useState(false)
 
   if (!state.generationComplete && loading) {
     const steps = state.generationSteps
@@ -644,6 +645,19 @@ export function GenerationDownloadScreen({
     }
   }
 
+  const mcpSetupCommand =
+    'Copy-Item automation_sdlc\\env.mcp.example automation_sdlc\\.env.mcp; Copy-Item .cursor\\mcp.windows.json .cursor\\mcp.json -Force'
+
+  const copyMcpSetup = async () => {
+    try {
+      await navigator.clipboard.writeText(mcpSetupCommand)
+      setCopiedMcp(true)
+      window.setTimeout(() => setCopiedMcp(false), 1600)
+    } catch {
+      setCopiedMcp(false)
+    }
+  }
+
   return (
     <div className="screen screen-ref success-screen success-screen-full">
       <div className="confetti-wrap full" aria-hidden="true">
@@ -683,6 +697,20 @@ export function GenerationDownloadScreen({
                 <code>{nextCommand}</code>
                 <button type="button" className="ghost-btn" onClick={() => void copyCommand()}>
                   <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className="next-command-box">
+              <h4>MCP config in the zip</h4>
+              <p>
+                After unzip, open <code>{rootName}</code> in Cursor, then run (fills{' '}
+                <code>.env.mcp</code> from the example; Windows uses <code>mcp.windows.json</code>):
+              </p>
+              <div className="next-command-row">
+                <code>{mcpSetupCommand}</code>
+                <button type="button" className="ghost-btn" onClick={() => void copyMcpSetup()}>
+                  <Copy size={14} /> {copiedMcp ? 'Copied' : 'Copy'}
                 </button>
               </div>
             </div>

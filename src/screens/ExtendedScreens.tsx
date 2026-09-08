@@ -720,14 +720,20 @@ export function GenerationDownloadScreen({
                 <h4>Workspace overlay</h4>
                 {state.setupOverlayCount > 0 ? (
                   <p>
-                    {state.setupOverlayCount} file{state.setupOverlayCount === 1 ? '' : 's'} added under{' '}
+                    Canonical setup added {state.setupOverlayCount} file{state.setupOverlayCount === 1 ? '' : 's'} under{' '}
                     <code>.cursor/ai-sdlc</code>
                     {state.setupIdentitySource
                       ? ` from ${state.setupIdentitySource === 'requirement' ? 'your requirement' : 'the project description'}.`
                       : '.'}
                   </p>
                 ) : (
-                  <p>Blink could not add the extra workspace notes this time. Your zip still downloaded.</p>
+                  <p>Canonical workspace setup was not completed, so no download was created.</p>
+                )}
+                {state.setupOverlayCount > 0 && (
+                  <p className="muted">
+                    Context readiness: {state.setupContextReady ? 'ready' : 'needs follow-up'} · Delivery readiness:{' '}
+                    {state.setupDeliveryReady ? 'ready' : 'topology confirmation required'}
+                  </p>
                 )}
               </div>
             )}

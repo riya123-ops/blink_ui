@@ -58,7 +58,7 @@ export function buildDownloadStructure(repositories: { name: string }[] = []): W
   ])
 }
 
-export const NEXT_SDLC_COMMAND = '/setup-new-workspace'
+export const NEXT_SDLC_COMMAND = '/configure-stakeholders'
 
 export interface RepoTechnology {
   repoId: string

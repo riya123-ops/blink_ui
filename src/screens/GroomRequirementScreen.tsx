@@ -34,7 +34,6 @@ function QuestionCard({
   onOther: Props['onOther']
   onToggleOther: Props['onToggleOther']
 }) {
-  const [showOtherText, setShowOtherText] = useState(false)
   const options = (Array.isArray(question.options) ? question.options : []).filter(
     (option) => option.id !== 'other' && option.label.trim().toLowerCase() !== 'other',
   )
@@ -45,6 +44,7 @@ function QuestionCard({
     state.groomAnswers.filter((item) => item.questionId === question.id).map((item) => item.optionId),
   )
   const otherAnswer = state.groomAnswers.find((item) => item.questionId === question.id && item.optionId === 'other')
+  const [showOtherText, setShowOtherText] = useState(Boolean(otherAnswer))
   const isOtherSelected = Boolean(otherAnswer) || showOtherText
 
   function toggleOther(checked: boolean) {
@@ -70,7 +70,7 @@ function QuestionCard({
             >
               <input
                 type={isMultiple ? 'checkbox' : 'radio'}
-                name={question.id}
+                name={isMultiple ? undefined : question.id}
                 checked={checked}
                 onChange={() => onPick(question.id, option.id, option.label)}
               />
@@ -88,7 +88,7 @@ function QuestionCard({
             <label className={`groom-option ${isOtherSelected ? 'selected' : ''}`}>
               <input
                 type={isMultiple ? 'checkbox' : 'radio'}
-                name={question.id}
+                name={isMultiple ? undefined : question.id}
                 checked={isOtherSelected}
                 onChange={(e) => toggleOther(e.target.checked)}
               />

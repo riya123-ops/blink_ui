@@ -1,7 +1,11 @@
+import { CircleCheck } from 'lucide-react'
 import { TalentServLogo } from './TalentServLogo'
 import { BlinkLogo } from './BlinkLogo'
 import { STEP_ORDER, WIZARD_STEPS, canNavigateToStep, stepIndex } from '../wizard/steps'
 import type { WizardStep } from '../wizard/types'
+
+const ICON_DONE = '#16a34a'
+const ICON_PENDING = '#94a3b8'
 
 interface Props {
   currentStep: WizardStep
@@ -36,11 +40,9 @@ export function WizardSidebar({
             const isActive = currentStep === step.id
             const skipped = generationComplete && idx > completedThrough && idx < generationIdx
             const isDone =
-              !skipped &&
-              !isActive &&
-              (idx <= completedThrough || (generationComplete && step.id === 'generation'))
+              !skipped && (idx <= completedThrough || (generationComplete && step.id === 'generation'))
             const clickable = canNavigateToStep(step.id, currentStep, completedThrough, groomingUnlocked)
-            const Icon = step.icon
+            const Icon = isDone ? CircleCheck : step.icon
             return (
               <li
                 key={step.id}
@@ -50,7 +52,7 @@ export function WizardSidebar({
                 role={clickable ? 'button' : undefined}
                 tabIndex={clickable ? 0 : undefined}
               >
-                <Icon size={14} color={skipped ? '#94a3b8' : step.iconColor} />
+                <Icon size={15} color={isDone ? ICON_DONE : ICON_PENDING} strokeWidth={isDone ? 2.4 : 2} />
                 <span className="nav-label">{step.label}</span>
               </li>
             )

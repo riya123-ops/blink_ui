@@ -11,6 +11,7 @@ interface Props {
   onAsk?: () => void
   onPick?: (questionId: string, optionId: string, optionLabel: string) => void
   onOther?: (questionId: string, text: string) => void
+  onToggleOther?: (questionId: string, checked: boolean) => void
   onUseWording?: () => void
   onStartOver?: () => void
 }
@@ -32,11 +33,13 @@ export function RequirementsScreen({
   onAsk,
   onPick,
   onOther,
+  onToggleOther,
   onUseWording,
   onStartOver,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const zipInputRef = useRef<HTMLInputElement>(null)
+  const pasteRef = useRef<HTMLTextAreaElement>(null)
   const hasUploadedFile = Boolean(state.requirementFileName)
   const hasPaste = Boolean(state.requirementsText.trim())
   const pasteLocked =
@@ -48,6 +51,13 @@ export function RequirementsScreen({
       onUpdate({ requirementsText: '' })
     }
   }, [state.requirementFileName, state.requirementsText, onUpdate])
+
+  useEffect(() => {
+    const el = pasteRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [state.requirementsText, hasUploadedFile])
 
   return (
     <div className="screen screen-ref">
@@ -103,9 +113,10 @@ export function RequirementsScreen({
                   : 'Use this only if you don\u2019t have a requirement document to upload.'}
               </p>
               <textarea
+                ref={pasteRef}
                 id="requirementsText"
                 className={`req-textarea${pasteLocked ? ' locked' : ''}`}
-                rows={6}
+                rows={8}
                 placeholder="Paste your requirements here…"
                 value={state.requirementsText}
                 readOnly={pasteLocked}
@@ -115,13 +126,14 @@ export function RequirementsScreen({
           </>
         )}
 
-        {hasPaste && onAsk && onPick && onOther && onUseWording && onStartOver && (
+        {hasPaste && onAsk && onPick && onOther && onToggleOther && onUseWording && onStartOver && (
           <GroomingPanel
             state={state}
             loading={Boolean(grooming)}
             onAsk={onAsk}
             onPick={onPick}
             onOther={onOther}
+            onToggleOther={onToggleOther}
             onUseWording={onUseWording}
             onStartOver={onStartOver}
           />

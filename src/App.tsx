@@ -537,6 +537,9 @@ export default function App() {
       }))
       const setupRequirement =
         state.groomConfirmed && state.groomDraft.trim() ? state.groomDraft.trim() : state.requirementsText
+      const connected = state.integrations.filter((item) => item.connected)
+      const jira = connected.find((item) => item.id === 'jira')
+      const confluence = connected.find((item) => item.id === 'confluence')
       const {
         blob,
         filename,
@@ -580,6 +583,13 @@ export default function App() {
               projectKey,
               spaceKey,
             })),
+        },
+        mcpProviders: connected.map((item) => item.id),
+        mcpSiteHints: {
+          jiraUrl: jira?.baseUrl,
+          jiraEmail: jira?.email,
+          confluenceUrl: confluence?.baseUrl,
+          confluenceEmail: confluence?.email,
         },
       })
       if (!setupValidated) {

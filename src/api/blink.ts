@@ -283,6 +283,15 @@ export async function downloadWorkspace(options: {
   requirementsText: string
   repositories?: { name: string; purpose?: string; description?: string }[]
   setupContext?: Record<string, unknown>
+  /** Connected integration ids for .cursor/mcp.json (github, jira, confluence). */
+  mcpProviders?: string[]
+  /** Non-secret site hints for automation_sdlc/.env.mcp.example (never tokens). */
+  mcpSiteHints?: {
+    jiraUrl?: string
+    jiraEmail?: string
+    confluenceUrl?: string
+    confluenceEmail?: string
+  }
 }): Promise<DownloadResult> {
   const form = new FormData()
   if (options.file) form.append('file', options.file)
@@ -297,6 +306,17 @@ export async function downloadWorkspace(options: {
     }
   }
   if (options.setupContext) form.append('setupContext', JSON.stringify(options.setupContext))
+  if (options.mcpProviders?.length) {
+    for (const provider of options.mcpProviders) {
+      const id = provider.trim().toLowerCase()
+      if (id) form.append('mcpProvider', id)
+    }
+  }
+  const hints = options.mcpSiteHints
+  if (hints?.jiraUrl?.trim()) form.append('mcpJiraUrl', hints.jiraUrl.trim())
+  if (hints?.jiraEmail?.trim()) form.append('mcpJiraEmail', hints.jiraEmail.trim())
+  if (hints?.confluenceUrl?.trim()) form.append('mcpConfluenceUrl', hints.confluenceUrl.trim())
+  if (hints?.confluenceEmail?.trim()) form.append('mcpConfluenceEmail', hints.confluenceEmail.trim())
   const url = apiUrl(`/projects/${options.projectId}/download`)
   console.info(`[blink] POST ${url}`)
   const controller = new AbortController()

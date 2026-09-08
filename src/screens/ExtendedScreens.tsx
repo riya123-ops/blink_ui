@@ -646,7 +646,7 @@ export function GenerationDownloadScreen({
   }
 
   const mcpSetupCommand =
-    'Copy-Item automation_sdlc\\env.mcp.example automation_sdlc\\.env.mcp; Copy-Item .cursor\\mcp.windows.json .cursor\\mcp.json -Force'
+    'Copy-Item automation_sdlc\\env.mcp.example automation_sdlc\\.env.mcp'
 
   const copyMcpSetup = async () => {
     try {
@@ -704,8 +704,8 @@ export function GenerationDownloadScreen({
             <div className="next-command-box">
               <h4>MCP config in the zip</h4>
               <p>
-                After unzip, open <code>{rootName}</code> in Cursor, then run (fills{' '}
-                <code>.env.mcp</code> from the example; Windows uses <code>mcp.windows.json</code>):
+                After unzip, open <code>{rootName}</code> in Cursor, copy the env example, add tokens, then reload MCP
+                (default <code>mcp.json</code> is already Windows-ready):
               </p>
               <div className="next-command-row">
                 <code>{mcpSetupCommand}</code>

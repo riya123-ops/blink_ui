@@ -73,11 +73,18 @@ export interface GenerationStep {
   status: 'pending' | 'running' | 'done' | 'error'
 }
 
+export interface GroomOption {
+  id: string
+  label: string
+  description?: string
+}
+
 export interface GroomQuestion {
   id: string
   text: string
-  options: { id: string; label: string }[]
+  options: GroomOption[]
   allowOther: boolean
+  allowMultiple?: boolean
   priority: 'need_clarification' | 'important' | 'suggestion'
 }
 
@@ -106,6 +113,7 @@ export interface WizardState extends SetupForm {
   sourceZipName: string | null
   skipSourceWarning: boolean
   stakeholderAssignments: StakeholderAssignment[]
+  sodWarnings: string[]
   questions: StakeholderQuestion[]
   responses: QuestionResponse[]
   questionsSent: boolean
@@ -196,6 +204,7 @@ export const defaultWizardState: WizardState = {
   sourceZipName: null,
   skipSourceWarning: false,
   stakeholderAssignments: defaultStakeholderAssignments(),
+  sodWarnings: [],
   questions: [],
   responses: [],
   questionsSent: false,

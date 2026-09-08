@@ -121,16 +121,27 @@ export default function App() {
   const persistProject = useCallback(async (): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
+    sodWarnings?: string[]
+    nextCommand?: string
   }> => {
     const saved = await saveProject(projectPayload(), state.projectId)
     const id = String(saved.id)
-    patch({ projectId: id })
+    patch({
+      projectId: id,
+      sodWarnings: saved.sodWarnings || [],
+      nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
+    })
     setFolderQuery({ name: saved.projectName || projectPayload().projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
-    return { id, workspaceStatus: saved.workspaceStatus }
-  }, [projectPayload, state.projectId, patch])
+    return {
+      id,
+      workspaceStatus: saved.workspaceStatus,
+      sodWarnings: saved.sodWarnings,
+      nextCommand: saved.nextCommand,
+    }
+  }, [projectPayload, state.projectId, state.nextSdlcCommand, patch])
 
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
@@ -236,13 +247,20 @@ export default function App() {
       setStatus(null)
       try {
         const saved = await persistProject()
-        setStatus({
-          type: 'success',
-          message:
-            saved.workspaceStatus === 'preparing'
-              ? 'Saved. We are preparing your project folder — you can keep going.'
-              : 'Project saved.',
-        })
+        if (saved.sodWarnings && saved.sodWarnings.length > 0) {
+          setStatus({
+            type: 'info',
+            message: `Project & stakeholders configured with governance note: ${saved.sodWarnings[0]}`,
+          })
+        } else {
+          setStatus({
+            type: 'success',
+            message:
+              saved.workspaceStatus === 'preparing'
+                ? 'Saved. We are preparing your project folder — you can keep going.'
+                : 'Project & stakeholders configured successfully.',
+          })
+        }
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
@@ -342,38 +360,56 @@ export default function App() {
 
   const handleGroomPick = useCallback((questionId: string, optionId: string, optionLabel: string) => {
     setState((prev) => {
-      const otherOn = prev.groomAnswers.some((item) => item.questionId === questionId && item.optionId === 'other')
-      if (otherOn && optionId !== 'other') return prev
+      const q = prev.groomQuestions.find((item) => item.id === questionId)
+      const isMultiple = q?.allowMultiple !== false
       const isSame = (item: GroomAnswer) => item.questionId === questionId && item.optionId === optionId
       const exists = prev.groomAnswers.some(isSame)
-      const groomAnswers = exists
-        ? prev.groomAnswers.filter((item) => !isSame(item))
-        : [...prev.groomAnswers, { questionId, optionId, optionLabel }]
-      return { ...prev, groomAnswers, groomConfirmed: false }
+
+      let nextAnswers: GroomAnswer[]
+      if (isMultiple) {
+        if (exists) {
+          nextAnswers = prev.groomAnswers.filter((item) => !isSame(item))
+        } else {
+          nextAnswers = [...prev.groomAnswers, { questionId, optionId, optionLabel }]
+        }
+      } else {
+        const withoutQuestion = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+        nextAnswers = exists ? withoutQuestion : [...withoutQuestion, { questionId, optionId, optionLabel }]
+      }
+      return { ...prev, groomAnswers: nextAnswers, groomConfirmed: false }
     })
   }, [])
 
   const handleGroomToggleOther = useCallback((questionId: string, checked: boolean) => {
     setState((prev) => {
-      const kept = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+      const q = prev.groomQuestions.find((item) => item.id === questionId)
+      const isMultiple = q?.allowMultiple !== false
+
       if (!checked) {
+        const kept = prev.groomAnswers.filter(
+          (item) => !(item.questionId === questionId && item.optionId === 'other'),
+        )
         return { ...prev, groomAnswers: kept, groomConfirmed: false }
       }
+
       const existingOther = prev.groomAnswers.find(
         (item) => item.questionId === questionId && item.optionId === 'other',
       )
-      return {
-        ...prev,
-        groomAnswers: [
-          ...kept,
-          {
-            questionId,
-            optionId: 'other',
-            optionLabel: 'Other',
-            otherText: existingOther?.otherText ?? '',
-          },
-        ],
-        groomConfirmed: false,
+      const otherItem: GroomAnswer = {
+        questionId,
+        optionId: 'other',
+        optionLabel: 'Other',
+        otherText: existingOther?.otherText ?? '',
+      }
+
+      if (isMultiple) {
+        const kept = prev.groomAnswers.filter(
+          (item) => !(item.questionId === questionId && item.optionId === 'other'),
+        )
+        return { ...prev, groomAnswers: [...kept, otherItem], groomConfirmed: false }
+      } else {
+        const kept = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+        return { ...prev, groomAnswers: [...kept, otherItem], groomConfirmed: false }
       }
     })
   }, [])
@@ -591,9 +627,10 @@ export default function App() {
           projectName: state.projectName,
           projectType: state.projectType,
           requirementConfirmed: state.groomConfirmed,
-          stakeholderAssignments: state.stakeholderAssignments.map(({ roleId, personName }) => ({
+          stakeholderAssignments: state.stakeholderAssignments.map(({ roleId, personName, personEmail }) => ({
             roleId,
             personName,
+            personEmail,
           })),
           topology: state.topology,
           repositoryModel: state.repositoryModel,

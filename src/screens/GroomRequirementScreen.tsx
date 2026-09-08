@@ -39,11 +39,13 @@ function QuestionCard({
     (option) => option.id !== 'other' && option.label.trim().toLowerCase() !== 'other',
   )
   if (!question.id || !question.text || options.length < 2) return null
+
+  const isMultiple = question.allowMultiple !== false
   const selectedIds = new Set(
     state.groomAnswers.filter((item) => item.questionId === question.id).map((item) => item.optionId),
   )
   const otherAnswer = state.groomAnswers.find((item) => item.questionId === question.id && item.optionId === 'other')
-  const optionsDisabled = showOtherText
+  const isOtherSelected = Boolean(otherAnswer) || showOtherText
 
   function toggleOther(checked: boolean) {
     setShowOtherText(checked)
@@ -52,42 +54,61 @@ function QuestionCard({
 
   return (
     <fieldset className="groom-question">
-      <legend>{question.text}</legend>
+      <legend className="groom-question-legend">
+        <span className="groom-question-text">{question.text}</span>
+        <span className="groom-question-badge">
+          {isMultiple ? 'Select all that apply' : 'Select one'}
+        </span>
+      </legend>
       <div className="groom-options">
         {options.map((option) => {
           const checked = selectedIds.has(option.id)
           return (
             <label
               key={option.id}
-              className={`groom-option ${checked ? 'selected' : ''} ${optionsDisabled ? 'disabled' : ''}`}
+              className={`groom-option ${checked ? 'selected' : ''}`}
             >
               <input
-                type="checkbox"
+                type={isMultiple ? 'checkbox' : 'radio'}
+                name={question.id}
                 checked={checked}
-                disabled={optionsDisabled}
                 onChange={() => onPick(question.id, option.id, option.label)}
               />
-              {option.label}
+              <div className="groom-option-content">
+                <span className="groom-option-label">{option.label}</span>
+                {option.description ? (
+                  <span className="groom-option-desc">{option.description}</span>
+                ) : null}
+              </div>
             </label>
           )
         })}
-        <label className={`groom-option ${showOtherText ? 'selected' : ''}`}>
-          <input
-            type="checkbox"
-            checked={showOtherText}
-            onChange={(e) => toggleOther(e.target.checked)}
-          />
-          Other
-        </label>
-        {showOtherText ? (
-          <textarea
-            className="full-input groom-other-input"
-            rows={3}
-            placeholder="Type your answer"
-            value={otherAnswer?.otherText ?? ''}
-            onChange={(e) => onOther(question.id, e.target.value)}
-          />
-        ) : null}
+        {question.allowOther !== false && (
+          <>
+            <label className={`groom-option ${isOtherSelected ? 'selected' : ''}`}>
+              <input
+                type={isMultiple ? 'checkbox' : 'radio'}
+                name={question.id}
+                checked={isOtherSelected}
+                onChange={(e) => toggleOther(e.target.checked)}
+              />
+              <div className="groom-option-content">
+                <span className="groom-option-label">Other</span>
+                <span className="groom-option-desc">Enter your custom suggestion</span>
+              </div>
+            </label>
+            {isOtherSelected ? (
+              <textarea
+                className="full-input groom-other-input"
+                rows={3}
+                placeholder="Enter your custom suggestion here..."
+                value={otherAnswer?.otherText ?? ''}
+                onChange={(e) => onOther(question.id, e.target.value)}
+                autoFocus
+              />
+            ) : null}
+          </>
+        )}
       </div>
     </fieldset>
   )

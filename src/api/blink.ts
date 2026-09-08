@@ -43,6 +43,17 @@ export interface ProjectDto {
   workspaceKey?: string | null
   workspaceUrl?: string | null
   workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
+  sodWarnings?: string[]
+  nextCommand?: string
+}
+
+export interface ConfigureStakeholdersResponse {
+  status: string
+  message: string
+  nextCommand: string
+  sodWarnings: string[]
+  errors: string[]
+  rolesConfigured: number
 }
 
 async function readError(response: Response): Promise<string> {
@@ -83,8 +94,9 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
           const option = opt as Record<string, unknown>
           const label = String(option.label || '').trim()
           const id = String(option.id || '').trim()
+          const description = option.description ? String(option.description).trim() : undefined
           if (!label || !id) return []
-          return [{ id: id || `opt-${optIndex + 1}`, label }]
+          return [{ id: id || `opt-${optIndex + 1}`, label, ...(description ? { description } : {}) }]
         })
       : []
     const text = String(row.text || '').trim()
@@ -102,7 +114,8 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
         id: id || `q-${index + 1}`,
         text,
         options,
-        allowOther: Boolean(row.allowOther),
+        allowOther: row.allowOther !== false,
+        allowMultiple: Boolean(row.allowMultiple),
         ...(priority ? { priority } : {}),
       },
     ]
@@ -170,6 +183,20 @@ export async function saveProject(payload: ProjectPayload, projectId?: string | 
   } finally {
     window.clearTimeout(timer)
   }
+}
+
+export async function configureStakeholders(
+  projectId: string,
+  stakeholders?: StakeholderPayload[]
+): Promise<ConfigureStakeholdersResponse> {
+  const url = apiUrl(`/projects/${projectId}/configure-stakeholders`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stakeholders || []),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ConfigureStakeholdersResponse>
 }
 
 export interface IntegrationConnectPayload {
@@ -366,6 +393,7 @@ export async function downloadWorkspace(options: {
 export interface GroomOptionDto {
   id: string
   label: string
+  description?: string
 }
 
 export interface GroomQuestionDto {
@@ -373,6 +401,7 @@ export interface GroomQuestionDto {
   text: string
   options: GroomOptionDto[]
   allowOther: boolean
+  allowMultiple?: boolean
   priority?: 'need_clarification' | 'important' | 'suggestion'
 }
 

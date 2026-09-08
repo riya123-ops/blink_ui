@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { fetchStakeholderRoles } from '../api/blink'
 import {
   STAKEHOLDER_ROLES,
@@ -142,6 +142,34 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         <h2>Project &amp; Stakeholders</h2>
         <p>Define your project and assign stakeholders to roles.</p>
       </div>
+
+      {state.sodWarnings && state.sodWarnings.length > 0 && (
+        <div
+          className="sod-banner"
+          style={{
+            background: 'rgba(234, 179, 8, 0.1)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            color: '#ca8a04',
+            fontSize: '13px',
+          }}
+        >
+          <ShieldAlert size={18} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Governance Note (Separation of Duties):</strong>
+            <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+              {state.sodWarnings.map((w, idx) => (
+                <li key={idx}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <h3 className="card-title">Project Details</h3>

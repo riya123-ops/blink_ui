@@ -535,12 +535,22 @@ export default function App() {
         purpose: repo.purpose,
         description: repo.description,
       }))
+      const connected = state.integrations.filter((item) => item.connected)
+      const jira = connected.find((item) => item.id === 'jira')
+      const confluence = connected.find((item) => item.id === 'confluence')
       const { blob, filename, structure, fileCount, nextCommand, setupStatus, identitySource, overlayCount, folderStatus } =
         await downloadWorkspace({
         projectId,
         file: state.requirementFile,
         requirementsText: state.requirementsText,
         repositories,
+        mcpProviders: connected.map((item) => item.id),
+        mcpSiteHints: {
+          jiraUrl: jira?.baseUrl,
+          jiraEmail: jira?.email,
+          confluenceUrl: confluence?.baseUrl,
+          confluenceEmail: confluence?.email,
+        },
       })
 
       advanceStep('package', 'done')

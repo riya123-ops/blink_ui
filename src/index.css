@@ -281,9 +281,15 @@ textarea {
   width: 15px;
   height: 15px;
   opacity: 1;
+  color: #94a3b8;
 }
 
-.nav-item.active svg {
+.nav-item.done svg {
+  color: #16a34a;
+}
+
+.nav-item.active:not(.done) svg {
+  color: #94a3b8;
   opacity: 1;
 }
 
@@ -1756,7 +1762,12 @@ textarea::placeholder {
 }
 
 .req-textarea {
-  min-height: 120px;
+  min-height: 180px;
+  max-height: none;
+  height: auto;
+  overflow: auto;
+  resize: vertical;
+  field-sizing: content;
 }
 
 .req-textarea:disabled {
@@ -3772,6 +3783,30 @@ textarea::placeholder {
 .groom-option.selected {
   border-color: #c7d2fe;
   background: #eef2ff;
+}
+
+.groom-option.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.groom-option input[type='checkbox'] {
+  margin-top: 0.18rem;
+  flex-shrink: 0;
+  accent-color: var(--blue);
+}
+
+.groom-option input[type='checkbox']:disabled {
+  cursor: not-allowed;
+}
+
+.groom-other-input {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 4.5rem;
+  margin: 0.15rem 0 0.25rem;
+  resize: vertical;
 }
 
 .groom-panel {

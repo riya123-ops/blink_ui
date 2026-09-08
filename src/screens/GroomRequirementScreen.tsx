@@ -16,6 +16,7 @@ interface Props {
   onAsk: () => void
   onPick: (questionId: string, optionId: string, optionLabel: string) => void
   onOther: (questionId: string, text: string) => void
+  onToggleOther: (questionId: string, checked: boolean) => void
   onUseWording: () => void
   onStartOver: () => void
 }
@@ -25,39 +26,69 @@ function QuestionCard({
   state,
   onPick,
   onOther,
+  onToggleOther,
 }: {
   question: GroomQuestion
   state: WizardState
   onPick: Props['onPick']
   onOther: Props['onOther']
+  onToggleOther: Props['onToggleOther']
 }) {
-  const options = Array.isArray(question.options) ? question.options : []
+  const [showOtherText, setShowOtherText] = useState(false)
+  const options = (Array.isArray(question.options) ? question.options : []).filter(
+    (option) => option.id !== 'other' && option.label.trim().toLowerCase() !== 'other',
+  )
   if (!question.id || !question.text || options.length < 2) return null
-  const answer = state.groomAnswers.find((item) => item.questionId === question.id)
+  const selectedIds = new Set(
+    state.groomAnswers.filter((item) => item.questionId === question.id).map((item) => item.optionId),
+  )
+  const otherAnswer = state.groomAnswers.find((item) => item.questionId === question.id && item.optionId === 'other')
+  const optionsDisabled = showOtherText
+
+  function toggleOther(checked: boolean) {
+    setShowOtherText(checked)
+    onToggleOther(question.id, checked)
+  }
+
   return (
     <fieldset className="groom-question">
       <legend>{question.text}</legend>
       <div className="groom-options">
-        {options.map((option) => (
-          <label key={option.id} className={`groom-option ${answer?.optionId === option.id ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name={question.id}
-              checked={answer?.optionId === option.id}
-              onChange={() => onPick(question.id, option.id, option.label)}
-            />
-            {option.label}
-          </label>
-        ))}
+        {options.map((option) => {
+          const checked = selectedIds.has(option.id)
+          return (
+            <label
+              key={option.id}
+              className={`groom-option ${checked ? 'selected' : ''} ${optionsDisabled ? 'disabled' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={optionsDisabled}
+                onChange={() => onPick(question.id, option.id, option.label)}
+              />
+              {option.label}
+            </label>
+          )
+        })}
+        <label className={`groom-option ${showOtherText ? 'selected' : ''}`}>
+          <input
+            type="checkbox"
+            checked={showOtherText}
+            onChange={(e) => toggleOther(e.target.checked)}
+          />
+          Other
+        </label>
+        {showOtherText ? (
+          <textarea
+            className="full-input groom-other-input"
+            rows={3}
+            placeholder="Type your answer"
+            value={otherAnswer?.otherText ?? ''}
+            onChange={(e) => onOther(question.id, e.target.value)}
+          />
+        ) : null}
       </div>
-      {question.allowOther && (
-        <input
-          className="full-input"
-          placeholder="Other"
-          value={answer?.optionId === 'other' ? answer.otherText ?? '' : ''}
-          onChange={(e) => onOther(question.id, e.target.value)}
-        />
-      )}
     </fieldset>
   )
 }
@@ -69,6 +100,7 @@ function Band({
   defaultOpen,
   onPick,
   onOther,
+  onToggleOther,
 }: {
   band: (typeof GROOM_BANDS)[number]
   questions: GroomQuestion[]
@@ -76,6 +108,7 @@ function Band({
   defaultOpen: boolean
   onPick: Props['onPick']
   onOther: Props['onOther']
+  onToggleOther: Props['onToggleOther']
 }) {
   const [open, setOpen] = useState(defaultOpen)
   if (!questions.length) return null
@@ -96,7 +129,14 @@ function Band({
         <>
           <p className="groom-band-hint">{band.hint}</p>
           {questions.map((question) => (
-            <QuestionCard key={question.id} question={question} state={state} onPick={onPick} onOther={onOther} />
+            <QuestionCard
+              key={question.id}
+              question={question}
+              state={state}
+              onPick={onPick}
+              onOther={onOther}
+              onToggleOther={onToggleOther}
+            />
           ))}
         </>
       )}
@@ -104,7 +144,7 @@ function Band({
   )
 }
 
-export function GroomingPanel({ state, loading, onAsk, onPick, onOther, onUseWording, onStartOver }: Props) {
+export function GroomingPanel({ state, loading, onAsk, onPick, onOther, onToggleOther, onUseWording, onStartOver }: Props) {
   const questions = state.groomQuestions
   const missingRequired = unansweredRequired(state)
   const asked = questions.length > 0 || state.groomStatus === 'draft_ready' || state.groomStatus === 'error'
@@ -151,6 +191,7 @@ export function GroomingPanel({ state, loading, onAsk, onPick, onOther, onUseWor
           defaultOpen={band.required}
           onPick={onPick}
           onOther={onOther}
+          onToggleOther={onToggleOther}
         />
       ))}
 

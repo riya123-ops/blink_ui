@@ -57,11 +57,15 @@ export function requiredGroomQuestions(questions: GroomQuestion[]): GroomQuestio
   return questionsInBand(questions, 'need_clarification')
 }
 
+export function answersForQuestion(questionId: string, answers: GroomAnswer[]): GroomAnswer[] {
+  return answers.filter((item) => item.questionId === questionId)
+}
+
 export function isAnswered(question: GroomQuestion, answers: GroomAnswer[]): boolean {
-  const answer = answers.find((item) => item.questionId === question.id)
-  if (!answer) return false
-  if (answer.optionId === 'other') return Boolean(answer.otherText?.trim())
-  return Boolean(answer.optionId)
+  const rows = answersForQuestion(question.id, answers)
+  const pickedOption = rows.some((item) => item.optionId !== 'other' && Boolean(item.optionId))
+  const otherFilled = rows.some((item) => item.optionId === 'other' && Boolean(item.otherText?.trim()))
+  return pickedOption || otherFilled
 }
 
 export function unansweredRequired(state: Pick<WizardState, 'groomQuestions' | 'groomAnswers'>): GroomQuestion[] {

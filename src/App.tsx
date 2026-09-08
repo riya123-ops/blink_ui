@@ -342,18 +342,45 @@ export default function App() {
 
   const handleGroomPick = useCallback((questionId: string, optionId: string, optionLabel: string) => {
     setState((prev) => {
-      const rest = prev.groomAnswers.filter((item) => item.questionId !== questionId)
-      const next: GroomAnswer = { questionId, optionId, optionLabel }
-      return { ...prev, groomAnswers: [...rest, next], groomConfirmed: false }
+      const otherOn = prev.groomAnswers.some((item) => item.questionId === questionId && item.optionId === 'other')
+      if (otherOn && optionId !== 'other') return prev
+      const isSame = (item: GroomAnswer) => item.questionId === questionId && item.optionId === optionId
+      const exists = prev.groomAnswers.some(isSame)
+      const groomAnswers = exists
+        ? prev.groomAnswers.filter((item) => !isSame(item))
+        : [...prev.groomAnswers, { questionId, optionId, optionLabel }]
+      return { ...prev, groomAnswers, groomConfirmed: false }
+    })
+  }, [])
+
+  const handleGroomToggleOther = useCallback((questionId: string, checked: boolean) => {
+    setState((prev) => {
+      const kept = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+      if (!checked) {
+        return { ...prev, groomAnswers: kept, groomConfirmed: false }
+      }
+      const existingOther = prev.groomAnswers.find(
+        (item) => item.questionId === questionId && item.optionId === 'other',
+      )
+      return {
+        ...prev,
+        groomAnswers: [
+          ...kept,
+          {
+            questionId,
+            optionId: 'other',
+            optionLabel: 'Other',
+            otherText: existingOther?.otherText ?? '',
+          },
+        ],
+        groomConfirmed: false,
+      }
     })
   }, [])
 
   const handleGroomOther = useCallback((questionId: string, text: string) => {
     setState((prev) => {
-      const rest = prev.groomAnswers.filter((item) => item.questionId !== questionId)
-      if (!text.trim()) {
-        return { ...prev, groomAnswers: rest, groomConfirmed: false }
-      }
+      const rest = prev.groomAnswers.filter((item) => !(item.questionId === questionId && item.optionId === 'other'))
       const next: GroomAnswer = { questionId, optionId: 'other', optionLabel: 'Other', otherText: text }
       return { ...prev, groomAnswers: [...rest, next], groomConfirmed: false }
     })
@@ -695,6 +722,7 @@ export default function App() {
             onAsk={() => void handleGroomAsk()}
             onPick={handleGroomPick}
             onOther={handleGroomOther}
+            onToggleOther={handleGroomToggleOther}
             onUseWording={() => void handleGroomLooksGood()}
             onStartOver={handleGroomStartOver}
           />

@@ -256,8 +256,11 @@ export interface DownloadResult {
   fileCount: number
   nextCommand: string
   setupStatus: string
+  setupValidated: boolean
   identitySource: string
   overlayCount: number
+  contextReady: boolean
+  deliveryReady: boolean
   folderStatus: string
 }
 
@@ -279,6 +282,7 @@ export async function downloadWorkspace(options: {
   file: File | null
   requirementsText: string
   repositories?: { name: string; purpose?: string; description?: string }[]
+  setupContext?: Record<string, unknown>
 }): Promise<DownloadResult> {
   const form = new FormData()
   if (options.file) form.append('file', options.file)
@@ -292,6 +296,7 @@ export async function downloadWorkspace(options: {
       form.append('repoDescription', repo.description ?? '')
     }
   }
+  if (options.setupContext) form.append('setupContext', JSON.stringify(options.setupContext))
   const url = apiUrl(`/projects/${options.projectId}/download`)
   console.info(`[blink] POST ${url}`)
   const controller = new AbortController()
@@ -319,10 +324,13 @@ export async function downloadWorkspace(options: {
       filename,
       structure,
       fileCount,
-      nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '/setup-new-workspace',
+      nextCommand: response.headers.get('X-Blink-Next-Command')?.trim() || '',
       setupStatus: response.headers.get('X-Blink-Setup-Status')?.trim() || '',
+      setupValidated: response.headers.get('X-Blink-Setup-Validated')?.trim().toLowerCase() === 'true',
       identitySource: response.headers.get('X-Blink-Identity-Source')?.trim() || '',
       overlayCount: Number.isFinite(overlayCount) ? overlayCount : 0,
+      contextReady: response.headers.get('X-Blink-Context-Ready') === 'true',
+      deliveryReady: response.headers.get('X-Blink-Delivery-Ready') === 'true',
       folderStatus: response.headers.get('X-Blink-Folder-Status')?.trim() || '',
     }
   } catch (error) {

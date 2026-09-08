@@ -535,13 +535,66 @@ export default function App() {
         purpose: repo.purpose,
         description: repo.description,
       }))
-      const { blob, filename, structure, fileCount, nextCommand, setupStatus, identitySource, overlayCount, folderStatus } =
+      const setupRequirement =
+        state.groomConfirmed && state.groomDraft.trim() ? state.groomDraft.trim() : state.requirementsText
+      const {
+        blob,
+        filename,
+        structure,
+        fileCount,
+        nextCommand,
+        setupStatus,
+        setupValidated,
+        identitySource,
+        overlayCount,
+        contextReady,
+        deliveryReady,
+        folderStatus,
+      } =
         await downloadWorkspace({
         projectId,
         file: state.requirementFile,
-        requirementsText: state.requirementsText,
+        requirementsText: setupRequirement,
         repositories,
+        setupContext: {
+          projectId,
+          projectName: state.projectName,
+          projectType: state.projectType,
+          requirementConfirmed: state.groomConfirmed,
+          stakeholderAssignments: state.stakeholderAssignments.map(({ roleId, personName }) => ({
+            roleId,
+            personName,
+          })),
+          topology: state.topology,
+          repositoryModel: state.repositoryModel,
+          architectureStyle: state.architectureStyle,
+          repositories,
+          integrations: state.integrations
+            .filter((integration) => integration.connected)
+            .map(({ id, account, baseUrl, organization, workspace, projectKey, spaceKey }) => ({
+              provider: id,
+              account,
+              baseUrl,
+              organization,
+              workspace,
+              projectKey,
+              spaceKey,
+            })),
+        },
       })
+      if (!setupValidated) {
+        advanceStep('package', 'error')
+        patch({
+          setupStatus: setupStatus || null,
+          setupValidated: false,
+          setupIdentitySource: identitySource || null,
+          setupOverlayCount: overlayCount,
+          setupContextReady: contextReady,
+          setupDeliveryReady: deliveryReady,
+        })
+        setStatus({ type: 'error', message: 'Canonical workspace setup was not validated. Try again after updating the backend.' })
+        return
+      }
 
       advanceStep('package', 'done')
       downloadBlob(blob, filename)
@@ -554,8 +607,11 @@ export default function App() {
         filesGenerated: fileCount || structure.length,
         generationTimeSec: Math.round((Date.now() - start) / 1000),
         setupStatus: setupStatus || null,
+        setupValidated: true,
         setupIdentitySource: identitySource || null,
         setupOverlayCount: overlayCount,
+        setupContextReady: contextReady,
+        setupDeliveryReady: deliveryReady,
       })
       setStatus({
         type: folderStatus === 'preparing' ? 'info' : 'success',

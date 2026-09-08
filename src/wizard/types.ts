@@ -142,8 +142,11 @@ export interface WizardState extends SetupForm {
   groomOriginal: string
   groomConfirmed: boolean
   setupStatus: string | null
+  setupValidated: boolean
   setupIdentitySource: string | null
   setupOverlayCount: number
+  setupContextReady: boolean
+  setupDeliveryReady: boolean
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -229,8 +232,11 @@ export const defaultWizardState: WizardState = {
   groomOriginal: '',
   groomConfirmed: false,
   setupStatus: null,
+  setupValidated: false,
   setupIdentitySource: null,
   setupOverlayCount: 0,
+  setupContextReady: false,
+  setupDeliveryReady: false,
 }
 
 function ideCommandsLabel(ideTool: string): string {
@@ -248,9 +254,9 @@ function ideCommandsLabel(ideTool: string): string {
 
 export function generationStepDefs(ideTool = 'cursor') {
   return [
-    { id: 'overlay', label: 'AI-SDLC workspace overlay created' },
-    { id: 'backend', label: 'Spring Boot backend scaffolded' },
-    { id: 'frontend', label: 'React + TypeScript + Vite frontend scaffolded' },
+    { id: 'overlay', label: 'Canonical AI-SDLC workspace setup created' },
+    { id: 'intake', label: 'Canonical requirement intake stored' },
+    { id: 'governance', label: 'Governance and setup records generated' },
     { id: 'framework', label: 'Automation SDLC framework installed' },
     { id: 'commands', label: ideCommandsLabel(ideTool) },
     { id: 'package', label: 'Project packaged for download' },

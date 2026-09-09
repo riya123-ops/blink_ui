@@ -1,4 +1,5 @@
 import { sanitizeDownloadStructure } from '../wizard/defaults'
+import type { ProductScopeData } from '../wizard/types'
 import { stripExcludedZipFolders } from './stripZipFolders'
 
 export interface StakeholderRoleDto {
@@ -468,4 +469,39 @@ export async function clarifyRequirement(options: {
   } finally {
     window.clearTimeout(timer)
   }
+}
+
+export interface PlanProductScopeResponse {
+  status: string
+  message: string
+  nextCommand: string
+  proposalDigest?: string
+  epicIds?: string[]
+  storyIds?: string[]
+  productScope?: ProductScopeData
+  errors?: string[]
+}
+
+export async function planProductScope(
+  projectId?: string | null,
+  payload?: {
+    projectName?: string
+    requirementText: string
+    actor?: string
+  }
+): Promise<PlanProductScopeResponse> {
+  const path = projectId ? `/projects/${projectId}/plan-product-scope` : `/projects/plan-product-scope`
+  const url = apiUrl(path)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectId: projectId || undefined,
+      projectName: payload?.projectName,
+      requirementText: payload?.requirementText,
+      actor: payload?.actor || 'operator',
+    }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<PlanProductScopeResponse>
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, planProductScope, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -284,13 +284,49 @@ export default function App() {
       const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
       const nextState = { ...state, requirementsText: wording }
       const questions = generateQuestionsFromRequirements(nextState)
-      patch({
-        requirementsText: wording,
-        questions,
-        requirementsAnalyzed: true,
-        responses: [],
-        questionsSent: false,
-      })
+      setSaving(true)
+      try {
+        const scopeRes = await planProductScope(state.projectId, {
+          projectName: state.projectName,
+          requirementText: wording,
+          actor: 'operator',
+        })
+        if (scopeRes && scopeRes.status === 'ok') {
+          patch({
+            requirementsText: wording,
+            questions,
+            requirementsAnalyzed: true,
+            responses: [],
+            questionsSent: false,
+            productScope: scopeRes.productScope,
+            scopeDigest: scopeRes.proposalDigest,
+            nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
+          })
+          setStatus({
+            type: 'success',
+            message: `Scope planned: ${scopeRes.epicIds?.length || 0} Epic(s), ${scopeRes.storyIds?.length || 0} Story(ies) proposed. Next: ${scopeRes.nextCommand || '/confirm-product-scope'}`,
+          })
+        } else {
+          patch({
+            requirementsText: wording,
+            questions,
+            requirementsAnalyzed: true,
+            responses: [],
+            questionsSent: false,
+          })
+        }
+      } catch (err) {
+        console.warn('Product scope planning note:', err)
+        patch({
+          requirementsText: wording,
+          questions,
+          requirementsAnalyzed: true,
+          responses: [],
+          questionsSent: false,
+        })
+      } finally {
+        setSaving(false)
+      }
     } else {
       setStatus(null)
     }

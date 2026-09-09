@@ -95,6 +95,35 @@ export interface GroomAnswer {
   otherText?: string
 }
 
+export interface EpicSummary {
+  id: string
+  title: string
+  objective?: string
+  storyIds?: string[]
+}
+
+export interface StorySummary {
+  id: string
+  epicId?: string
+  title: string
+  objective?: string
+  asA?: string
+  iWant?: string
+  soThat?: string
+  acceptanceCriteria?: string[]
+}
+
+export interface ProductScopeData {
+  productId?: string
+  proposalDigest?: string
+  classification?: any
+  epicIds?: string[]
+  storyIds?: string[]
+  epics?: EpicSummary[]
+  stories?: StorySummary[]
+  markdown?: string
+}
+
 export interface WizardState extends SetupForm {
   applicationType: string
   javaVersion: string
@@ -155,6 +184,8 @@ export interface WizardState extends SetupForm {
   setupOverlayCount: number
   setupContextReady: boolean
   setupDeliveryReady: boolean
+  productScope?: ProductScopeData | null
+  scopeDigest?: string | null
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -246,6 +277,8 @@ export const defaultWizardState: WizardState = {
   setupOverlayCount: 0,
   setupContextReady: false,
   setupDeliveryReady: false,
+  productScope: null,
+  scopeDigest: null,
 }
 
 function ideCommandsLabel(ideTool: string): string {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, planProductScope, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
@@ -85,6 +85,7 @@ export default function App() {
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
+  const lastSavedPayloadRef = useRef<string | null>(null)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -124,14 +125,25 @@ export default function App() {
     sodWarnings?: string[]
     nextCommand?: string
   }> => {
-    const saved = await saveProject(projectPayload(), state.projectId)
+    const payload = projectPayload()
+    const payloadStr = JSON.stringify(payload)
+    if (state.projectId && lastSavedPayloadRef.current === payloadStr) {
+      return {
+        id: state.projectId,
+        workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
+        sodWarnings: state.sodWarnings,
+        nextCommand: state.nextSdlcCommand || undefined,
+      }
+    }
+    const saved = await saveProject(payload, state.projectId)
+    lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
     patch({
       projectId: id,
       sodWarnings: saved.sodWarnings || [],
       nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
     })
-    setFolderQuery({ name: saved.projectName || projectPayload().projectName, id })
+    setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
@@ -141,7 +153,7 @@ export default function App() {
       sodWarnings: saved.sodWarnings,
       nextCommand: saved.nextCommand,
     }
-  }, [projectPayload, state.projectId, state.nextSdlcCommand, patch])
+  }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, folderPrep, patch])
 
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
@@ -243,8 +255,14 @@ export default function App() {
       return
     }
     if (step === 'project-stakeholders') {
-      setSaving(true)
-      setStatus(null)
+      const payload = projectPayload()
+      const payloadStr = JSON.stringify(payload)
+      const alreadyPersisted = Boolean(state.projectId && lastSavedPayloadRef.current === payloadStr)
+
+      if (!alreadyPersisted) {
+        setSaving(true)
+        setStatus(null)
+      }
       try {
         const saved = await persistProject()
         if (saved.sodWarnings && saved.sodWarnings.length > 0) {
@@ -252,7 +270,7 @@ export default function App() {
             type: 'info',
             message: `Project & stakeholders configured with governance note: ${saved.sodWarnings[0]}`,
           })
-        } else {
+        } else if (!alreadyPersisted) {
           setStatus({
             type: 'success',
             message:
@@ -265,7 +283,9 @@ export default function App() {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
       } finally {
-        setSaving(false)
+        if (!alreadyPersisted) {
+          setSaving(false)
+        }
       }
     } else if (step === 'repositories') {
       if (!state.repositories.some((repo) => repo.name.trim())) {

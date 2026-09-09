@@ -284,6 +284,13 @@ export default function App() {
       const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
       const nextState = { ...state, requirementsText: wording }
       const questions = generateQuestionsFromRequirements(nextState)
+      const baseReqPatch = {
+        requirementsText: wording,
+        questions,
+        requirementsAnalyzed: true,
+        responses: [],
+        questionsSent: false,
+      }
       setSaving(true)
       try {
         const scopeRes = await planProductScope(state.projectId, {
@@ -293,11 +300,7 @@ export default function App() {
         })
         if (scopeRes && scopeRes.status === 'ok') {
           patch({
-            requirementsText: wording,
-            questions,
-            requirementsAnalyzed: true,
-            responses: [],
-            questionsSent: false,
+            ...baseReqPatch,
             productScope: scopeRes.productScope,
             scopeDigest: scopeRes.proposalDigest,
             nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
@@ -307,23 +310,11 @@ export default function App() {
             message: `Scope planned: ${scopeRes.epicIds?.length || 0} Epic(s), ${scopeRes.storyIds?.length || 0} Story(ies) proposed. Next: ${scopeRes.nextCommand || '/confirm-product-scope'}`,
           })
         } else {
-          patch({
-            requirementsText: wording,
-            questions,
-            requirementsAnalyzed: true,
-            responses: [],
-            questionsSent: false,
-          })
+          patch(baseReqPatch)
         }
       } catch (err) {
         console.warn('Product scope planning note:', err)
-        patch({
-          requirementsText: wording,
-          questions,
-          requirementsAnalyzed: true,
-          responses: [],
-          questionsSent: false,
-        })
+        patch(baseReqPatch)
       } finally {
         setSaving(false)
       }
@@ -397,7 +388,7 @@ export default function App() {
   const handleGroomPick = useCallback((questionId: string, optionId: string, optionLabel: string) => {
     setState((prev) => {
       const q = prev.groomQuestions.find((item) => item.id === questionId)
-      const isMultiple = q?.allowMultiple !== false
+      const isMultiple = Boolean(q?.allowMultiple)
       const isSame = (item: GroomAnswer) => item.questionId === questionId && item.optionId === optionId
       const exists = prev.groomAnswers.some(isSame)
 
@@ -419,7 +410,7 @@ export default function App() {
   const handleGroomToggleOther = useCallback((questionId: string, checked: boolean) => {
     setState((prev) => {
       const q = prev.groomQuestions.find((item) => item.id === questionId)
-      const isMultiple = q?.allowMultiple !== false
+      const isMultiple = Boolean(q?.allowMultiple)
 
       if (!checked) {
         const kept = prev.groomAnswers.filter(

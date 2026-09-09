@@ -113,10 +113,20 @@ export interface StorySummary {
   acceptanceCriteria?: string[]
 }
 
+export interface ScopeClassification {
+  source_scope_level?: string
+  status?: string
+  reason?: string
+  heading_count?: number
+  requirement_ref_count?: number
+  word_count?: number
+  [key: string]: unknown
+}
+
 export interface ProductScopeData {
   productId?: string
   proposalDigest?: string
-  classification?: any
+  classification?: ScopeClassification | Record<string, unknown>
   epicIds?: string[]
   storyIds?: string[]
   epics?: EpicSummary[]

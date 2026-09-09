@@ -39,7 +39,7 @@ function QuestionCard({
   )
   if (!question.id || !question.text || options.length < 2) return null
 
-  const isMultiple = question.allowMultiple !== false
+  const isMultiple = Boolean(question.allowMultiple)
   const selectedIds = new Set(
     state.groomAnswers.filter((item) => item.questionId === question.id).map((item) => item.optionId),
   )

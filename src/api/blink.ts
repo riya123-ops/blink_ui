@@ -116,7 +116,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
         text,
         options,
         allowOther: row.allowOther !== false,
-        allowMultiple: row.allowMultiple !== false,
+        allowMultiple: Boolean(row.allowMultiple),
         ...(priority ? { priority } : {}),
       },
     ]

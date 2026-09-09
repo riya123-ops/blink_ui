@@ -3781,6 +3781,13 @@ textarea::placeholder {
   padding: 0.1rem 0.5rem;
 }
 
+.groom-question-subtitle {
+  margin: 0.35rem 0 0.55rem 0.2rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .groom-options {
   display: flex;
   flex-direction: column;

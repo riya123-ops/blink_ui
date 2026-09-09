@@ -82,6 +82,7 @@ export interface GroomOption {
 export interface GroomQuestion {
   id: string
   text: string
+  subtitle?: string
   options: GroomOption[]
   allowOther: boolean
   allowMultiple?: boolean

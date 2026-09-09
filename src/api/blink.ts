@@ -102,6 +102,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
       : []
     const text = String(row.text || '').trim()
     const id = String(row.id || '').trim()
+    const subtitle = row.subtitle ? String(row.subtitle).trim() : undefined
     if (!id || !text || options.length < 2) return []
     const priorityRaw = String(row.priority || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
     const priority =
@@ -114,6 +115,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
       {
         id: id || `q-${index + 1}`,
         text,
+        ...(subtitle ? { subtitle } : {}),
         options,
         allowOther: row.allowOther !== false,
         allowMultiple: Boolean(row.allowMultiple),
@@ -400,6 +402,7 @@ export interface GroomOptionDto {
 export interface GroomQuestionDto {
   id: string
   text: string
+  subtitle?: string
   options: GroomOptionDto[]
   allowOther: boolean
   allowMultiple?: boolean

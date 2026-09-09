@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, planProductScope, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -85,6 +85,7 @@ export default function App() {
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
+  const lastSavedPayloadRef = useRef<string | null>(null)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -121,16 +122,38 @@ export default function App() {
   const persistProject = useCallback(async (): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
+    sodWarnings?: string[]
+    nextCommand?: string
   }> => {
-    const saved = await saveProject(projectPayload(), state.projectId)
+    const payload = projectPayload()
+    const payloadStr = JSON.stringify(payload)
+    if (state.projectId && lastSavedPayloadRef.current === payloadStr) {
+      return {
+        id: state.projectId,
+        workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
+        sodWarnings: state.sodWarnings,
+        nextCommand: state.nextSdlcCommand || undefined,
+      }
+    }
+    const saved = await saveProject(payload, state.projectId)
+    lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
-    patch({ projectId: id })
-    setFolderQuery({ name: saved.projectName || projectPayload().projectName, id })
+    patch({
+      projectId: id,
+      sodWarnings: saved.sodWarnings || [],
+      nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
+    })
+    setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
-    return { id, workspaceStatus: saved.workspaceStatus }
-  }, [projectPayload, state.projectId, patch])
+    return {
+      id,
+      workspaceStatus: saved.workspaceStatus,
+      sodWarnings: saved.sodWarnings,
+      nextCommand: saved.nextCommand,
+    }
+  }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, folderPrep, patch])
 
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
@@ -232,22 +255,37 @@ export default function App() {
       return
     }
     if (step === 'project-stakeholders') {
-      setSaving(true)
-      setStatus(null)
+      const payload = projectPayload()
+      const payloadStr = JSON.stringify(payload)
+      const alreadyPersisted = Boolean(state.projectId && lastSavedPayloadRef.current === payloadStr)
+
+      if (!alreadyPersisted) {
+        setSaving(true)
+        setStatus(null)
+      }
       try {
         const saved = await persistProject()
-        setStatus({
-          type: 'success',
-          message:
-            saved.workspaceStatus === 'preparing'
-              ? 'Saved. We are preparing your project folder — you can keep going.'
-              : 'Project saved.',
-        })
+        if (saved.sodWarnings && saved.sodWarnings.length > 0) {
+          setStatus({
+            type: 'info',
+            message: `Project & stakeholders configured with governance note: ${saved.sodWarnings[0]}`,
+          })
+        } else if (!alreadyPersisted) {
+          setStatus({
+            type: 'success',
+            message:
+              saved.workspaceStatus === 'preparing'
+                ? 'Saved. We are preparing your project folder — you can keep going.'
+                : 'Project & stakeholders configured successfully.',
+          })
+        }
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
       } finally {
-        setSaving(false)
+        if (!alreadyPersisted) {
+          setSaving(false)
+        }
       }
     } else if (step === 'repositories') {
       if (!state.repositories.some((repo) => repo.name.trim())) {
@@ -266,13 +304,40 @@ export default function App() {
       const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
       const nextState = { ...state, requirementsText: wording }
       const questions = generateQuestionsFromRequirements(nextState)
-      patch({
+      const baseReqPatch = {
         requirementsText: wording,
         questions,
         requirementsAnalyzed: true,
         responses: [],
         questionsSent: false,
-      })
+      }
+      setSaving(true)
+      try {
+        const scopeRes = await planProductScope(state.projectId, {
+          projectName: state.projectName,
+          requirementText: wording,
+          actor: 'operator',
+        })
+        if (scopeRes && scopeRes.status === 'ok') {
+          patch({
+            ...baseReqPatch,
+            productScope: scopeRes.productScope,
+            scopeDigest: scopeRes.proposalDigest,
+            nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
+          })
+          setStatus({
+            type: 'success',
+            message: `Scope planned: ${scopeRes.epicIds?.length || 0} Epic(s), ${scopeRes.storyIds?.length || 0} Story(ies) proposed. Next: ${scopeRes.nextCommand || '/confirm-product-scope'}`,
+          })
+        } else {
+          patch(baseReqPatch)
+        }
+      } catch (err) {
+        console.warn('Product scope planning note:', err)
+        patch(baseReqPatch)
+      } finally {
+        setSaving(false)
+      }
     } else {
       setStatus(null)
     }
@@ -342,38 +407,56 @@ export default function App() {
 
   const handleGroomPick = useCallback((questionId: string, optionId: string, optionLabel: string) => {
     setState((prev) => {
-      const otherOn = prev.groomAnswers.some((item) => item.questionId === questionId && item.optionId === 'other')
-      if (otherOn && optionId !== 'other') return prev
+      const q = prev.groomQuestions.find((item) => item.id === questionId)
+      const isMultiple = Boolean(q?.allowMultiple)
       const isSame = (item: GroomAnswer) => item.questionId === questionId && item.optionId === optionId
       const exists = prev.groomAnswers.some(isSame)
-      const groomAnswers = exists
-        ? prev.groomAnswers.filter((item) => !isSame(item))
-        : [...prev.groomAnswers, { questionId, optionId, optionLabel }]
-      return { ...prev, groomAnswers, groomConfirmed: false }
+
+      let nextAnswers: GroomAnswer[]
+      if (isMultiple) {
+        if (exists) {
+          nextAnswers = prev.groomAnswers.filter((item) => !isSame(item))
+        } else {
+          nextAnswers = [...prev.groomAnswers, { questionId, optionId, optionLabel }]
+        }
+      } else {
+        const withoutQuestion = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+        nextAnswers = exists ? withoutQuestion : [...withoutQuestion, { questionId, optionId, optionLabel }]
+      }
+      return { ...prev, groomAnswers: nextAnswers, groomConfirmed: false }
     })
   }, [])
 
   const handleGroomToggleOther = useCallback((questionId: string, checked: boolean) => {
     setState((prev) => {
-      const kept = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+      const q = prev.groomQuestions.find((item) => item.id === questionId)
+      const isMultiple = Boolean(q?.allowMultiple)
+
       if (!checked) {
+        const kept = prev.groomAnswers.filter(
+          (item) => !(item.questionId === questionId && item.optionId === 'other'),
+        )
         return { ...prev, groomAnswers: kept, groomConfirmed: false }
       }
+
       const existingOther = prev.groomAnswers.find(
         (item) => item.questionId === questionId && item.optionId === 'other',
       )
-      return {
-        ...prev,
-        groomAnswers: [
-          ...kept,
-          {
-            questionId,
-            optionId: 'other',
-            optionLabel: 'Other',
-            otherText: existingOther?.otherText ?? '',
-          },
-        ],
-        groomConfirmed: false,
+      const otherItem: GroomAnswer = {
+        questionId,
+        optionId: 'other',
+        optionLabel: 'Other',
+        otherText: existingOther?.otherText ?? '',
+      }
+
+      if (isMultiple) {
+        const kept = prev.groomAnswers.filter(
+          (item) => !(item.questionId === questionId && item.optionId === 'other'),
+        )
+        return { ...prev, groomAnswers: [...kept, otherItem], groomConfirmed: false }
+      } else {
+        const kept = prev.groomAnswers.filter((item) => item.questionId !== questionId)
+        return { ...prev, groomAnswers: [...kept, otherItem], groomConfirmed: false }
       }
     })
   }, [])
@@ -591,9 +674,10 @@ export default function App() {
           projectName: state.projectName,
           projectType: state.projectType,
           requirementConfirmed: state.groomConfirmed,
-          stakeholderAssignments: state.stakeholderAssignments.map(({ roleId, personName }) => ({
+          stakeholderAssignments: state.stakeholderAssignments.map(({ roleId, personName, personEmail }) => ({
             roleId,
             personName,
+            personEmail,
           })),
           topology: state.topology,
           repositoryModel: state.repositoryModel,

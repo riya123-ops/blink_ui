@@ -73,11 +73,18 @@ export interface GenerationStep {
   status: 'pending' | 'running' | 'done' | 'error'
 }
 
+export interface GroomOption {
+  id: string
+  label: string
+  description?: string
+}
+
 export interface GroomQuestion {
   id: string
   text: string
-  options: { id: string; label: string }[]
+  options: GroomOption[]
   allowOther: boolean
+  allowMultiple?: boolean
   priority: 'need_clarification' | 'important' | 'suggestion'
 }
 
@@ -86,6 +93,45 @@ export interface GroomAnswer {
   optionId: string
   optionLabel?: string
   otherText?: string
+}
+
+export interface EpicSummary {
+  id: string
+  title: string
+  objective?: string
+  storyIds?: string[]
+}
+
+export interface StorySummary {
+  id: string
+  epicId?: string
+  title: string
+  objective?: string
+  asA?: string
+  iWant?: string
+  soThat?: string
+  acceptanceCriteria?: string[]
+}
+
+export interface ScopeClassification {
+  source_scope_level?: string
+  status?: string
+  reason?: string
+  heading_count?: number
+  requirement_ref_count?: number
+  word_count?: number
+  [key: string]: unknown
+}
+
+export interface ProductScopeData {
+  productId?: string
+  proposalDigest?: string
+  classification?: ScopeClassification | Record<string, unknown>
+  epicIds?: string[]
+  storyIds?: string[]
+  epics?: EpicSummary[]
+  stories?: StorySummary[]
+  markdown?: string
 }
 
 export interface WizardState extends SetupForm {
@@ -106,6 +152,7 @@ export interface WizardState extends SetupForm {
   sourceZipName: string | null
   skipSourceWarning: boolean
   stakeholderAssignments: StakeholderAssignment[]
+  sodWarnings: string[]
   questions: StakeholderQuestion[]
   responses: QuestionResponse[]
   questionsSent: boolean
@@ -147,6 +194,8 @@ export interface WizardState extends SetupForm {
   setupOverlayCount: number
   setupContextReady: boolean
   setupDeliveryReady: boolean
+  productScope?: ProductScopeData | null
+  scopeDigest?: string | null
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -196,6 +245,7 @@ export const defaultWizardState: WizardState = {
   sourceZipName: null,
   skipSourceWarning: false,
   stakeholderAssignments: defaultStakeholderAssignments(),
+  sodWarnings: [],
   questions: [],
   responses: [],
   questionsSent: false,
@@ -237,6 +287,8 @@ export const defaultWizardState: WizardState = {
   setupOverlayCount: 0,
   setupContextReady: false,
   setupDeliveryReady: false,
+  productScope: null,
+  scopeDigest: null,
 }
 
 function ideCommandsLabel(ideTool: string): string {

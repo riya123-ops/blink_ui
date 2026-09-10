@@ -154,6 +154,7 @@ export interface WizardState extends SetupForm {
   skipSourceWarning: boolean
   stakeholderAssignments: StakeholderAssignment[]
   sodWarnings: string[]
+  governanceStatus: 'idle' | 'preparing' | 'ready' | 'failed'
   questions: StakeholderQuestion[]
   responses: QuestionResponse[]
   questionsSent: boolean
@@ -257,6 +258,7 @@ export const defaultWizardState: WizardState = {
   skipSourceWarning: false,
   stakeholderAssignments: defaultStakeholderAssignments(),
   sodWarnings: [],
+  governanceStatus: 'idle',
   questions: [],
   responses: [],
   questionsSent: false,

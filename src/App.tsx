@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -86,6 +86,7 @@ export default function App() {
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
+  const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
 
   const patch = useCallback((updates: Partial<WizardState>) => {
@@ -125,6 +126,7 @@ export default function App() {
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
     sodWarnings?: string[]
     nextCommand?: string
+    governanceStatus?: 'idle' | 'preparing' | 'ready' | 'failed' | null
   }> => {
     const payload = projectPayload()
     const payloadStr = JSON.stringify(payload)
@@ -134,27 +136,34 @@ export default function App() {
         workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
         sodWarnings: state.sodWarnings,
         nextCommand: state.nextSdlcCommand || undefined,
+        governanceStatus: governancePrep === 'idle' ? state.governanceStatus : governancePrep,
       }
     }
     const saved = await saveProject(payload, state.projectId)
     lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
+    const governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
     patch({
       projectId: id,
       sodWarnings: saved.sodWarnings || [],
       nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
+      governanceStatus,
     })
     setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
+    }
+    if (governanceStatus === 'preparing' || governanceStatus === 'ready' || governanceStatus === 'failed') {
+      setGovernancePrep(governanceStatus)
     }
     return {
       id,
       workspaceStatus: saved.workspaceStatus,
       sodWarnings: saved.sodWarnings,
       nextCommand: saved.nextCommand,
+      governanceStatus,
     }
-  }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, folderPrep, patch])
+  }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, state.governanceStatus, folderPrep, governancePrep, patch])
 
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
@@ -191,6 +200,59 @@ export default function App() {
     const timer = window.setTimeout(() => setFolderPrep('idle'), 5000)
     return () => window.clearTimeout(timer)
   }, [folderPrep])
+
+  useEffect(() => {
+    if (governancePrep !== 'preparing' || !state.projectId) return
+    let cancelled = false
+    const check = async () => {
+      try {
+        const progress = await fetchGovernanceStatus(state.projectId as string)
+        if (cancelled) return
+        const status = progress.status || 'idle'
+        if (status === 'preparing') return
+        if (status === 'ready') {
+          const warnings = progress.sodWarnings || []
+          patch({
+            sodWarnings: warnings,
+            nextSdlcCommand: progress.nextCommand || state.nextSdlcCommand,
+            governanceStatus: 'ready',
+          })
+          setGovernancePrep('ready')
+          if (warnings.length > 0) {
+            setStatus({
+              type: 'info',
+              message: `Stakeholder governance note: ${warnings[0]}`,
+            })
+          } else {
+            setStatus({ type: 'success', message: progress.message || 'Stakeholder roles are configured.' })
+          }
+          return
+        }
+        if (status === 'failed') {
+          patch({ governanceStatus: 'failed' })
+          setGovernancePrep('failed')
+          setStatus({
+            type: 'info',
+            message: progress.message || 'Could not finish stakeholder checks. You can keep going.',
+          })
+        }
+      } catch {
+        /* keep the preparing note until a later poll succeeds */
+      }
+    }
+    void check()
+    const timer = window.setInterval(() => void check(), 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [governancePrep, state.projectId, state.nextSdlcCommand, patch])
+
+  useEffect(() => {
+    if (governancePrep !== 'ready' && governancePrep !== 'failed') return
+    const timer = window.setTimeout(() => setGovernancePrep('idle'), 8000)
+    return () => window.clearTimeout(timer)
+  }, [governancePrep])
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     const github = state.integrations.find((item) => item.id === 'github')
@@ -272,12 +334,17 @@ export default function App() {
             message: `Project & stakeholders configured with governance note: ${saved.sodWarnings[0]}`,
           })
         } else if (!alreadyPersisted) {
+          const folderBusy = saved.workspaceStatus === 'preparing'
+          const governanceBusy = saved.governanceStatus === 'preparing'
           setStatus({
-            type: 'success',
-            message:
-              saved.workspaceStatus === 'preparing'
-                ? 'Saved. We are preparing your project folder — you can keep going.'
-                : 'Project & stakeholders configured successfully.',
+            type: folderBusy || governanceBusy ? 'info' : 'success',
+            message: governanceBusy && folderBusy
+              ? 'Saved. Preparing your project folder and checking stakeholder roles — you can keep going.'
+              : governanceBusy
+                ? 'Saved. Checking stakeholder roles — you can keep going.'
+                : folderBusy
+                  ? 'Saved. We are preparing your project folder — you can keep going.'
+                  : 'Project & stakeholders configured successfully.',
           })
         }
       } catch (e) {
@@ -925,12 +992,13 @@ export default function App() {
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
-        {(!isSuccessScreen || folderPrep === 'preparing') && !isWelcome && (
+        {(!isSuccessScreen || folderPrep === 'preparing' || governancePrep === 'preparing') && !isWelcome && (
           <header className="top-bar">
             <div className="top-bar-start">
               <span className="step-indicator">
                 Step {stepIndex(step) + 1} of {STEP_ORDER.length}
               </span>
+              <div className="prep-stack">
               {folderPrep === 'preparing' && (
                 <div className={`folder-prep${folderProgress.total === 0 ? ' is-waiting' : ''}`}>
                   <div className="folder-prep-copy">
@@ -968,6 +1036,43 @@ export default function App() {
               {folderPrep === 'failed' && (
                 <span className="folder-prep is-failed">We will finish your project folder when you download.</span>
               )}
+              {governancePrep === 'preparing' && (
+                <div className="folder-prep is-waiting">
+                  <div className="folder-prep-copy">
+                    <span>Checking stakeholder roles</span>
+                    <strong>In progress</strong>
+                  </div>
+                  <div
+                    className="folder-prep-bar"
+                    role="progressbar"
+                    aria-label="Stakeholder governance progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={35}
+                  >
+                    <span className="folder-prep-bar-fill" />
+                  </div>
+                </div>
+              )}
+              {governancePrep === 'ready' && (
+                <div className={`folder-prep ${state.sodWarnings.length ? 'is-note' : 'is-ready'}`}>
+                  <div className="folder-prep-copy">
+                    <span>
+                      {state.sodWarnings.length
+                        ? 'Stakeholder governance note is ready on Project & Stakeholders.'
+                        : 'Stakeholder roles are configured.'}
+                    </span>
+                    <strong>Done</strong>
+                  </div>
+                  <div className="folder-prep-bar" role="progressbar" aria-valuenow={100} aria-valuemin={0} aria-valuemax={100}>
+                    <span className="folder-prep-bar-fill" style={{ width: '100%' }} />
+                  </div>
+                </div>
+              )}
+              {governancePrep === 'failed' && (
+                <span className="folder-prep is-failed">Could not finish stakeholder checks. You can keep going.</span>
+              )}
+              </div>
             </div>
             {showQuickDownload && (
               <button

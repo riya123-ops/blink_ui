@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { CheckCircle2, ExternalLink, Layers, Loader2, RefreshCw, Sparkles, Ticket, X } from 'lucide-react'
+import { ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react'
 import {
   connectIntegration,
-  createJiraIssues,
   exchangeJiraOAuth,
   fetchJiraOAuthUrl,
   fetchJiraProjects,
-  planProductScope,
   saveIntegrationBinding,
   type JiraProjectItem,
 } from '../api/blink'
@@ -108,11 +106,6 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
   const [isCustomProjectKey, setIsCustomProjectKey] = useState(false)
   const [selectedProjectName, setSelectedProjectName] = useState('')
   const oauthRedirectUriRef = useRef<string | undefined>(undefined)
-  const [planningScope, setPlanningScope] = useState(false)
-  const [scopeError, setScopeError] = useState<string | null>(null)
-  const [creatingIssues, setCreatingIssues] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const plannedOnce = useRef(false)
 
   const active = state.integrations.find((item) => item.id === activeId) ?? null
   const jira = state.integrations.find((item) => item.id === 'jira')
@@ -411,121 +404,13 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
     }
   }
 
-  const requirementText = (state.groomDraft || state.requirementsText || '').trim()
-  const scopeSource = requirementText || state.description.trim()
-  const epics = state.productScope?.epics || []
-  const stories = state.productScope?.stories || []
-  const createdBySource = useMemo(() => {
-    const map = new Map<string, NonNullable<WizardState['jiraCreatedIssues']>[number]>()
-    for (const item of state.jiraCreatedIssues || []) {
-      if (item.sourceId) map.set(item.sourceId, item)
-    }
-    return map
-  }, [state.jiraCreatedIssues])
-
-  const runProductScope = useCallback(async () => {
-    if (!scopeSource) {
-      setScopeError('Add a project description on Project & Stakeholders so Blink can propose epics and stories.')
-      return
-    }
-    setPlanningScope(true)
-    setScopeError(null)
-    try {
-      const scopeRes = await planProductScope(state.projectId, {
-        projectName: state.projectName,
-        requirementText: scopeSource,
-        actor: 'operator',
-      })
-      if (scopeRes?.status === 'ok' && scopeRes.productScope) {
-        onUpdate({
-          productScope: scopeRes.productScope,
-          scopeDigest: scopeRes.proposalDigest,
-          nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
-        })
-      } else {
-        setScopeError(scopeRes?.message || 'Product scope planning did not return epics yet.')
-      }
-    } catch (err) {
-      setScopeError(err instanceof Error ? err.message : 'Could not plan product scope.')
-    } finally {
-      setPlanningScope(false)
-    }
-  }, [onUpdate, scopeSource, state.projectId, state.projectName])
-
-  useEffect(() => {
-    if (plannedOnce.current) return
-    if (!scopeSource) return
-    plannedOnce.current = true
-    if (!state.productScope?.epics?.length) {
-      void runProductScope()
-    }
-  }, [scopeSource, runProductScope, state.productScope?.epics?.length])
-
-  const handleCreateInJira = async () => {
-    if (!jira?.connected) {
-      setCreateError('Connect Jira first, then create the epics and stories.')
-      return
-    }
-    if (!state.projectId) {
-      setCreateError('Save the project on Project & Stakeholders first so Blink can use the stored Jira connection.')
-      return
-    }
-    if (!jira.projectKey) {
-      setCreateError('Choose a Jira project in Connect Jira before creating issues.')
-      openConnect(jira)
-      return
-    }
-    if (epics.length === 0 && stories.length === 0) {
-      setCreateError('Plan product scope first so there is something to create.')
-      return
-    }
-    setCreatingIssues(true)
-    setCreateError(null)
-    try {
-      const result = await createJiraIssues({
-        projectId: state.projectId,
-        projectKey: jira.projectKey,
-        epics: epics.map((epic) => ({
-          id: epic.id,
-          title: epic.title,
-          objective: epic.objective,
-          storyIds: epic.storyIds,
-        })),
-        stories: stories.map((story) => ({
-          id: story.id,
-          epicId:
-            story.epicId
-            || epics.find((epic) => epic.storyIds?.includes(story.id))?.id,
-          title: story.title,
-          objective: story.objective,
-          asA: story.asA,
-          iWant: story.iWant,
-          soThat: story.soThat,
-          acceptanceCriteria: story.acceptanceCriteria,
-        })),
-      })
-      onUpdate({ jiraCreatedIssues: result.issues || [] })
-      if (result.status === 'error') {
-        setCreateError(result.message || 'Jira did not create the issues.')
-      }
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Could not create Jira issues.')
-    } finally {
-      setCreatingIssues(false)
-    }
-  }
-
-  const createdOk = (state.jiraCreatedIssues || []).filter((item) => item.status === 'created').length
-  const jiraReady = Boolean(jira?.connected && jira.projectKey)
-  const canCreate = jiraReady && (epics.length > 0 || stories.length > 0) && !creatingIssues && !planningScope
-
   return (
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Integrations</h2>
         <p>
-          Connect your toolchain, then review the backlog Blink proposed from the project details. Create those epics
-          and stories in Jira when you are ready.
+          Connect Jira and pick the project that should receive tickets. Blink creates epics and stories after you
+          clear the requirement wording on the next step.
         </p>
       </div>
 
@@ -540,6 +425,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
           <ol className="connect-howto">
             <li>Connect Jira with one-click Atlassian OAuth (or an API token).</li>
             <li>Pick the Jira project that should receive epics and stories.</li>
+            <li>Tickets are created after you answer the requirement questions on the next step.</li>
             <li>Credentials are stored encrypted on the Blink server. They are never written into the workspace kit.</li>
           </ol>
           <div className="integration-grid ref">
@@ -586,122 +472,6 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                 )}
               </article>
             ))}
-          </div>
-        </section>
-
-        <section className="card ref-card jira-scope-panel">
-          <div className="jira-scope-head">
-            <div>
-              <p className="jira-scope-kicker">Product scope agent</p>
-              <h3>Epics & stories for Jira</h3>
-              <p>
-                Blink classifies the project details and proposes epics and stories from that source. It does not invent
-                extra tickets. Nothing is created until you click the button.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="mini-btn"
-              disabled={planningScope || !scopeSource}
-              onClick={() => void runProductScope()}
-            >
-              {planningScope ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
-              {planningScope ? 'Planning…' : 'Run planner'}
-            </button>
-          </div>
-
-          <div className="jira-scope-metrics">
-            <span className="jira-chip epic">{epics.length} epic{epics.length === 1 ? '' : 's'}</span>
-            <span className="jira-chip story">{stories.length} stor{stories.length === 1 ? 'y' : 'ies'}</span>
-            {jiraReady ? (
-              <span className="jira-chip project">Target {jira?.projectKey}</span>
-            ) : (
-              <span className="jira-chip muted">Jira project not selected</span>
-            )}
-          </div>
-
-          {planningScope && (
-            <div className="jira-scope-empty">
-              <Loader2 size={22} className="spin" />
-              <p>Planning product scope from your project details…</p>
-            </div>
-          )}
-
-          {!planningScope && !scopeSource && (
-            <div className="jira-scope-empty">
-              <Layers size={22} />
-              <p>Add a project description on Project & Stakeholders. This panel will propose the Jira backlog from those details.</p>
-            </div>
-          )}
-
-          {!planningScope && scopeSource && epics.length === 0 && (
-            <div className="jira-scope-empty">
-              <Layers size={22} />
-              <p>{scopeError || 'No epics yet. Run the product scope planner to generate them.'}</p>
-            </div>
-          )}
-
-          {scopeError && epics.length > 0 && <p className="connect-error">{scopeError}</p>}
-
-          {epics.length > 0 && (
-            <div className="jira-epic-list">
-              {epics.map((epic) => {
-                const childStories = stories.filter((story) => story.epicId === epic.id || epic.storyIds?.includes(story.id))
-                const epicCreated = createdBySource.get(epic.id)
-                return (
-                  <article key={epic.id} className="jira-epic-card">
-                    <header>
-                      <span className="jira-type epic">Epic</span>
-                      <strong>{epic.title}</strong>
-                      {epicCreated?.jiraKey ? (
-                        <a className="jira-key-link" href={epicCreated.jiraUrl || '#'} target="_blank" rel="noreferrer">
-                          {epicCreated.jiraKey} <ExternalLink size={11} />
-                        </a>
-                      ) : (
-                        <code>{epic.id}</code>
-                      )}
-                    </header>
-                    {epic.objective && <p>{epic.objective}</p>}
-                    {childStories.length > 0 && (
-                      <ul>
-                        {childStories.map((story) => {
-                          const storyCreated = createdBySource.get(story.id)
-                          return (
-                            <li key={story.id}>
-                              <span className="jira-type story">Story</span>
-                              <span className="jira-story-title">{story.title}</span>
-                              {storyCreated?.jiraKey ? (
-                                <a className="jira-key-link" href={storyCreated.jiraUrl || '#'} target="_blank" rel="noreferrer">
-                                  {storyCreated.jiraKey}
-                                </a>
-                              ) : (
-                                <code>{story.id}</code>
-                              )}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-                  </article>
-                )
-              })}
-            </div>
-          )}
-
-          {createError && <p className="connect-error">{createError}</p>}
-
-          <div className="jira-scope-actions">
-            <button type="button" className="jira-create-btn" disabled={!canCreate} onClick={() => void handleCreateInJira()}>
-              {creatingIssues ? <Loader2 size={16} className="spin" /> : <Ticket size={16} />}
-              {creatingIssues
-                ? 'Creating in Jira…'
-                : `Create ${epics.length + stories.length || ''} item${epics.length + stories.length === 1 ? '' : 's'} in Jira`}
-            </button>
-            {createdOk > 0 && (
-              <span className="jira-created-note">
-                <CheckCircle2 size={14} /> {createdOk} created in {jira?.projectKey}
-              </span>
-            )}
           </div>
         </section>
       </div>

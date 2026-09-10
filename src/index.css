@@ -4352,11 +4352,14 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.groom-panel .jira-scope-panel {
+  margin-top: 1.25rem;
+}
+
 @media (min-width: 1400px) {
   .integrations-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
+    display: flex;
+    flex-direction: column;
   }
 }
 

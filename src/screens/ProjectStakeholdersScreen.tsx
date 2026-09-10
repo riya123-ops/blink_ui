@@ -143,6 +143,16 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         <p>Define your project and assign stakeholders to roles.</p>
       </div>
 
+      {state.governanceStatus === 'preparing' && (
+        <div className="sod-banner is-checking" role="status">
+          Checking separation of duties for this roster. You can continue — this finishes in the background.
+        </div>
+      )}
+      {state.governanceStatus === 'failed' && (
+        <div className="sod-banner is-failed" role="status">
+          Could not finish stakeholder checks. You can keep going; save this step again to retry.
+        </div>
+      )}
       {state.sodWarnings && state.sodWarnings.length > 0 && (
         <div
           className="sod-banner"

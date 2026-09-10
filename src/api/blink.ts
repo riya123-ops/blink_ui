@@ -46,6 +46,7 @@ export interface ProjectDto {
   workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
   sodWarnings?: string[]
   nextCommand?: string
+  governanceStatus?: 'idle' | 'preparing' | 'ready' | 'failed' | null
 }
 
 export interface ConfigureStakeholdersResponse {
@@ -153,6 +154,23 @@ export async function fetchWorkspaceStatus(projectName: string, projectId?: stri
     filesTotal: number
     percent: number
     exists: boolean
+  }>
+}
+
+export async function fetchGovernanceStatus(projectId: string): Promise<{
+  status?: 'idle' | 'preparing' | 'ready' | 'failed' | null
+  sodWarnings?: string[]
+  nextCommand?: string
+  message?: string
+}> {
+  const url = apiUrl(`/projects/${projectId}/governance-status`)
+  const response = await fetch(url, { cache: 'no-store' })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<{
+    status?: 'idle' | 'preparing' | 'ready' | 'failed' | null
+    sodWarnings?: string[]
+    nextCommand?: string
+    message?: string
   }>
 }
 

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react'
 import {
   connectIntegration,
+  exchangeGithubOAuth,
   exchangeJiraOAuth,
+  fetchGithubOAuthUrl,
   fetchJiraOAuthUrl,
   fetchJiraProjects,
   saveIntegrationBinding,
@@ -46,9 +48,9 @@ const GUIDES: Record<
     tokenLabel: 'Personal access token',
     tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo,read:org&description=BLINK',
     steps: [
-      'Open GitHub → Settings → Developer settings → Personal access tokens.',
-      'Create a classic token with repo and read:org scopes.',
-      'Paste the token below. Organization is optional.',
+      'Click Connect with GitHub and sign in to your GitHub account. No token is pasted in Blink.',
+      'Organization is optional if repos should be created under an org instead of your user.',
+      'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set GITHUB_PERSONAL_ACCESS_TOKEN for Cursor MCP.',
     ],
   },
   jira: {
@@ -106,6 +108,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
   const [isCustomProjectKey, setIsCustomProjectKey] = useState(false)
   const [selectedProjectName, setSelectedProjectName] = useState('')
   const oauthRedirectUriRef = useRef<string | undefined>(undefined)
+  const githubOrgRef = useRef('')
 
   const active = state.integrations.find((item) => item.id === activeId) ?? null
   const jira = state.integrations.find((item) => item.id === 'jira')
@@ -129,9 +132,44 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [activeId, saving, oauthLoading])
 
-  // Listen for Atlassian OAuth popup callback
+  // Listen for Atlassian / GitHub OAuth popup callbacks
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'GITHUB_OAUTH_RESPONSE') {
+        const { code, error: oauthErr } = event.data
+        if (oauthErr) {
+          setError(`GitHub authorization failed: ${oauthErr}`)
+          setOauthLoading(false)
+          return
+        }
+        if (code) {
+          setOauthLoading(true)
+          setError(null)
+          try {
+            const res = await exchangeGithubOAuth(
+              code,
+              oauthRedirectUriRef.current,
+              state.projectId,
+              githubOrgRef.current || undefined,
+            )
+            patchItem('github', {
+              connected: true,
+              account: res.account,
+              detail: res.detail,
+              baseUrl: res.baseUrl || 'https://github.com',
+              organization: githubOrgRef.current || undefined,
+              authType: 'oauth',
+              token: undefined,
+            })
+            setActiveId(null)
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to complete GitHub OAuth.')
+          } finally {
+            setOauthLoading(false)
+          }
+        }
+        return
+      }
       if (event.data?.type === 'JIRA_OAUTH_RESPONSE') {
         const { code, error: oauthErr } = event.data
         if (oauthErr) {
@@ -258,6 +296,47 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
       }, 1000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not initialize Atlassian OAuth.')
+      setOauthLoading(false)
+    }
+  }
+
+  const handleStartGithubOAuth = async () => {
+    setError(null)
+    setOauthNotice(null)
+    if (!state.projectId) {
+      setError('Save the project on Project & Stakeholders first so Blink can store this connection.')
+      return
+    }
+    githubOrgRef.current = form.organization.trim()
+    setOauthLoading(true)
+    try {
+      const urlRes = await fetchGithubOAuthUrl()
+      oauthRedirectUriRef.current = urlRes.redirectUri
+      if (!urlRes.configured || !urlRes.url) {
+        setOauthNotice(
+          urlRes.message ||
+            'GitHub OAuth is not configured on the server. Set BLINK_GITHUB_CLIENT_ID and BLINK_GITHUB_CLIENT_SECRET.',
+        )
+        setOauthLoading(false)
+        return
+      }
+      const width = 600
+      const height = 720
+      const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2)
+      const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2)
+      const popup = window.open(
+        urlRes.url,
+        'github_oauth',
+        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`,
+      )
+      const timer = setInterval(() => {
+        if (!popup || popup.closed) {
+          clearInterval(timer)
+          setOauthLoading(false)
+        }
+      }, 1000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not initialize GitHub OAuth.')
       setOauthLoading(false)
     }
   }
@@ -409,8 +488,8 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
       <div className="screen-header">
         <h2>Integrations</h2>
         <p>
-          Connect Jira and pick the project that should receive tickets. Blink creates epics and stories after you
-          clear the requirement wording on the next step.
+          Sign in to GitHub to create repositories. Connect Jira and pick the project that should receive tickets. Blink
+          creates epics and stories after you clear the requirement wording on the next step.
         </p>
       </div>
 
@@ -423,10 +502,13 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
             <span className="integrations-count">{connectedCount} of 4</span>
           </div>
           <ol className="connect-howto">
-            <li>Connect Jira with one-click Atlassian OAuth (or an API token).</li>
-            <li>Pick the Jira project that should receive epics and stories.</li>
+            <li>Connect GitHub by signing in with your GitHub account. No token is pasted here.</li>
+            <li>Connect Jira with one-click Atlassian OAuth (or an API token) and pick the project for tickets.</li>
             <li>Tickets are created after you answer the requirement questions on the next step.</li>
-            <li>Credentials are stored encrypted on the Blink server. They are never written into the workspace kit.</li>
+            <li>
+              After you download the zip, put GitHub/Jira tokens in <code>automation_sdlc/.env.mcp</code>. Blink never
+              writes credentials into the workspace kit.
+            </li>
           </ol>
           <div className="integration-grid ref">
             {state.integrations.map((item) => (
@@ -508,6 +590,39 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               </button>
             </header>
 
+            {/* GitHub 1-Click OAuth */}
+            {active.id === 'github' && !active.connected && (
+              <div className="jira-oauth-card github-oauth-card">
+                <div className="jira-oauth-header">
+                  <span className="jira-badge github-badge">Recommended</span>
+                  <strong>Sign in with GitHub</strong>
+                </div>
+                <p className="jira-oauth-desc">
+                  Connect directly with your GitHub account. Do not paste a token in Blink. After you download the zip,
+                  set <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> in <code>automation_sdlc/.env.mcp</code> for Cursor MCP.
+                </p>
+                <div className="field-group">
+                  <label htmlFor="gh-org">Organization (optional)</label>
+                  <input
+                    id="gh-org"
+                    value={form.organization}
+                    onChange={(e) => setForm({ ...form, organization: e.target.value })}
+                    placeholder="your-org"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="oauth-btn github"
+                  disabled={saving || oauthLoading}
+                  onClick={() => void handleStartGithubOAuth()}
+                >
+                  <Sparkles size={14} />
+                  {oauthLoading ? 'Connecting to GitHub…' : 'Connect with GitHub'}
+                </button>
+                {oauthNotice && <p className="oauth-notice">{oauthNotice}</p>}
+              </div>
+            )}
+
             {/* Jira 1-Click OAuth Option */}
             {active.id === 'jira' && !active.connected && (
               <div className="jira-oauth-card">
@@ -537,14 +652,30 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               </div>
             )}
 
-            <ol className="connect-steps">
-              {guide.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-            <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
-              Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
-            </a>
+            {active.id !== 'github' && (
+              <>
+                <ol className="connect-steps">
+                  {guide.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+                <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
+                  Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
+                </a>
+              </>
+            )}
+            {active.id === 'github' && (
+              <>
+                <ol className="connect-steps">
+                  {guide.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+                <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
+                  Create a PAT for .env.mcp (after download) <ExternalLink size={14} />
+                </a>
+              </>
+            )}
 
             {active.id === 'confluence' && jira?.connected && (
               <button
@@ -563,7 +694,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
             )}
 
             <div className="connect-fields">
-              {active.id === 'github' && (
+              {active.id === 'github' && active.connected && (
                 <div className="field-group">
                   <label htmlFor="int-org">Organization (optional)</label>
                   <input
@@ -692,17 +823,19 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                   </div>
                 </>
               )}
-              <div className="field-group">
-                <label htmlFor="int-token">{guide.tokenLabel}</label>
-                <input
-                  id="int-token"
-                  type="password"
-                  autoComplete="off"
-                  value={form.token}
-                  onChange={(e) => setForm({ ...form, token: e.target.value })}
-                  placeholder={active.connected ? 'Enter a new token to reconnect' : 'Paste token'}
-                />
-              </div>
+              {active.id !== 'github' && (
+                <div className="field-group">
+                  <label htmlFor="int-token">{guide.tokenLabel}</label>
+                  <input
+                    id="int-token"
+                    type="password"
+                    autoComplete="off"
+                    value={form.token}
+                    onChange={(e) => setForm({ ...form, token: e.target.value })}
+                    placeholder={active.connected ? 'Enter a new token to reconnect' : 'Paste token'}
+                  />
+                </div>
+              )}
             </div>
 
             {error && <p className="connect-error">{error}</p>}
@@ -727,18 +860,30 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="primary-btn"
-                disabled={
-                  saving ||
-                  oauthLoading ||
-                  (!form.token.trim() && !(active.connected && (form.projectKey.trim() || form.spaceKey.trim())))
-                }
-                onClick={() => void handleConnect()}
-              >
-                {saving ? 'Verifying…' : active.connected && !form.token.trim() ? 'Save' : 'Connect'}
-              </button>
+              {active.id !== 'github' && (
+                <button
+                  type="button"
+                  className="primary-btn"
+                  disabled={
+                    saving ||
+                    oauthLoading ||
+                    (!form.token.trim() && !(active.connected && (form.projectKey.trim() || form.spaceKey.trim())))
+                  }
+                  onClick={() => void handleConnect()}
+                >
+                  {saving ? 'Verifying…' : active.connected && !form.token.trim() ? 'Save' : 'Connect'}
+                </button>
+              )}
+              {active.id === 'github' && active.connected && (
+                <button
+                  type="button"
+                  className="oauth-btn github"
+                  disabled={saving || oauthLoading}
+                  onClick={() => void handleStartGithubOAuth()}
+                >
+                  {oauthLoading ? 'Reconnecting…' : 'Reconnect with GitHub'}
+                </button>
+              )}
             </footer>
           </div>
         </div>

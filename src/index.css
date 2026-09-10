@@ -3707,6 +3707,23 @@ textarea::placeholder {
   cursor: not-allowed;
 }
 
+.oauth-btn.github {
+  background: #24292f;
+}
+
+.oauth-btn.github:hover:not(:disabled) {
+  background: #1b1f23;
+}
+
+.github-badge {
+  background: #24292f;
+}
+
+.github-oauth-card {
+  background: linear-gradient(135deg, rgba(36, 41, 47, 0.08) 0%, rgba(88, 96, 105, 0.08) 100%);
+  border-color: rgba(36, 41, 47, 0.22);
+}
+
 .oauth-notice {
   margin: 0.2rem 0 0;
   font-size: 0.75rem;

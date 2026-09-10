@@ -704,8 +704,9 @@ export function GenerationDownloadScreen({
             <div className="next-command-box">
               <h4>MCP config in the zip</h4>
               <p>
-                After unzip, open <code>{rootName}</code> in Cursor, copy the env example, add tokens, then reload MCP
-                (default <code>mcp.json</code> is already Windows-ready):
+                After unzip, open <code>{rootName}</code> in Cursor, copy the env example, then put your GitHub PAT in{' '}
+                <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> (and other tokens) in <code>.env.mcp</code>. Default{' '}
+                <code>mcp.json</code> is already Windows-ready:
               </p>
               <div className="next-command-row">
                 <code>{mcpSetupCommand}</code>

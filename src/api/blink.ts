@@ -80,6 +80,17 @@ export function apiUrl(path: string): string {
   return `${base}${suffix}`
 }
 
+/** Absolute OAuth callback GitHub/Atlassian will redirect to (API host after deploy, Vite origin locally). */
+export function oauthCallbackUrl(provider: 'github' | 'jira'): string {
+  const path = `/integrations/${provider}/oauth/callback`
+  const resolved = apiUrl(path)
+  if (/^https?:\/\//i.test(resolved)) {
+    return resolved
+  }
+  const prefix = resolved.startsWith('/') ? resolved : `/${resolved}`
+  return `${window.location.origin}${prefix}`
+}
+
 function isLocalApi(): boolean {
   const base = (import.meta.env.VITE_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
   return base.startsWith('/') || /localhost|127\.0\.0\.1/.test(base)
@@ -263,6 +274,8 @@ export interface JiraOAuthUrlResult {
   message?: string
 }
 
+export type GithubOAuthUrlResult = JiraOAuthUrlResult
+
 export class ApiRequestError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -284,7 +297,8 @@ export async function connectIntegration(payload: IntegrationConnectPayload): Pr
 }
 
 export async function fetchJiraOAuthUrl(): Promise<JiraOAuthUrlResult> {
-  const url = apiUrl('/integrations/jira/oauth/url')
+  const redirectUri = oauthCallbackUrl('jira')
+  const url = apiUrl(`/integrations/jira/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
   console.info(`[blink] GET ${url}`)
   const response = await fetch(url)
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -302,6 +316,37 @@ export async function exchangeJiraOAuth(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, redirectUri, projectId: projectId || undefined }),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<IntegrationConnectResult>
+}
+
+export async function fetchGithubOAuthUrl(): Promise<GithubOAuthUrlResult> {
+  const redirectUri = oauthCallbackUrl('github')
+  const url = apiUrl(`/integrations/github/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
+  console.info(`[blink] GET ${url}`)
+  const response = await fetch(url)
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<GithubOAuthUrlResult>
+}
+
+export async function exchangeGithubOAuth(
+  code: string,
+  redirectUri?: string,
+  projectId?: string | null,
+  organization?: string,
+): Promise<IntegrationConnectResult> {
+  const url = apiUrl('/integrations/github/oauth/exchange')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      redirectUri,
+      projectId: projectId || undefined,
+      organization: organization || undefined,
+    }),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<IntegrationConnectResult>

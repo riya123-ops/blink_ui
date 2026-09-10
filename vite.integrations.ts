@@ -134,6 +134,26 @@ async function connectProvider(body: ConnectBody) {
     const me = await providerGet(path, { Authorization: auth })
     const account = jsonField(me, 'displayName', 'emailAddress', 'username', 'accountId')
     const extra = provider === 'jira' ? optional(body.projectKey) : optional(body.spaceKey)
+
+    let projects: { id: string; key: string; name: string; projectTypeKey?: string; avatarUrl?: string }[] = []
+    if (provider === 'jira') {
+      try {
+        const prjRes = await providerGet(`https://${host}/rest/api/3/project`, { Authorization: auth })
+        const parsed = JSON.parse(prjRes)
+        if (Array.isArray(parsed)) {
+          projects = parsed.map((p) => ({
+            id: String(p.id || ''),
+            key: String(p.key || ''),
+            name: String(p.name || ''),
+            projectTypeKey: p.projectTypeKey,
+            avatarUrl: p.avatarUrls?.['48x48'],
+          }))
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     if (extra) {
       const extraPath =
         provider === 'jira'
@@ -141,9 +161,30 @@ async function connectProvider(body: ConnectBody) {
           : `https://${host}/wiki/rest/api/space/${encodeURIComponent(extra)}`
       await providerGet(extraPath, { Authorization: auth })
       const kind = provider === 'jira' ? 'project' : 'space'
-      return { connected: true, provider, account, detail: `Connected as ${account} to ${kind} ${extra}` }
+      const matched = projects.find((p) => p.key.toLowerCase() === extra.toLowerCase())
+      return {
+        connected: true,
+        provider,
+        account,
+        detail: `Connected as ${account} to ${kind} ${extra}`,
+        projectKey: extra,
+        projectName: matched?.name,
+        baseUrl: `https://${host}`,
+        authType: 'token',
+        token,
+        projects,
+      }
     }
-    return { connected: true, provider, account, detail: `Connected as ${account}` }
+    return {
+      connected: true,
+      provider,
+      account,
+      detail: projects.length > 0 ? `Connected as ${account} (${projects.length} projects available)` : `Connected as ${account}`,
+      baseUrl: `https://${host}`,
+      authType: 'token',
+      token,
+      projects,
+    }
   }
 
   throw new ConnectError(400, 'Unsupported provider.')
@@ -256,6 +297,51 @@ async function handleCreateRepos(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+async function handleFetchJiraProjects(req: IncomingMessage, res: ServerResponse) {
+  try {
+    const raw = await readBody(req)
+    const body = (raw.trim() ? JSON.parse(raw) : {}) as {
+      baseUrl?: string
+      email?: string
+      token?: string
+      cloudId?: string
+      accessToken?: string
+    }
+    let url = ''
+    let headers: Record<string, string> = {}
+    if (body.cloudId && body.accessToken) {
+      url = `https://api.atlassian.com/ex/jira/${encodeURIComponent(body.cloudId)}/rest/api/3/project`
+      headers = { Authorization: `Bearer ${body.accessToken}` }
+    } else if (body.baseUrl && body.email && body.token) {
+      const host = atlassianHost(body.baseUrl)
+      url = `https://${host}/rest/api/3/project`
+      headers = { Authorization: `Basic ${Buffer.from(`${body.email}:${body.token}`).toString('base64')}` }
+    } else {
+      sendJson(res, 200, [])
+      return
+    }
+
+    const prjRes = await providerGet(url, headers)
+    const parsed = JSON.parse(prjRes)
+    const projects = Array.isArray(parsed)
+      ? parsed.map((p) => ({
+          id: String(p.id || ''),
+          key: String(p.key || ''),
+          name: String(p.name || ''),
+          projectTypeKey: p.projectTypeKey,
+          avatarUrl: p.avatarUrls?.['48x48'],
+        }))
+      : []
+    sendJson(res, 200, projects)
+  } catch (error) {
+    if (error instanceof ConnectError) {
+      sendJson(res, error.status, { message: error.message })
+      return
+    }
+    sendJson(res, 502, { message: error instanceof Error ? error.message : 'Could not fetch projects.' })
+  }
+}
+
 export function integrationsConnectPlugin(): Plugin {
   return {
     name: 'blink-integrations-connect',
@@ -272,6 +358,10 @@ export function integrationsConnectPlugin(): Plugin {
         }
         if (path === '/api/integrations/repositories') {
           void handleCreateRepos(req, res)
+          return
+        }
+        if (path === '/api/integrations/jira/projects') {
+          void handleFetchJiraProjects(req, res)
           return
         }
         next()

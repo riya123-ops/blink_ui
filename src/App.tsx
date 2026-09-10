@@ -193,7 +193,7 @@ export default function App() {
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     const github = state.integrations.find((item) => item.id === 'github')
-    if (!github?.connected || !github.token) {
+    if (!github?.connected || !state.projectId) {
       setStatus({ type: 'error', message: 'Connect GitHub on the Integrations screen first.' })
       return false
     }
@@ -212,7 +212,7 @@ export default function App() {
     try {
       const result = await createRepositories({
         provider: 'github',
-        token: github.token,
+        projectId: state.projectId,
         organization: github.organization,
         repositories: pending.map((repo) => ({ name: repo.name.trim(), description: repo.description })),
       })
@@ -246,7 +246,7 @@ export default function App() {
     } finally {
       setCreatingRepos(false)
     }
-  }, [state.integrations, state.repositories, patch])
+  }, [state.integrations, state.repositories, state.projectId, patch])
 
   const goNext = useCallback(async () => {
     const err = validateCurrentStep()
@@ -293,7 +293,7 @@ export default function App() {
         return
       }
       const github = state.integrations.find((item) => item.id === 'github')
-      if (github?.connected && github.token) {
+      if (github?.connected && state.projectId) {
         const created = await handleCreateGithubRepos()
         if (!created) return
       } else {
@@ -685,13 +685,16 @@ export default function App() {
           repositories,
           integrations: state.integrations
             .filter((integration) => integration.connected)
-            .map(({ id, account, baseUrl, organization, workspace, projectKey, spaceKey }) => ({
+            .map(({ id, account, baseUrl, organization, workspace, projectKey, projectName, cloudId, authType, spaceKey }) => ({
               provider: id,
               account,
               baseUrl,
               organization,
               workspace,
               projectKey,
+              projectName,
+              cloudId,
+              authType,
               spaceKey,
             })),
         },
@@ -701,6 +704,7 @@ export default function App() {
           jiraEmail: jira?.email,
           confluenceUrl: confluence?.baseUrl,
           confluenceEmail: confluence?.email,
+          jiraCloudId: jira?.cloudId,
         },
       })
       if (!setupValidated) {

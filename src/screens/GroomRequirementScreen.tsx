@@ -60,6 +60,9 @@ function QuestionCard({
           {isMultiple ? 'Select all that apply' : 'Select one'}
         </span>
       </legend>
+      {question.subtitle ? (
+        <p className="groom-question-subtitle">{question.subtitle}</p>
+      ) : null}
       <div className="groom-options">
         {options.map((option) => {
           const checked = selectedIds.has(option.id)

@@ -3,7 +3,6 @@ import net from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { integrationsConnectPlugin } from './vite.integrations'
 
 const LOCAL_API = 'http://localhost:8090'
 
@@ -68,7 +67,7 @@ function apiFallbackProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), integrationsConnectPlugin(), apiFallbackProxy()],
+  plugins: [react(), apiFallbackProxy()],
   server: {
     host: '127.0.0.1',
     port: 5173,

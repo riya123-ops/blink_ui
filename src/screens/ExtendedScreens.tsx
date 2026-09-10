@@ -130,7 +130,7 @@ export function RepositoriesScreen({
   }
 
   const github = state.integrations.find((item) => item.id === 'github')
-  const githubReady = Boolean(github?.connected && github.token)
+  const githubReady = Boolean(github?.connected)
 
   return (
     <div className="screen screen-ref">
@@ -630,7 +630,7 @@ export function GenerationDownloadScreen({
   )
   const nextCommand = state.nextSdlcCommand || NEXT_SDLC_COMMAND
   const github = state.integrations.find((item) => item.id === 'github')
-  const githubReady = Boolean(github?.connected && github.token)
+  const githubReady = Boolean(github?.connected)
   const fileCount = state.filesGenerated > 0 ? state.filesGenerated : structure.length
   const rootName =
     state.downloadFilename?.replace(/\.zip$/i, '') || workspaceRootName(state.projectName)

@@ -102,6 +102,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
       : []
     const text = String(row.text || '').trim()
     const id = String(row.id || '').trim()
+    const subtitle = row.subtitle ? String(row.subtitle).trim() : undefined
     if (!id || !text || options.length < 2) return []
     const priorityRaw = String(row.priority || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
     const priority =
@@ -114,6 +115,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
       {
         id: id || `q-${index + 1}`,
         text,
+        ...(subtitle ? { subtitle } : {}),
         options,
         allowOther: row.allowOther !== false,
         allowMultiple: Boolean(row.allowMultiple),
@@ -202,6 +204,7 @@ export async function configureStakeholders(
 
 export interface IntegrationConnectPayload {
   provider: string
+  projectId?: string | null
   baseUrl?: string
   token?: string
   username?: string
@@ -212,11 +215,34 @@ export interface IntegrationConnectPayload {
   spaceKey?: string
 }
 
+export interface JiraProjectItem {
+  id: string
+  key: string
+  name: string
+  projectTypeKey?: string
+  avatarUrl?: string
+}
+
 export interface IntegrationConnectResult {
   connected: boolean
   provider: string
   account: string
   detail: string
+  projectKey?: string
+  projectName?: string
+  baseUrl?: string
+  cloudId?: string
+  authType?: 'oauth' | 'token'
+  token?: string
+  projects?: JiraProjectItem[]
+}
+
+export interface JiraOAuthUrlResult {
+  configured: boolean
+  url?: string
+  clientId?: string
+  redirectUri?: string
+  message?: string
 }
 
 export class ApiRequestError extends Error {
@@ -239,9 +265,125 @@ export async function connectIntegration(payload: IntegrationConnectPayload): Pr
   return response.json() as Promise<IntegrationConnectResult>
 }
 
+export async function fetchJiraOAuthUrl(): Promise<JiraOAuthUrlResult> {
+  const url = apiUrl('/integrations/jira/oauth/url')
+  console.info(`[blink] GET ${url}`)
+  const response = await fetch(url)
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<JiraOAuthUrlResult>
+}
+
+export async function exchangeJiraOAuth(
+  code: string,
+  redirectUri?: string,
+  projectId?: string | null,
+): Promise<IntegrationConnectResult> {
+  const url = apiUrl('/integrations/jira/oauth/exchange')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, redirectUri, projectId: projectId || undefined }),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<IntegrationConnectResult>
+}
+
+export async function saveIntegrationBinding(payload: {
+  projectId: string
+  provider: string
+  projectKey?: string
+  projectName?: string
+  spaceKey?: string
+}): Promise<IntegrationConnectResult> {
+  const url = apiUrl('/integrations/binding')
+  console.info(`[blink] POST ${url}`, { provider: payload.provider, projectKey: payload.projectKey })
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<IntegrationConnectResult>
+}
+
+export async function fetchJiraProjects(payload: {
+  projectId?: string | null
+  baseUrl?: string
+  email?: string
+  token?: string
+  cloudId?: string
+  accessToken?: string
+}): Promise<JiraProjectItem[]> {
+  const url = apiUrl('/integrations/jira/projects')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<JiraProjectItem[]>
+}
+
+export interface JiraCreatedIssueResult {
+  sourceId?: string
+  jiraKey?: string | null
+  jiraUrl?: string | null
+  type?: string
+  status?: string
+  message?: string
+}
+
+export interface CreateJiraIssuesPayload {
+  projectId?: string | null
+  baseUrl?: string
+  email?: string
+  token?: string
+  cloudId?: string
+  accessToken?: string
+  projectKey: string
+  epics?: {
+    id?: string
+    title: string
+    objective?: string
+    storyIds?: string[]
+  }[]
+  stories?: {
+    id?: string
+    epicId?: string
+    title: string
+    objective?: string
+    asA?: string
+    iWant?: string
+    soThat?: string
+    acceptanceCriteria?: string[]
+  }[]
+}
+
+export interface CreateJiraIssuesResult {
+  status: string
+  message: string
+  issues: JiraCreatedIssueResult[]
+  errors?: string[]
+}
+
+export async function createJiraIssues(payload: CreateJiraIssuesPayload): Promise<CreateJiraIssuesResult> {
+  const url = apiUrl('/integrations/jira/issues')
+  console.info(`[blink] POST ${url}`, { projectKey: payload.projectKey, epics: payload.epics?.length, stories: payload.stories?.length })
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<CreateJiraIssuesResult>
+}
+
 export interface CreateRepositoriesPayload {
   provider: string
-  token: string
+  projectId?: string | null
+  token?: string
   username?: string
   organization?: string
   workspace?: string
@@ -319,6 +461,7 @@ export async function downloadWorkspace(options: {
     jiraEmail?: string
     confluenceUrl?: string
     confluenceEmail?: string
+    jiraCloudId?: string
   }
 }): Promise<DownloadResult> {
   const form = new FormData()
@@ -345,6 +488,7 @@ export async function downloadWorkspace(options: {
   if (hints?.jiraEmail?.trim()) form.append('mcpJiraEmail', hints.jiraEmail.trim())
   if (hints?.confluenceUrl?.trim()) form.append('mcpConfluenceUrl', hints.confluenceUrl.trim())
   if (hints?.confluenceEmail?.trim()) form.append('mcpConfluenceEmail', hints.confluenceEmail.trim())
+  if (hints?.jiraCloudId?.trim()) form.append('mcpJiraCloudId', hints.jiraCloudId.trim())
   const url = apiUrl(`/projects/${options.projectId}/download`)
   console.info(`[blink] POST ${url}`)
   const controller = new AbortController()
@@ -400,6 +544,7 @@ export interface GroomOptionDto {
 export interface GroomQuestionDto {
   id: string
   text: string
+  subtitle?: string
   options: GroomOptionDto[]
   allowOther: boolean
   allowMultiple?: boolean

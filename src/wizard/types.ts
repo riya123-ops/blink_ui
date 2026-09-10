@@ -395,6 +395,9 @@ export function clearGroomingPatch(): Partial<WizardState> {
     questions: [],
     responses: [],
     questionsSent: false,
+    productScope: null,
+    scopeDigest: null,
+    jiraCreatedIssues: [],
   }
 }
 

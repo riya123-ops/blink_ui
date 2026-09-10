@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Check, ChevronDown, Layers, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, Sparkles } from 'lucide-react'
+import { JiraScopePanel } from './JiraScopePanel'
 import type { GroomQuestion, WizardState } from '../wizard/types'
 import {
   GROOM_BANDS,
@@ -19,6 +20,7 @@ interface Props {
   onToggleOther: (questionId: string, checked: boolean) => void
   onUseWording: () => void
   onStartOver: () => void
+  onUpdate: (patch: Partial<WizardState>) => void
 }
 
 function QuestionCard({
@@ -168,7 +170,17 @@ function Band({
   )
 }
 
-export function GroomingPanel({ state, loading, onAsk, onPick, onOther, onToggleOther, onUseWording, onStartOver }: Props) {
+export function GroomingPanel({
+  state,
+  loading,
+  onAsk,
+  onPick,
+  onOther,
+  onToggleOther,
+  onUseWording,
+  onStartOver,
+  onUpdate,
+}: Props) {
   const questions = state.groomQuestions
   const missingRequired = unansweredRequired(state)
   const asked = questions.length > 0 || state.groomStatus === 'draft_ready' || state.groomStatus === 'error'
@@ -257,120 +269,12 @@ export function GroomingPanel({ state, loading, onAsk, onPick, onOther, onToggle
         </p>
       )}
 
-      {state.productScope && (
-        <div
-          className="groom-product-scope-card"
-          style={{
-            marginTop: '1.5rem',
-            padding: '1.25rem',
-            background: 'rgba(255, 255, 255, 0.9)',
-            border: '1px solid #c7d2fe',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.08)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers size={20} color="#4f46e5" />
-              <h4 style={{ margin: 0, fontSize: '1rem', color: '#1e1b4b' }}>
-                Planned Product Scope (AI-SDLC Decomposition)
-              </h4>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <span className="groom-question-badge" style={{ background: '#e0e7ff', color: '#3730a3' }}>
-                {state.productScope.epics?.length || 0} Epic(s)
-              </span>
-              <span className="groom-question-badge" style={{ background: '#dcfce7', color: '#166534' }}>
-                {state.productScope.stories?.length || 0} Story(ies)
-              </span>
-            </div>
-          </div>
-
-          <p style={{ fontSize: '0.82rem', color: '#6b7280', margin: '0 0 1rem' }}>
-            Canonical decomposition proposed. Next authoritative gate: <code>/confirm-product-scope</code>
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {state.productScope.epics?.map((epic) => {
-              const childStories =
-                state.productScope?.stories?.filter(
-                  (s) => s.epicId === epic.id || epic.storyIds?.includes(s.id),
-                ) || []
-              return (
-                <div
-                  key={epic.id}
-                  style={{
-                    padding: '0.85rem 1rem',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        color: '#4f46e5',
-                        background: '#eef2ff',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {epic.id}
-                    </span>
-                    <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>{epic.title}</strong>
-                  </div>
-                  {epic.objective && (
-                    <p style={{ fontSize: '0.8rem', color: '#475569', margin: '2px 0 8px' }}>
-                      {epic.objective}
-                    </p>
-                  )}
-                  {childStories.length > 0 && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        marginTop: '6px',
-                        paddingLeft: '12px',
-                        borderLeft: '2px solid #cbd5e1',
-                      }}
-                    >
-                      {childStories.map((story) => (
-                        <div key={story.id} style={{ fontSize: '0.82rem' }}>
-                          <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                            {story.id}: {story.title}
-                          </span>
-                          {story.asA && story.iWant && (
-                            <p style={{ margin: '2px 0', color: '#64748b', fontSize: '0.78rem' }}>
-                              As a {story.asA}, I want {story.iWant}{' '}
-                              {story.soThat ? `so that ${story.soThat}` : ''}
-                            </p>
-                          )}
-                          {story.acceptanceCriteria && story.acceptanceCriteria.length > 0 && (
-                            <ul
-                              style={{
-                                margin: '4px 0 0 16px',
-                                padding: 0,
-                                color: '#475569',
-                                fontSize: '0.76rem',
-                              }}
-                            >
-                              {story.acceptanceCriteria.map((ac, acIdx) => (
-                                <li key={acIdx}>{ac}</li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+      {state.groomConfirmed && (
+        <JiraScopePanel
+          state={state}
+          onUpdate={onUpdate}
+          sourceText={state.groomDraft || state.requirementsText}
+        />
       )}
     </div>
   )

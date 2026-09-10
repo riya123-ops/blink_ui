@@ -63,7 +63,10 @@ export function RequirementsScreen({
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Requirements</h2>
-        <p>Upload a document or paste a short description. If you paste, we will ask one round of choices on this page.</p>
+        <p>
+          Upload a document or paste a short description. If you paste, answer one round of choices. Blink then
+          proposes Jira tickets from the cleared wording.
+        </p>
       </div>
 
       <section className="card ref-card">
@@ -136,6 +139,7 @@ export function RequirementsScreen({
             onToggleOther={onToggleOther}
             onUseWording={onUseWording}
             onStartOver={onStartOver}
+            onUpdate={onUpdate}
           />
         )}
 

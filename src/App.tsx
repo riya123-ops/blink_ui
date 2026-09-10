@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, planProductScope, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -46,6 +46,7 @@ import {
   type WizardStep,
 } from './wizard/types'
 import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
+import { createJiraIssuesFromState, isJiraReady, planScopeFromWording } from './wizard/jiraTickets'
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -311,32 +312,30 @@ export default function App() {
         responses: [],
         questionsSent: false,
       }
-      setSaving(true)
-      try {
-        const scopeRes = await planProductScope(state.projectId, {
-          projectName: state.projectName,
-          requirementText: wording,
-          actor: 'operator',
-        })
-        if (scopeRes && scopeRes.status === 'ok') {
-          patch({
-            ...baseReqPatch,
-            productScope: scopeRes.productScope,
-            scopeDigest: scopeRes.proposalDigest,
-            nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
-          })
-          setStatus({
-            type: 'success',
-            message: `Scope planned: ${scopeRes.epicIds?.length || 0} Epic(s), ${scopeRes.storyIds?.length || 0} Story(ies) proposed. Next: ${scopeRes.nextCommand || '/confirm-product-scope'}`,
-          })
-        } else {
+      const alreadyPlanned = Boolean(state.productScope?.epics?.length)
+      if (!alreadyPlanned && wording.trim()) {
+        setSaving(true)
+        try {
+          const scopePatch = await planScopeFromWording(state, wording)
+          const planned = { ...state, ...baseReqPatch, ...scopePatch }
+          let createdPatch: Partial<WizardState> = {}
+          if (isJiraReady(planned) && !(state.jiraCreatedIssues || []).some((item) => item.status === 'created')) {
+            try {
+              const result = await createJiraIssuesFromState(planned)
+              createdPatch = { jiraCreatedIssues: result.issues }
+            } catch (err) {
+              console.warn('Jira create after requirements:', err)
+            }
+          }
+          patch({ ...baseReqPatch, ...scopePatch, ...createdPatch })
+        } catch (err) {
+          console.warn('Product scope planning note:', err)
           patch(baseReqPatch)
+        } finally {
+          setSaving(false)
         }
-      } catch (err) {
-        console.warn('Product scope planning note:', err)
+      } else {
         patch(baseReqPatch)
-      } finally {
-        setSaving(false)
       }
     } else {
       setStatus(null)
@@ -506,7 +505,7 @@ export default function App() {
     if (!draft) return
     const nextState = { ...state, requirementsText: draft, groomConfirmed: true, groomDraft: draft }
     const questions = generateQuestionsFromRequirements(nextState)
-    patch({
+    const basePatch: Partial<WizardState> = {
       requirementsText: draft,
       groomDraft: draft,
       groomConfirmed: true,
@@ -515,8 +514,44 @@ export default function App() {
       requirementsAnalyzed: true,
       responses: [],
       questionsSent: false,
-    })
-    setStatus({ type: 'success', message: 'Requirement wording saved on this page.' })
+    }
+    setSaving(true)
+    setStatus({ type: 'info', message: 'Planning epics and stories from the cleared wording…' })
+    try {
+      const scopePatch = await planScopeFromWording({ ...state, ...basePatch }, draft)
+      const planned = { ...state, ...basePatch, ...scopePatch }
+      let createdPatch: Partial<WizardState> = {}
+      let extra = ''
+      if (isJiraReady(planned) && !(state.jiraCreatedIssues || []).some((item) => item.status === 'created')) {
+        setStatus({ type: 'info', message: 'Creating Jira tickets…' })
+        try {
+          const result = await createJiraIssuesFromState(planned)
+          createdPatch = { jiraCreatedIssues: result.issues }
+          const createdCount = (result.issues || []).filter((item) => item.status === 'created').length
+          extra =
+            result.status === 'error'
+              ? ` Jira create failed: ${result.message}`
+              : ` Created ${createdCount} Jira item${createdCount === 1 ? '' : 's'}.`
+        } catch (err) {
+          extra = ` Jira create failed: ${err instanceof Error ? err.message : 'Could not create Jira issues.'}`
+        }
+      } else if (!isJiraReady(planned)) {
+        extra = ' Connect Jira on Integrations to create these tickets.'
+      }
+      patch({ ...basePatch, ...scopePatch, ...createdPatch })
+      setStatus({
+        type: extra.includes('failed') ? 'error' : 'success',
+        message: `Requirement wording saved.${extra}`,
+      })
+    } catch (e) {
+      patch(basePatch)
+      setStatus({
+        type: 'error',
+        message: e instanceof Error ? e.message : 'Could not plan Jira tickets from the cleared wording.',
+      })
+    } finally {
+      setSaving(false)
+    }
   }, [state, patch])
 
   const handleGroomStartOver = useCallback(() => {
@@ -806,7 +841,7 @@ export default function App() {
                 'requirementsText' in updates || 'requirementFileName' in updates || 'requirementFile' in updates
               patch(resetGroom ? { ...clearGroomingPatch(), ...updates } : updates)
             }}
-            grooming={grooming}
+            grooming={grooming || saving}
             onAsk={() => void handleGroomAsk()}
             onPick={handleGroomPick}
             onOther={handleGroomOther}

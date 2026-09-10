@@ -83,8 +83,18 @@ export interface IntegrationItem {
   email?: string
   username?: string
   projectKey?: string
+  projectName?: string
+  cloudId?: string
+  authType?: 'oauth' | 'token'
   spaceKey?: string
   token?: string
+  availableProjects?: {
+    id: string
+    key: string
+    name: string
+    projectTypeKey?: string
+    avatarUrl?: string
+  }[]
 }
 
 export const TOPOLOGY_OPTIONS = [

@@ -197,6 +197,16 @@ export interface WizardState extends SetupForm {
   setupDeliveryReady: boolean
   productScope?: ProductScopeData | null
   scopeDigest?: string | null
+  jiraCreatedIssues?: JiraCreatedIssue[]
+}
+
+export interface JiraCreatedIssue {
+  sourceId?: string
+  jiraKey?: string | null
+  jiraUrl?: string | null
+  type?: string
+  status?: string
+  message?: string
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -290,6 +300,7 @@ export const defaultWizardState: WizardState = {
   setupDeliveryReady: false,
   productScope: null,
   scopeDigest: null,
+  jiraCreatedIssues: [],
 }
 
 function ideCommandsLabel(ideTool: string): string {

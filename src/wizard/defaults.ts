@@ -95,6 +95,12 @@ export interface IntegrationItem {
     projectTypeKey?: string
     avatarUrl?: string
   }[]
+  availableOrganizations?: {
+    login: string
+    name: string
+    avatarUrl?: string
+    personal?: boolean
+  }[]
 }
 
 export const TOPOLOGY_OPTIONS = [

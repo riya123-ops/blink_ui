@@ -5,17 +5,21 @@ import {
   exchangeGithubOAuth,
   exchangeJiraOAuth,
   fetchGithubOAuthUrl,
+  fetchGithubOrgs,
   fetchJiraOAuthUrl,
   fetchJiraProjects,
   saveIntegrationBinding,
+  type GithubOrgItem,
   type JiraProjectItem,
 } from '../api/blink'
 import type { IntegrationItem } from '../wizard/defaults'
 import type { WizardState } from '../wizard/types'
+import { IntegrationLogo } from './IntegrationLogo'
 
 interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
+  onEnsureProject?: () => Promise<{ id: string; created: boolean }>
 }
 
 interface ConnectForm {
@@ -48,8 +52,8 @@ const GUIDES: Record<
     tokenLabel: 'Personal access token',
     tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo,read:org&description=BLINK',
     steps: [
-      'Click Connect with GitHub and sign in to your GitHub account. No token is pasted in Blink.',
-      'Organization is optional if repos should be created under an org instead of your user.',
+      'Prefer Connect with GitHub. Use a personal access token below if the popup or OAuth app is unavailable.',
+      'Create a classic PAT with repo and read:org, or a fine-grained token that can create repositories.',
       'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set GITHUB_PERSONAL_ACCESS_TOKEN for Cursor MCP.',
     ],
   },
@@ -82,6 +86,33 @@ const GUIDES: Record<
   },
 }
 
+const DISPLAY_CARDS = [
+  {
+    id: 'github',
+    openId: 'github' as const,
+    label: 'GitHub',
+    purpose: 'Source control and new repositories',
+  },
+  {
+    id: 'atlassian',
+    openId: 'jira' as const,
+    label: 'Atlassian',
+    purpose: 'Jira for issues · Confluence for documentation',
+  },
+  {
+    id: 'bitbucket',
+    openId: 'bitbucket' as const,
+    label: 'Bitbucket',
+    purpose: 'Git hosting in an Atlassian workspace',
+  },
+]
+
+function purposeFor(id: string): string {
+  if (id === 'github') return DISPLAY_CARDS[0].purpose
+  if (id === 'bitbucket') return DISPLAY_CARDS[2].purpose
+  return DISPLAY_CARDS[1].purpose
+}
+
 function formFromItem(item: IntegrationItem, jira?: IntegrationItem): ConnectForm {
   const fromJira = item.id === 'confluence' && jira?.connected
   return {
@@ -96,7 +127,7 @@ function formFromItem(item: IntegrationItem, jira?: IntegrationItem): ConnectFor
   }
 }
 
-export function IntegrationsScreen({ state, onUpdate }: Props) {
+export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectForm>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
@@ -104,14 +135,35 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
   const [oauthLoading, setOauthLoading] = useState(false)
   const [oauthNotice, setOauthNotice] = useState<string | null>(null)
   const [projects, setProjects] = useState<JiraProjectItem[]>([])
+  const [githubOrgs, setGithubOrgs] = useState<GithubOrgItem[]>([])
   const [discoveringProjects, setDiscoveringProjects] = useState(false)
+  const [discoveringOrgs, setDiscoveringOrgs] = useState(false)
   const [isCustomProjectKey, setIsCustomProjectKey] = useState(false)
   const [selectedProjectName, setSelectedProjectName] = useState('')
   const oauthRedirectUriRef = useRef<string | undefined>(undefined)
   const githubOrgRef = useRef('')
+  const projectIdRef = useRef(state.projectId)
+
+  useEffect(() => {
+    projectIdRef.current = state.projectId
+  }, [state.projectId])
+
+  const requireStoredProject = useCallback(async (): Promise<string> => {
+    if (projectIdRef.current) return projectIdRef.current
+    if (!onEnsureProject) {
+      throw new Error('Save the project on Project & Stakeholders first so Blink can store this connection.')
+    }
+    const result = await onEnsureProject()
+    projectIdRef.current = result.id
+    if (result.created) {
+      setOauthNotice('Created a draft project so this connection can be stored. You can rename it on Project & Stakeholders.')
+    }
+    return result.id
+  }, [onEnsureProject])
 
   const active = state.integrations.find((item) => item.id === activeId) ?? null
   const jira = state.integrations.find((item) => item.id === 'jira')
+  const confluence = state.integrations.find((item) => item.id === 'confluence')
   const guide = active ? GUIDES[active.id] : null
 
   const patchItem = useCallback(
@@ -149,19 +201,22 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
             const res = await exchangeGithubOAuth(
               code,
               oauthRedirectUriRef.current,
-              state.projectId,
+              projectIdRef.current,
               githubOrgRef.current || undefined,
             )
+            const orgs = res.organizations || []
+            setGithubOrgs(orgs)
+            setForm((prev) => ({ ...prev, organization: res.organization || githubOrgRef.current || '' }))
             patchItem('github', {
               connected: true,
               account: res.account,
               detail: res.detail,
               baseUrl: res.baseUrl || 'https://github.com',
-              organization: githubOrgRef.current || undefined,
+              organization: res.organization || githubOrgRef.current || undefined,
               authType: 'oauth',
               token: undefined,
+              availableOrganizations: orgs,
             })
-            setActiveId(null)
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to complete GitHub OAuth.')
           } finally {
@@ -181,7 +236,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
           setOauthLoading(true)
           setError(null)
           try {
-            const res = await exchangeJiraOAuth(code, oauthRedirectUriRef.current, state.projectId)
+            const res = await exchangeJiraOAuth(code, oauthRedirectUriRef.current, projectIdRef.current)
             patchItem('jira', {
               connected: true,
               account: res.account,
@@ -194,7 +249,13 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               projectName: res.projectName,
               availableProjects: res.projects,
             })
-            setActiveId(null)
+            setForm((prev) => ({
+              ...prev,
+              projectKey: res.projectKey || prev.projectKey,
+              baseUrl: res.baseUrl || prev.baseUrl,
+            }))
+            setProjects(res.projects || [])
+            setSelectedProjectName(res.projectName || '')
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to complete Atlassian OAuth.')
           } finally {
@@ -205,17 +266,29 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
     }
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [patchItem, state.projectId])
+  }, [patchItem])
 
-  const connectedCount = useMemo(
-    () => state.integrations.filter((item) => item.connected).length,
-    [state.integrations],
-  )
+  const connectedCount = useMemo(() => {
+    return DISPLAY_CARDS.filter((card) =>
+      card.openId === 'jira'
+        ? Boolean(jira?.connected || confluence?.connected)
+        : Boolean(state.integrations.find((item) => item.id === card.openId)?.connected),
+    ).length
+  }, [state.integrations, jira?.connected, confluence?.connected])
 
   const openConnect = (item: IntegrationItem) => {
     setError(null)
     setOauthNotice(null)
-    setForm(formFromItem(item, jira))
+    setForm({
+      ...formFromItem(item, jira),
+      ...(item.id === 'jira'
+        ? {
+            spaceKey: confluence?.spaceKey || '',
+            baseUrl: item.baseUrl || confluence?.baseUrl || '',
+            email: item.email || confluence?.email || '',
+          }
+        : {}),
+    })
     setActiveId(item.id)
 
     if (item.id === 'jira') {
@@ -243,19 +316,47 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
           })
       }
     }
+
+    if (item.id === 'github') {
+      const existingOrgs = item.availableOrganizations || []
+      setGithubOrgs(existingOrgs)
+      if (item.connected && existingOrgs.length === 0 && state.projectId) {
+        void fetchGithubOrgs({ projectId: state.projectId })
+          .then((list) => {
+            if (list.length > 0) {
+              setGithubOrgs(list)
+              patchItem('github', { availableOrganizations: list })
+            }
+          })
+          .catch(() => {
+            // ignore initial silent auto-refresh
+          })
+      }
+    }
   }
 
   const disconnect = (id: string) => {
-    patchItem(id, {
-      connected: false,
-      account: undefined,
-      detail: undefined,
-      token: undefined,
-      cloudId: undefined,
-      authType: undefined,
-      projectKey: undefined,
-      projectName: undefined,
-      availableProjects: undefined,
+    const ids = id === 'jira' || id === 'confluence' ? ['jira', 'confluence'] : [id]
+    onUpdate({
+      integrations: state.integrations.map((item) =>
+        ids.includes(item.id)
+          ? {
+              ...item,
+              connected: false,
+              account: undefined,
+              detail: undefined,
+              token: undefined,
+              cloudId: undefined,
+              authType: undefined,
+              projectKey: undefined,
+              projectName: undefined,
+              availableProjects: undefined,
+              organization: undefined,
+              availableOrganizations: undefined,
+              spaceKey: undefined,
+            }
+          : item,
+      ),
     })
     setActiveId(null)
   }
@@ -263,12 +364,9 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
   const handleStartOAuth = async () => {
     setError(null)
     setOauthNotice(null)
-    if (!state.projectId) {
-      setError('Save the project on Project & Stakeholders first so Blink can store this connection.')
-      return
-    }
     setOauthLoading(true)
     try {
+      await requireStoredProject()
       const urlRes = await fetchJiraOAuthUrl()
       oauthRedirectUriRef.current = urlRes.redirectUri
       if (!urlRes.configured || !urlRes.url) {
@@ -303,13 +401,10 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
   const handleStartGithubOAuth = async () => {
     setError(null)
     setOauthNotice(null)
-    if (!state.projectId) {
-      setError('Save the project on Project & Stakeholders first so Blink can store this connection.')
-      return
-    }
-    githubOrgRef.current = form.organization.trim()
     setOauthLoading(true)
     try {
+      await requireStoredProject()
+      githubOrgRef.current = form.organization.trim()
       const urlRes = await fetchGithubOAuthUrl()
       oauthRedirectUriRef.current = urlRes.redirectUri
       if (!urlRes.configured || !urlRes.url) {
@@ -400,12 +495,45 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
     }
   }
 
-  const handleConnect = async () => {
-    if (!active) return
-    if (!state.projectId) {
-      setError('Save the project on Project & Stakeholders first so Blink can store this connection.')
+  const handleDiscoverOrgs = async () => {
+    if (!active || active.id !== 'github') return
+    setDiscoveringOrgs(true)
+    setError(null)
+    try {
+      const projectId = await requireStoredProject()
+      const list = await fetchGithubOrgs({ projectId })
+      setGithubOrgs(list)
+      patchItem('github', { availableOrganizations: list })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not fetch GitHub organizations.')
+    } finally {
+      setDiscoveringOrgs(false)
+    }
+  }
+
+  const handleOrgSelect = (val: string) => {
+    setForm((prev) => ({ ...prev, organization: val }))
+    githubOrgRef.current = val
+    if (!active?.connected) {
       return
     }
+    patchItem('github', {
+      organization: val || undefined,
+      detail: val ? `Connected as ${active.account} to ${val}` : `Connected as ${active.account}`,
+    })
+    if (state.projectId) {
+      void saveIntegrationBinding({
+        projectId: state.projectId,
+        provider: 'github',
+        organization: val,
+      }).catch(() => {
+        // selection is still kept in the wizard; reconnect if the server missed it
+      })
+    }
+  }
+
+  const handleConnect = async () => {
+    if (!active) return
     if ((active.id === 'jira' || active.id === 'confluence') && (!form.baseUrl.trim() || !form.email.trim())) {
       setError('Cloud site URL and Atlassian email are required.')
       return
@@ -414,12 +542,17 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
       setError('Workspace and username are required.')
       return
     }
-    if (active.connected && !form.token.trim() && (form.projectKey.trim() || form.spaceKey.trim())) {
-      setSaving(true)
-      setError(null)
-      try {
+    if (active.id === 'github' && !form.token.trim()) {
+      setError('Paste a GitHub personal access token, or use Connect with GitHub.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const projectId = await requireStoredProject()
+      if (active.connected && !form.token.trim() && (form.projectKey.trim() || form.spaceKey.trim())) {
         const result = await saveIntegrationBinding({
-          projectId: state.projectId,
+          projectId,
           provider: active.id,
           projectKey: form.projectKey.trim() || undefined,
           projectName: selectedProjectName || undefined,
@@ -432,39 +565,35 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
           token: undefined,
         })
         setActiveId(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : `Could not save ${active.label} selection.`)
-      } finally {
-        setSaving(false)
+        return
       }
-      return
-    }
-    setSaving(true)
-    setError(null)
-    const payload = {
-      provider: active.id,
-      projectId: state.projectId,
-      token: form.token.trim(),
-      username: form.username.trim() || undefined,
-      email: form.email.trim() || undefined,
-      organization: form.organization.trim() || undefined,
-      workspace: form.workspace.trim() || undefined,
-      baseUrl: form.baseUrl.trim() || undefined,
-      projectKey: form.projectKey.trim() || undefined,
-      spaceKey: form.spaceKey.trim() || undefined,
-    }
-    try {
+      const payload = {
+        provider: active.id,
+        projectId,
+        token: form.token.trim(),
+        username: form.username.trim() || undefined,
+        email: form.email.trim() || undefined,
+        organization: form.organization.trim() || undefined,
+        workspace: form.workspace.trim() || undefined,
+        baseUrl: form.baseUrl.trim() || undefined,
+        projectKey: form.projectKey.trim() || undefined,
+        spaceKey: form.spaceKey.trim() || undefined,
+      }
       const result = await connectIntegration(payload)
       const projKey = form.projectKey.trim() || result.projectKey
       const projName = selectedProjectName || result.projectName
       const finalProjects = result.projects && result.projects.length > 0 ? result.projects : projects
+      const orgs = result.organizations || []
+      if (active.id === 'github' && orgs.length > 0) {
+        setGithubOrgs(orgs)
+      }
       patchItem(active.id, {
         connected: true,
         account: result.account,
         detail: result.detail,
         token: undefined,
         baseUrl: payload.baseUrl || result.baseUrl,
-        organization: payload.organization,
+        organization: result.organization || payload.organization,
         workspace: payload.workspace,
         email: payload.email,
         username: payload.username,
@@ -474,8 +603,35 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
         authType: (result.authType as 'oauth' | 'token') || 'token',
         spaceKey: payload.spaceKey,
         availableProjects: finalProjects,
+        availableOrganizations: active.id === 'github' ? orgs : undefined,
       })
-      setActiveId(null)
+      if (active.id === 'jira' && payload.token && (payload.baseUrl || result.baseUrl) && payload.email) {
+        try {
+          const wiki = await connectIntegration({
+            provider: 'confluence',
+            projectId,
+            baseUrl: payload.baseUrl || result.baseUrl,
+            email: payload.email,
+            token: payload.token,
+            spaceKey: payload.spaceKey,
+          })
+          patchItem('confluence', {
+            connected: true,
+            account: wiki.account,
+            detail: wiki.detail,
+            baseUrl: payload.baseUrl || result.baseUrl,
+            email: payload.email,
+            spaceKey: payload.spaceKey,
+            authType: 'token',
+          })
+        } catch {
+          // Jira can succeed without Confluence; user can retry with a space key and token.
+        }
+      }
+      setForm((prev) => ({ ...prev, token: '', organization: result.organization || prev.organization }))
+      if (active.id !== 'github' && active.id !== 'jira') {
+        setActiveId(null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : `Could not connect ${active.label}.`)
     } finally {
@@ -488,7 +644,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
       <div className="screen-header">
         <h2>Integrations</h2>
         <p>
-          Sign in to GitHub to create repositories. Connect Jira and pick the project that should receive tickets. Blink
+          Sign in to GitHub to create repositories. Connect Atlassian for Jira tickets and Confluence docs. Blink
           creates epics and stories after you clear the requirement wording on the next step.
         </p>
       </div>
@@ -499,11 +655,11 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
         <section className="card ref-card integrations-connect-panel">
           <div className="integrations-panel-head">
             <h3>Connected tools</h3>
-            <span className="integrations-count">{connectedCount} of 4</span>
+            <span className="integrations-count">{connectedCount} of {DISPLAY_CARDS.length}</span>
           </div>
           <ol className="connect-howto">
-            <li>Connect GitHub by signing in with your GitHub account. No token is pasted here.</li>
-            <li>Connect Jira with one-click Atlassian OAuth (or an API token) and pick the project for tickets.</li>
+            <li>Connect GitHub by signing in, or with a personal access token if the popup fails.</li>
+            <li>Connect Atlassian for Jira issues and Confluence documentation, then pick the Jira project for tickets.</li>
             <li>Tickets are created after you answer the requirement questions on the next step.</li>
             <li>
               After you download the zip, put GitHub/Jira tokens in <code>automation_sdlc/.env.mcp</code>. Blink never
@@ -511,49 +667,63 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
             </li>
           </ol>
           <div className="integration-grid ref">
-            {state.integrations.map((item) => (
-              <article
-                key={item.id}
-                className={`integration-card ref ${item.connected ? 'connected' : ''}`}
-                onClick={() => openConnect(item)}
-              >
-                <span className="int-icon">{item.icon}</span>
-                <div className="int-body">
-                  <strong>{item.label}</strong>
-                  <span className="int-category">
-                    {item.connected && item.account
-                      ? `${item.account}${item.projectKey ? ` • ${item.projectKey}` : ''}`
-                      : item.category}
-                  </span>
-                </div>
-                {item.connected ? (
-                  <div className="int-card-actions">
-                    <span className="connected-label">✓ Connected</span>
+            {DISPLAY_CARDS.map((card) => {
+              const providers = card.openId === 'jira' ? [jira, confluence] : [state.integrations.find((item) => item.id === card.openId)]
+              const primary = card.openId === 'jira' ? jira : state.integrations.find((item) => item.id === card.openId)
+              const connected = providers.some((item) => item?.connected)
+              const status =
+                card.openId === 'jira'
+                  ? [
+                      jira?.connected && jira.account
+                        ? `${jira.account}${jira.projectKey ? ` • ${jira.projectKey}` : ''}`
+                        : null,
+                      confluence?.connected ? 'Confluence' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  : primary?.connected && primary.account
+                    ? `${primary.account}${primary.organization ? ` • ${primary.organization}` : ''}`
+                    : ''
+              return (
+                <article
+                  key={card.id}
+                  className={`integration-card ref ${connected ? 'connected' : ''}`}
+                  onClick={() => primary && openConnect(primary)}
+                >
+                  <IntegrationLogo id={card.id} label={card.label} />
+                  <div className="int-body">
+                    <strong>{card.label}</strong>
+                    <span className="int-purpose">{connected && status ? status : card.purpose}</span>
+                  </div>
+                  {connected ? (
+                    <div className="int-card-actions">
+                      <span className="connected-label">✓ Connected</span>
+                      <button
+                        type="button"
+                        className="text-btn"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          if (primary) openConnect(primary)
+                        }}
+                      >
+                        Manage
+                      </button>
+                    </div>
+                  ) : (
                     <button
                       type="button"
-                      className="text-btn"
+                      className="primary-btn int-connect-btn"
                       onClick={(event) => {
                         event.stopPropagation()
-                        openConnect(item)
+                        if (primary) openConnect(primary)
                       }}
                     >
-                      Manage
+                      Connect
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="primary-btn int-connect-btn"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openConnect(item)
-                    }}
-                  >
-                    Connect
-                  </button>
-                )}
-              </article>
-            ))}
+                  )}
+                </article>
+              )
+            })}
           </div>
         </section>
       </div>
@@ -575,9 +745,10 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
             <header className="connect-modal-header">
               <div>
                 <h3 id="connect-title">
-                  <span className="int-icon">{active.icon}</span> Connect {active.label}
+                  <IntegrationLogo id={active.id} label={active.id === 'jira' || active.id === 'confluence' ? 'Atlassian' : active.label} />{' '}
+                  Connect {active.id === 'jira' || active.id === 'confluence' ? 'Atlassian' : active.label}
                 </h3>
-                <p>{active.category}</p>
+                <p>{purposeFor(active.id)}</p>
               </div>
               <button
                 type="button"
@@ -598,18 +769,8 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                   <strong>Sign in with GitHub</strong>
                 </div>
                 <p className="jira-oauth-desc">
-                  Connect directly with your GitHub account. Do not paste a token in Blink. After you download the zip,
-                  set <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> in <code>automation_sdlc/.env.mcp</code> for Cursor MCP.
+                  Sign in with your GitHub account. If the popup fails, connect with a personal access token below.
                 </p>
-                <div className="field-group">
-                  <label htmlFor="gh-org">Organization (optional)</label>
-                  <input
-                    id="gh-org"
-                    value={form.organization}
-                    onChange={(e) => setForm({ ...form, organization: e.target.value })}
-                    placeholder="your-org"
-                  />
-                </div>
                 <button
                   type="button"
                   className="oauth-btn github"
@@ -631,7 +792,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                   <strong>1-Click Atlassian OAuth (3LO)</strong>
                 </div>
                 <p className="jira-oauth-desc">
-                  Connect directly with your Atlassian account in one click. No tokens or URLs needed.
+                  Authorize Jira for tickets and the same Atlassian site for Confluence documentation.
                 </p>
                 <button
                   type="button"
@@ -652,57 +813,55 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               </div>
             )}
 
-            {active.id !== 'github' && (
-              <>
-                <ol className="connect-steps">
-                  {guide.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-                <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
-                  Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
-                </a>
-              </>
-            )}
-            {active.id === 'github' && (
-              <>
-                <ol className="connect-steps">
-                  {guide.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-                <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
-                  Create a PAT for .env.mcp (after download) <ExternalLink size={14} />
-                </a>
-              </>
+            {active.id === 'github' && !active.connected && (
+              <div className="connect-divider">
+                <span>or connect with a personal access token</span>
+              </div>
             )}
 
-            {active.id === 'confluence' && jira?.connected && (
-              <button
-                type="button"
-                className="text-btn"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    baseUrl: jira.baseUrl || prev.baseUrl,
-                    email: jira.email || prev.email,
-                  }))
-                }
-              >
-                Use Jira site and email
-              </button>
-            )}
+            <ol className="connect-steps">
+              {guide.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
+              Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
+            </a>
 
             <div className="connect-fields">
               {active.id === 'github' && active.connected && (
                 <div className="field-group">
-                  <label htmlFor="int-org">Organization (optional)</label>
-                  <input
-                    id="int-org"
+                  <div className="field-label-row">
+                    <label htmlFor="gh-org-select">GitHub destination</label>
+                    <button
+                      type="button"
+                      className="mini-btn"
+                      disabled={discoveringOrgs}
+                      onClick={() => void handleDiscoverOrgs()}
+                    >
+                      <RefreshCw size={11} className={discoveringOrgs ? 'spin' : ''} />
+                      {discoveringOrgs ? 'Loading…' : 'Find organizations'}
+                    </button>
+                  </div>
+                  <select
+                    id="gh-org-select"
                     value={form.organization}
-                    onChange={(e) => setForm({ ...form, organization: e.target.value })}
-                    placeholder="your-org"
-                  />
+                    onChange={(e) => handleOrgSelect(e.target.value)}
+                  >
+                    <option value="">Personal account{active.account ? ` (${active.account})` : ''}</option>
+                    {githubOrgs
+                      .filter((org) => !org.personal)
+                      .map((org) => (
+                        <option key={org.login} value={org.login}>
+                          {org.name && org.name !== org.login ? `${org.name} (${org.login})` : org.login}
+                        </option>
+                      ))}
+                  </select>
+                  <span className="field-hint">
+                    {form.organization
+                      ? `New repositories will be created in ${form.organization}.`
+                      : 'New repositories will be created under your personal account.'}
+                  </span>
                 </div>
               )}
               {(active.id === 'jira' || active.id === 'confluence') && (
@@ -788,15 +947,20 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                     </div>
                   )}
 
-                  {active.id === 'confluence' && (
-                    <div className="field-group">
-                      <label htmlFor="int-space">Space key (optional)</label>
+                  {active.id === 'jira' && (
+                    <div className="field-group atlassian-confluence-block">
+                      <label htmlFor="int-space">Confluence space key (optional)</label>
                       <input
                         id="int-space"
                         value={form.spaceKey}
                         onChange={(e) => setForm({ ...form, spaceKey: e.target.value })}
                         placeholder="ENG"
                       />
+                      <span className="field-hint">
+                        {confluence?.connected
+                          ? `Confluence connected${confluence.spaceKey ? ` • ${confluence.spaceKey}` : ''}.`
+                          : 'Same Atlassian site as Jira. Paste an API token below to connect Confluence.'}
+                      </span>
                     </div>
                   )}
                 </>
@@ -823,19 +987,25 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                   </div>
                 </>
               )}
-              {active.id !== 'github' && (
-                <div className="field-group">
-                  <label htmlFor="int-token">{guide.tokenLabel}</label>
-                  <input
-                    id="int-token"
-                    type="password"
-                    autoComplete="off"
-                    value={form.token}
-                    onChange={(e) => setForm({ ...form, token: e.target.value })}
-                    placeholder={active.connected ? 'Enter a new token to reconnect' : 'Paste token'}
-                  />
-                </div>
-              )}
+              <div className="field-group">
+                <label htmlFor="int-token">{guide.tokenLabel}</label>
+                <input
+                  id="int-token"
+                  type="password"
+                  autoComplete="off"
+                  value={form.token}
+                  onChange={(e) => setForm({ ...form, token: e.target.value })}
+                  placeholder={
+                    active.id === 'github'
+                      ? active.connected
+                        ? 'Paste a new PAT to reconnect without OAuth'
+                        : 'Paste classic or fine-grained PAT'
+                      : active.connected
+                        ? 'Enter a new token to reconnect'
+                        : 'Paste token'
+                  }
+                />
+              </div>
             </div>
 
             {error && <p className="connect-error">{error}</p>}
@@ -860,7 +1030,7 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
               >
                 Cancel
               </button>
-              {active.id !== 'github' && (
+              {(active.id !== 'github' || form.token.trim()) && (
                 <button
                   type="button"
                   className="primary-btn"
@@ -871,7 +1041,13 @@ export function IntegrationsScreen({ state, onUpdate }: Props) {
                   }
                   onClick={() => void handleConnect()}
                 >
-                  {saving ? 'Verifying…' : active.connected && !form.token.trim() ? 'Save' : 'Connect'}
+                  {saving
+                    ? 'Verifying…'
+                    : active.connected && !form.token.trim()
+                      ? 'Save'
+                      : active.id === 'github'
+                        ? 'Connect with token'
+                        : 'Connect'}
                 </button>
               )}
               {active.id === 'github' && active.connected && (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ThemeBackground } from './components/ThemeBackground'
@@ -48,6 +49,25 @@ import {
 import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
 import { createJiraIssuesFromState, isJiraReady, planScopeFromWording } from './wizard/jiraTickets'
 
+function withDraftProjectPayload(payload: ProjectPayload): ProjectPayload {
+  const stakeholders = payload.stakeholders.filter((row) => row.name.trim() && row.email.trim())
+  return {
+    ...payload,
+    projectName: payload.projectName.trim() || `Blink Dev ${new Date().toISOString().slice(0, 10)}`,
+    description:
+      payload.description.trim() ||
+      'Developer-mode draft. Update this on Project & Stakeholders when you are ready.',
+    stakeholders:
+      stakeholders.length > 0
+        ? stakeholders
+        : defaultWizardState.stakeholderAssignments.map((row) => ({
+            roleCode: row.roleId,
+            name: row.personName,
+            email: row.personEmail,
+          })),
+  }
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -88,6 +108,9 @@ export default function App() {
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
   const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
+  const skipStepValidation = useDeveloperCapability('skipStepValidation')
+  const autoEnsureProject = useDeveloperCapability('autoEnsureProject')
+  const unrestrictedNav = useDeveloperCapability('unrestrictedStepNav')
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -121,14 +144,14 @@ export default function App() {
     })),
   }), [state.projectType, state.projectName, state.description, state.stakeholderAssignments])
 
-  const persistProject = useCallback(async (): Promise<{
+  const persistProject = useCallback(async (opts?: { draft?: boolean }): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
     sodWarnings?: string[]
     nextCommand?: string
     governanceStatus?: 'idle' | 'preparing' | 'ready' | 'failed' | null
   }> => {
-    const payload = projectPayload()
+    const payload = opts?.draft ? withDraftProjectPayload(projectPayload()) : projectPayload()
     const payloadStr = JSON.stringify(payload)
     if (state.projectId && lastSavedPayloadRef.current === payloadStr) {
       return {
@@ -145,6 +168,8 @@ export default function App() {
     const governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
     patch({
       projectId: id,
+      projectName: payload.projectName,
+      description: payload.description,
       sodWarnings: saved.sodWarnings || [],
       nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
       governanceStatus,
@@ -164,6 +189,22 @@ export default function App() {
       governanceStatus,
     }
   }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, state.governanceStatus, folderPrep, governancePrep, patch])
+
+  const ensureDraftProject = useCallback(async (): Promise<{ id: string; created: boolean }> => {
+    if (state.projectId) {
+      return { id: state.projectId, created: false }
+    }
+    const saved = await persistProject({ draft: true })
+    return { id: saved.id, created: true }
+  }, [state.projectId, persistProject])
+
+  useEffect(() => {
+    publishDeveloperSession({
+      step,
+      projectId: state.projectId,
+      groomingUnlocked: groomingComplete(state),
+    })
+  }, [step, state])
 
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
@@ -312,7 +353,7 @@ export default function App() {
   }, [state.integrations, state.repositories, state.projectId, patch])
 
   const goNext = useCallback(async () => {
-    const err = validateCurrentStep()
+    const err = skipStepValidation ? null : validateCurrentStep()
     if (err) {
       setStatus({ type: 'error', message: err })
       return
@@ -327,7 +368,9 @@ export default function App() {
         setStatus(null)
       }
       try {
-        const saved = await persistProject()
+        const saved = await persistProject({
+          draft: skipStepValidation && (!state.projectName.trim() || !state.description.trim()),
+        })
         if (saved.sodWarnings && saved.sodWarnings.length > 0) {
           setStatus({
             type: 'info',
@@ -356,7 +399,7 @@ export default function App() {
         }
       }
     } else if (step === 'repositories') {
-      if (!state.repositories.some((repo) => repo.name.trim())) {
+      if (!skipStepValidation && !state.repositories.some((repo) => repo.name.trim())) {
         setStatus({ type: 'error', message: 'Keep at least one repository, or add one.' })
         return
       }
@@ -411,7 +454,7 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) setStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch])
+  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch, skipStepValidation])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -603,7 +646,7 @@ export default function App() {
           extra = ` Jira create failed: ${err instanceof Error ? err.message : 'Could not create Jira issues.'}`
         }
       } else if (!isJiraReady(planned)) {
-        extra = ' Connect Jira on Integrations to create these tickets.'
+        extra = ' Connect Atlassian on Integrations to create these tickets.'
       }
       patch({ ...basePatch, ...scopePatch, ...createdPatch })
       setStatus({
@@ -890,7 +933,13 @@ export default function App() {
       case 'project-stakeholders':
         return <ProjectStakeholdersScreen state={state} onUpdate={patch} />
       case 'integrations':
-        return <IntegrationsScreen state={state} onUpdate={patch} />
+        return (
+          <IntegrationsScreen
+            state={state}
+            onUpdate={patch}
+            onEnsureProject={autoEnsureProject ? ensureDraftProject : undefined}
+          />
+        )
       case 'repositories':
         return (
           <RepositoriesScreen
@@ -983,6 +1032,7 @@ export default function App() {
             completedThrough={completedThrough}
             generationComplete={state.generationComplete}
             groomingUnlocked={groomingComplete(state)}
+            unrestrictedNav={unrestrictedNav}
             onNavigate={(s) => {
               setStatus(null)
               setStep(s)

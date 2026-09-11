@@ -1,9 +1,5 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App'
-import './index.css'
+import { isDeveloperPopupWindow } from './developer/window'
 
-// Check if this window was opened as an OAuth callback popup (e.g. on Render static site)
 if (window.opener && /\/(jira|github)\/oauth\/callback/.test(window.location.pathname)) {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code')
@@ -23,10 +19,8 @@ if (window.opener && /\/(jira|github)\/oauth\/callback/.test(window.location.pat
     '*'
   )
   window.close()
+} else if (isDeveloperPopupWindow()) {
+  void import('./developer/popup-entry')
 } else {
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
+  void import('./app-entry')
 }

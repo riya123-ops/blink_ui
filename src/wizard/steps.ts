@@ -52,7 +52,9 @@ export function canNavigateToStep(
   current: WizardStep,
   completedThrough: number,
   groomingUnlocked = true,
+  unrestricted = false,
 ): boolean {
+  if (unrestricted) return stepIndex(target) >= 0
   if (current === 'welcome') return target === 'welcome'
   const targetIdx = stepIndex(target)
   const currentIdx = stepIndex(current)

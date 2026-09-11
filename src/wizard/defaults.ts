@@ -168,6 +168,7 @@ export const DEFAULT_INTEGRATIONS: IntegrationItem[] = [
   { id: 'github', label: 'GitHub', category: 'Code management', icon: '🐙', connected: false },
   { id: 'jira', label: 'Jira', category: 'Issue Tracker', icon: '📋', connected: false },
   { id: 'confluence', label: 'Confluence', category: 'Documentation', icon: '📘', connected: false },
+  { id: 'figma', label: 'Figma', category: 'Design', icon: '🎨', connected: false },
   { id: 'bitbucket', label: 'Bitbucket', category: 'Git Provider', icon: '🪣', connected: false },
 ]
 

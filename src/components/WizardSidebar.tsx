@@ -1,4 +1,5 @@
-import { CircleCheck } from 'lucide-react'
+import { CircleCheck, LogOut } from 'lucide-react'
+import { useAuth } from '../auth/AuthContext'
 import { TalentServLogo } from './TalentServLogo'
 import { BlinkLogo } from './BlinkLogo'
 import { STEP_ORDER, WIZARD_STEPS, canNavigateToStep, stepIndex } from '../wizard/steps'
@@ -24,6 +25,7 @@ export function WizardSidebar({
   unrestrictedNav = false,
   onNavigate,
 }: Props) {
+  const { session, signOut } = useAuth()
   const generationIdx = stepIndex('generation')
   return (
     <>
@@ -67,6 +69,16 @@ export function WizardSidebar({
           })}
         </ul>
       </nav>
+      {session && (
+        <div className="sidebar-session">
+          <span className="sidebar-session-email" title={session.email}>
+            {session.email}
+          </span>
+          <button type="button" className="ghost-btn sidebar-signout" onClick={signOut}>
+            <LogOut size={13} /> Sign out
+          </button>
+        </div>
+      )}
     </>
   )
 }

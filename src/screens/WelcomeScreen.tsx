@@ -1,11 +1,14 @@
-import { ArrowRight, CheckCircle2, FolderPlus, FolderSearch, Layers, Rocket, ShieldCheck } from 'lucide-react'
+import { ArrowRight, CheckCircle2, FolderPlus, FolderSearch, Layers, LogOut, Play, Rocket, ShieldCheck } from 'lucide-react'
+import { useAuth } from '../auth/AuthContext'
 import { AppHeader } from '../components/AppHeader'
 import type { WizardState } from '../wizard/types'
 
 interface Props {
   state: WizardState
-  onSelectType: (type: 'new' | 'existing') => void
+  resume: { projectName: string; stepLabel: string } | null
   onContinue: (type: 'new' | 'existing') => void
+  onResume: () => void
+  onStartNew: () => void
 }
 
 const FEATURES = [
@@ -15,10 +18,22 @@ const FEATURES = [
   { icon: CheckCircle2, label: 'Consistent Quality', desc: 'Built-in guidelines and structure', color: 'green' },
 ]
 
-export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
+export function WelcomeScreen({ state, resume, onContinue, onResume, onStartNew }: Props) {
+  const { session, signOut } = useAuth()
   return (
     <div className="welcome-page">
-      <AppHeader />
+      <AppHeader
+        end={
+          session ? (
+            <div className="header-session">
+              <span>{session.email}</span>
+              <button type="button" className="ghost-btn header-signout" onClick={signOut}>
+                <LogOut size={14} /> Sign out
+              </button>
+            </div>
+          ) : null
+        }
+      />
 
       <div className="welcome-body">
         <div className="welcome-headline">
@@ -31,11 +46,28 @@ export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
           </p>
         </div>
 
+        {resume ? (
+          <div className="resume-banner">
+            <div>
+              <strong>Continue {resume.projectName}</strong>
+              <span>Pick up at {resume.stepLabel}</span>
+            </div>
+            <div className="resume-banner-actions">
+              <button type="button" className="card-cta blue" onClick={onResume}>
+                Continue <Play size={16} />
+              </button>
+              <button type="button" className="ghost-btn" onClick={onStartNew}>
+                Start over
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="project-cards">
           <article
             className={`project-card blue ${state.projectType === 'new' ? 'selected' : ''}`}
-            onClick={() => onSelectType('new')}
-            onKeyDown={(e) => e.key === 'Enter' && onSelectType('new')}
+            onClick={() => onStartNew()}
+            onKeyDown={(e) => e.key === 'Enter' && onStartNew()}
             role="button"
             tabIndex={0}
           >
@@ -49,7 +81,7 @@ export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
               className="card-cta blue"
               onClick={(e) => {
                 e.stopPropagation()
-                onContinue('new')
+                onStartNew()
               }}
             >
               Get Started <ArrowRight size={16} />
@@ -58,8 +90,8 @@ export function WelcomeScreen({ state, onSelectType, onContinue }: Props) {
 
           <article
             className={`project-card green ${state.projectType === 'existing' ? 'selected' : ''}`}
-            onClick={() => onSelectType('existing')}
-            onKeyDown={(e) => e.key === 'Enter' && onSelectType('existing')}
+            onClick={() => onContinue('existing')}
+            onKeyDown={(e) => e.key === 'Enter' && onContinue('existing')}
             role="button"
             tabIndex={0}
           >

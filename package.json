@@ -10,7 +10,8 @@
       "dev": "vite",
       "build": "tsc -b && vite build",
       "preview": "vite preview",
-      "test:jira-match": "node --experimental-strip-types src/wizard/jiraMatch.check.ts"
+      "test:jira-match": "node --experimental-strip-types src/wizard/jiraMatch.check.ts",
+      "test:resume": "node --experimental-strip-types src/wizard/resume.check.ts"
     },
   "dependencies": {
     "lucide-react": "^0.469.0",

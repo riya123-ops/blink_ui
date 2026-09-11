@@ -1,6 +1,7 @@
 import { sanitizeDownloadStructure } from '../wizard/defaults'
 import type { ProductScopeData } from '../wizard/types'
 import { stripExcludedZipFolders } from './stripZipFolders'
+import { loadAuthSession } from '../auth/session'
 
 export interface StakeholderRoleDto {
   roleCode: string
@@ -23,6 +24,9 @@ export interface ProjectPayload {
   projectName: string
   description: string
   stakeholders: StakeholderPayload[]
+  wizardStep?: string
+  wizardCompletedThrough?: number
+  wizardState?: unknown
 }
 
 export interface StakeholderDto {
@@ -47,6 +51,11 @@ export interface ProjectDto {
   sodWarnings?: string[]
   nextCommand?: string
   governanceStatus?: 'idle' | 'preparing' | 'ready' | 'failed' | null
+  ownerEmail?: string | null
+  wizardStep?: string | null
+  wizardCompletedThrough?: number | null
+  wizardState?: unknown
+  wizardUpdatedAt?: string | null
 }
 
 export interface ConfigureStakeholdersResponse {
@@ -66,6 +75,14 @@ async function readError(response: Response): Promise<string> {
   } catch {
     return text || `Request failed (${response.status})`
   }
+}
+
+function authHeaders(json = false): HeadersInit {
+  const headers: Record<string, string> = {}
+  if (json) headers['Content-Type'] = 'application/json'
+  const session = loadAuthSession()
+  if (session?.token) headers.Authorization = `Bearer ${session.token}`
+  return headers
 }
 
 /** API base. In `npm run dev`, `.env.development` can point at Render or `/api` (Vite proxy). */
@@ -208,7 +225,15 @@ export async function fetchGovernanceStatus(projectId: string): Promise<{
 
 export async function fetchProject(id: string): Promise<ProjectDto> {
   const url = apiUrl(`/projects/${id}`)
-  const response = await fetch(url, { cache: 'no-store' })
+  const response = await fetch(url, { cache: 'no-store', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ProjectDto>
+}
+
+export async function fetchMyProject(): Promise<ProjectDto | null> {
+  const url = apiUrl('/projects/mine')
+  const response = await fetch(url, { cache: 'no-store', headers: authHeaders() })
+  if (response.status === 204) return null
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<ProjectDto>
 }
@@ -222,7 +247,7 @@ export async function saveProject(payload: ProjectPayload, projectId?: string | 
   try {
     const response = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(true),
       body: JSON.stringify(payload),
       signal: controller.signal,
     })

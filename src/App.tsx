@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, type ProjectPayload } from './api/blink'
+import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
@@ -49,6 +50,26 @@ import {
 } from './wizard/types'
 import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
 import { createJiraIssuesFromState, isJiraReady, planScopeFromWording } from './wizard/jiraTickets'
+import {
+  allowedStep,
+  isWizardHistoryState,
+  seedWizardHistory,
+  stepFromLocation,
+  writeStepUrl,
+} from './wizard/history'
+import {
+  draftFromRemote,
+  hasWizardProgress,
+  initialDraft,
+  loadWizardDraft,
+  loadSessionStep,
+  resumeTarget,
+  saveWizardDraft,
+  saveSessionStep,
+  serializeWizardState,
+  stepLabel,
+  canOfferResume,
+} from './wizard/resume'
 
 function withDraftProjectPayload(payload: ProjectPayload): ProjectPayload {
   const stakeholders = payload.stakeholders.filter((row) => row.name.trim() && row.email.trim())
@@ -97,9 +118,21 @@ function buildEmailPayload(state: WizardState, questionIds: string[]) {
 }
 
 export default function App() {
-  const [state, setState] = useState<WizardState>(defaultWizardState)
-  const [step, setStep] = useState<WizardStep>('welcome')
-  const [completedThrough, setCompletedThrough] = useState(0)
+  const { session } = useAuth()
+  const boot = initialDraft(session?.email ?? null)
+  const sessionStep = loadSessionStep()
+  const bootStep = sessionStep
+    ? allowedStep(
+        sessionStep,
+        sessionStep,
+        boot.completedThrough,
+        groomingComplete(boot.state),
+        false,
+      )
+    : 'welcome'
+  const [state, setState] = useState<WizardState>(boot.state)
+  const [step, setStep] = useState<WizardStep>(bootStep)
+  const [completedThrough, setCompletedThrough] = useState(boot.completedThrough)
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [grooming, setGrooming] = useState(false)
@@ -113,6 +146,12 @@ export default function App() {
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
   const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
+  const stepRef = useRef(step)
+  const completedRef = useRef(completedThrough)
+  const skipRemoteResumeRef = useRef(false)
+  const freshStartRef = useRef(Boolean(boot.freshStart))
+  stepRef.current = step
+  completedRef.current = completedThrough
   const skipStepValidation = useDeveloperCapability('skipStepValidation')
   const autoEnsureProject = useDeveloperCapability('autoEnsureProject')
   const unrestrictedNav = useDeveloperCapability('unrestrictedStepNav')
@@ -158,7 +197,18 @@ export default function App() {
   }> => {
     const payload = opts?.draft ? withDraftProjectPayload(projectPayload()) : projectPayload()
     const payloadStr = JSON.stringify(payload)
+    const withWizard: ProjectPayload = {
+      ...payload,
+      wizardStep: stepRef.current,
+      wizardCompletedThrough: completedRef.current,
+      wizardState: serializeWizardState(state),
+    }
     if (state.projectId && lastSavedPayloadRef.current === payloadStr) {
+      try {
+        await saveProject(withWizard, state.projectId)
+      } catch {
+        // Local draft is still stored; server can catch up on the next save.
+      }
       return {
         id: state.projectId,
         workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
@@ -167,7 +217,7 @@ export default function App() {
         governanceStatus: governancePrep === 'idle' ? state.governanceStatus : governancePrep,
       }
     }
-    const saved = await saveProject(payload, state.projectId)
+    const saved = await saveProject(withWizard, state.projectId)
     lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
     const governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
@@ -193,7 +243,7 @@ export default function App() {
       nextCommand: saved.nextCommand,
       governanceStatus,
     }
-  }, [projectPayload, state.projectId, state.sodWarnings, state.nextSdlcCommand, state.governanceStatus, folderPrep, governancePrep, patch])
+  }, [projectPayload, state, folderPrep, governancePrep, patch])
 
   const ensureDraftProject = useCallback(async (): Promise<{ id: string; created: boolean }> => {
     if (state.projectId) {
@@ -202,6 +252,142 @@ export default function App() {
     const saved = await persistProject({ draft: true })
     return { id: saved.id, created: true }
   }, [state.projectId, persistProject])
+
+  const goToStep = useCallback((next: WizardStep, historyMode: 'push' | 'replace' | 'silent' = 'push') => {
+    if (next === stepRef.current && historyMode === 'push') {
+      return
+    }
+    setStep(next)
+    if (historyMode === 'silent') {
+      return
+    }
+    writeStepUrl(next, historyMode)
+  }, [])
+
+  const startFresh = useCallback((type: 'new' | 'existing') => {
+    skipRemoteResumeRef.current = true
+    freshStartRef.current = true
+    lastSavedPayloadRef.current = null
+    setFolderPrep('idle')
+    setGovernancePrep('idle')
+    setFolderQuery(null)
+    setStatus(null)
+    const fresh: WizardState = {
+      ...defaultWizardState,
+      projectType: type,
+      existingSourceMode: 'none',
+    }
+    setState(fresh)
+    setCompletedThrough(0)
+    if (session?.email) {
+      saveWizardDraft(session.email, {
+        step: 'project-stakeholders',
+        completedThrough: 0,
+        state: fresh,
+        updatedAt: Date.now(),
+        freshStart: true,
+      })
+    }
+    goToStep('project-stakeholders')
+    seedWizardHistory('project-stakeholders', true)
+  }, [goToStep, session?.email])
+
+  useEffect(() => {
+    seedWizardHistory(stepRef.current)
+  }, [])
+
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      if (isWizardHistoryState(event.state)) {
+        setStep(event.state.step)
+        return
+      }
+      const fromUrl = stepFromLocation()
+      if (fromUrl) {
+        setStep(fromUrl)
+        return
+      }
+      const idx = stepIndex(stepRef.current)
+      if (idx > 0) {
+        const prev = STEP_ORDER[idx - 1]
+        setStep(prev)
+        writeStepUrl(prev, 'push')
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  useEffect(() => {
+    if (state.projectId) {
+      freshStartRef.current = false
+    }
+  }, [state.projectId])
+
+  useEffect(() => {
+    if (!session?.email) return
+    saveWizardDraft(session.email, {
+      step,
+      completedThrough,
+      state,
+      updatedAt: Date.now(),
+      freshStart: freshStartRef.current && !state.projectId,
+    })
+    saveSessionStep(step)
+  }, [session?.email, step, completedThrough, state])
+
+  useEffect(() => {
+    if (!session?.email || !state.projectId) return
+    const timer = window.setTimeout(() => {
+      const payload = withDraftProjectPayload(projectPayload())
+      void saveProject({
+        ...payload,
+        wizardStep: step,
+        wizardCompletedThrough: completedThrough,
+        wizardState: serializeWizardState(state),
+      }, state.projectId).catch(() => undefined)
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [session?.email, state, step, completedThrough, projectPayload])
+
+  useEffect(() => {
+    if (!session?.email || skipRemoteResumeRef.current) return
+    const localNow = loadWizardDraft(session.email)
+    if (localNow?.freshStart) return
+    let cancelled = false
+    const email = session.email
+    void fetchMyProject()
+      .then((remote) => {
+        if (cancelled || !remote) return
+        if (freshStartRef.current || loadWizardDraft(email)?.freshStart) return
+        const local = initialDraft(email)
+        const remoteDraft = draftFromRemote(email, remote)
+        if (local.updatedAt >= remoteDraft.updatedAt && hasWizardProgress(local)) return
+        if (!hasWizardProgress(remoteDraft)) return
+        skipRemoteResumeRef.current = true
+        setState(remoteDraft.state)
+        setCompletedThrough(remoteDraft.completedThrough)
+        const active = loadSessionStep()
+        if (!active || active === 'welcome') {
+          goToStep('welcome', 'replace')
+          seedWizardHistory('welcome', true)
+          return
+        }
+        const nextStep = allowedStep(
+          active,
+          remoteDraft.step,
+          remoteDraft.completedThrough,
+          groomingComplete(remoteDraft.state),
+          false,
+        )
+        goToStep(nextStep, 'replace')
+        seedWizardHistory(nextStep, true)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [session?.email, goToStep])
 
   useEffect(() => {
     publishDeveloperSession({
@@ -463,14 +649,18 @@ export default function App() {
     const idx = stepIndex(step)
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
-    if (nextStep) setStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch, skipStepValidation])
+    if (nextStep) goToStep(nextStep)
+  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch, skipStepValidation, goToStep])
 
   const goBack = useCallback(() => {
     setStatus(null)
+    if (isWizardHistoryState(window.history.state) && stepIndex(step) > 0) {
+      window.history.back()
+      return
+    }
     const idx = stepIndex(step)
-    if (idx > 0) setStep(STEP_ORDER[idx - 1])
-  }, [step])
+    if (idx > 0) goToStep(STEP_ORDER[idx - 1])
+  }, [step, goToStep])
 
   const handleGroomAsk = useCallback(async () => {
     if (state.groomQuestions.length) return
@@ -917,7 +1107,7 @@ export default function App() {
     const fromIdx = stepIndex(step)
     setCompletedThrough((prev) => Math.max(prev, fromIdx))
     patch({ generationSteps: steps, generationComplete: false })
-    setStep('generation')
+    goToStep('generation')
 
     const advanceStep = (id: string, st: 'running' | 'done' | 'error') => {
       setState((prev) => ({
@@ -1057,7 +1247,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [state, patch, persistProject, step])
+  }, [state, patch, persistProject, step, goToStep])
 
   const handleQuickDownload = useCallback(() => {
     if (loading) return
@@ -1074,15 +1264,20 @@ export default function App() {
         return (
           <WelcomeScreen
             state={state}
-            onSelectType={(type) =>
-              patch({ projectType: type, existingSourceMode: type === 'new' ? 'none' : state.existingSourceMode })
+            resume={
+              canOfferResume({ step, completedThrough, state, freshStart: freshStartRef.current })
+                ? {
+                    projectName: state.projectName.trim() || 'your project',
+                    stepLabel: stepLabel(resumeTarget({ step: 'welcome', completedThrough, state })),
+                  }
+                : null
             }
-            onContinue={(type) => {
-              patch({ projectType: type, existingSourceMode: type === 'new' ? 'none' : state.existingSourceMode })
+            onContinue={(type) => startFresh(type)}
+            onResume={() => {
               setStatus(null)
-              setCompletedThrough(0)
-              setStep('project-stakeholders')
+              goToStep(resumeTarget({ step: 'welcome', completedThrough, state }))
             }}
+            onStartNew={() => startFresh('new')}
           />
         )
       case 'project-stakeholders':
@@ -1159,7 +1354,7 @@ export default function App() {
             state={state}
             onNavigate={(s) => {
               setStatus(null)
-              setStep(s)
+              goToStep(s)
             }}
           />
         )
@@ -1172,7 +1367,7 @@ export default function App() {
             loading={loading}
             exporting={creatingRepos}
             onExportGithub={() => void handleCreateGithubRepos()}
-            onBack={() => setStep('welcome')}
+            onBack={() => goToStep('welcome')}
           />
         )
     }
@@ -1203,7 +1398,7 @@ export default function App() {
             unrestrictedNav={unrestrictedNav}
             onNavigate={(s) => {
               setStatus(null)
-              setStep(s)
+              goToStep(s)
             }}
           />
         </aside>

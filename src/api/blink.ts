@@ -81,7 +81,7 @@ export function apiUrl(path: string): string {
 }
 
 /** Absolute OAuth callback GitHub/Atlassian will redirect to (API host after deploy, Vite origin locally). */
-export function oauthCallbackUrl(provider: 'github' | 'jira'): string {
+export function oauthCallbackUrl(provider: 'github' | 'jira' | 'figma'): string {
   const path = `/integrations/${provider}/oauth/callback`
   const resolved = apiUrl(path)
   if (/^https?:\/\//i.test(resolved)) {
@@ -297,6 +297,7 @@ export interface JiraOAuthUrlResult {
 }
 
 export type GithubOAuthUrlResult = JiraOAuthUrlResult
+export type FigmaOAuthUrlResult = JiraOAuthUrlResult
 
 export class ApiRequestError extends Error {
   status: number
@@ -374,6 +375,37 @@ export async function exchangeGithubOAuth(
   return response.json() as Promise<IntegrationConnectResult>
 }
 
+export async function fetchFigmaOAuthUrl(): Promise<FigmaOAuthUrlResult> {
+  const redirectUri = oauthCallbackUrl('figma')
+  const url = apiUrl(`/integrations/figma/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
+  console.info(`[blink] GET ${url}`)
+  const response = await fetch(url)
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaOAuthUrlResult>
+}
+
+export async function exchangeFigmaOAuth(
+  code: string,
+  redirectUri?: string,
+  projectId?: string | null,
+  organization?: string,
+): Promise<IntegrationConnectResult> {
+  const url = apiUrl('/integrations/figma/oauth/exchange')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      redirectUri,
+      projectId: projectId || undefined,
+      organization: organization || undefined,
+    }),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<IntegrationConnectResult>
+}
+
 export async function saveIntegrationBinding(payload: {
   projectId: string
   provider: string
@@ -425,6 +457,37 @@ export async function fetchGithubOrgs(payload: {
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<GithubOrgItem[]>
+}
+
+export async function fetchFigmaTeams(payload: {
+  projectId?: string | null
+  token?: string
+}): Promise<GithubOrgItem[]> {
+  const url = apiUrl('/integrations/figma/teams')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<GithubOrgItem[]>
+}
+
+export async function fetchFigmaProjects(payload: {
+  projectId?: string | null
+  token?: string
+  organization?: string
+}): Promise<JiraProjectItem[]> {
+  const url = apiUrl('/integrations/figma/projects')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<JiraProjectItem[]>
 }
 
 export interface JiraCreatedIssueResult {

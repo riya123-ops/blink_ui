@@ -2051,6 +2051,10 @@ textarea::placeholder {
   color: #181717;
 }
 
+.int-logo-figma {
+  color: #f24e1e;
+}
+
 .int-logo-atlassian,
 .int-logo-bitbucket {
   color: #0052cc;
@@ -3781,11 +3785,57 @@ textarea::placeholder {
   border-color: rgba(36, 41, 47, 0.22);
 }
 
+.oauth-btn.figma {
+  background: #f24e1e;
+}
+
+.oauth-btn.figma:hover:not(:disabled) {
+  background: #c63c14;
+}
+
+.figma-badge {
+  background: #f24e1e;
+}
+
+.figma-oauth-card {
+  background: linear-gradient(135deg, rgba(242, 78, 30, 0.08) 0%, rgba(255, 114, 98, 0.08) 100%);
+  border-color: rgba(242, 78, 30, 0.22);
+}
+
 .oauth-notice {
   margin: 0.2rem 0 0;
   font-size: 0.75rem;
   color: #d97706;
   line-height: 1.35;
+}
+
+.oauth-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+}
+
+.oauth-blocked p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #9a3412;
+}
+
+.oauth-resume-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.oauth-resume-link:hover {
+  text-decoration: underline;
 }
 
 .connect-divider {

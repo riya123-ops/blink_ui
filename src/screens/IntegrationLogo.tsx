@@ -1,8 +1,9 @@
-type LogoId = 'github' | 'atlassian' | 'bitbucket'
+type LogoId = 'github' | 'atlassian' | 'bitbucket' | 'figma'
 
 function logoIdFor(id: string): LogoId {
   if (id === 'bitbucket') return 'bitbucket'
   if (id === 'github') return 'github'
+  if (id === 'figma') return 'figma'
   return 'atlassian'
 }
 
@@ -30,6 +31,18 @@ function BitbucketMark() {
   )
 }
 
+function FigmaMark() {
+  return (
+    <svg viewBox="0 0 38 57" aria-hidden="true">
+      <path d="M19 28.5c0-5.247 4.253-9.5 9.5-9.5S38 23.253 38 28.5 33.747 38 28.5 38 19 33.747 19 28.5z" />
+      <path d="M0 47.5C0 42.253 4.253 38 9.5 38H19v9.5c0 5.247-4.253 9.5-9.5 9.5S0 52.747 0 47.5z" />
+      <path d="M19 0v19H9.5C4.253 19 0 14.747 0 9.5S4.253 0 9.5 0H19z" />
+      <path d="M19 0v19h9.5c5.247 0 9.5-4.253 9.5-9.5S33.747 0 28.5 0H19z" />
+      <path d="M0 28.5C0 23.253 4.253 19 9.5 19H19v19H9.5C4.253 38 0 33.747 0 28.5z" />
+    </svg>
+  )
+}
+
 export function IntegrationLogo({
   id,
   label,
@@ -42,7 +55,15 @@ export function IntegrationLogo({
   const logoId = logoIdFor(id)
   return (
     <span className={`int-logo int-logo-${logoId} ${className}`.trim()} title={label} aria-hidden="true">
-      {logoId === 'github' ? <GitHubMark /> : logoId === 'bitbucket' ? <BitbucketMark /> : <AtlassianMark />}
+      {logoId === 'github' ? (
+        <GitHubMark />
+      ) : logoId === 'bitbucket' ? (
+        <BitbucketMark />
+      ) : logoId === 'figma' ? (
+        <FigmaMark />
+      ) : (
+        <AtlassianMark />
+      )}
     </span>
   )
 }

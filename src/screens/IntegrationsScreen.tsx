@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react'
 import {
   connectIntegration,
+  exchangeFigmaOAuth,
   exchangeGithubOAuth,
   exchangeJiraOAuth,
+  fetchFigmaOAuthUrl,
+  fetchFigmaProjects,
+  fetchFigmaTeams,
   fetchGithubOAuthUrl,
   fetchGithubOrgs,
   fetchJiraOAuthUrl,
@@ -13,8 +17,17 @@ import {
   type JiraProjectItem,
 } from '../api/blink'
 import type { IntegrationItem } from '../wizard/defaults'
+import { DEFAULT_INTEGRATIONS } from '../wizard/defaults'
 import type { WizardState } from '../wizard/types'
 import { IntegrationLogo } from './IntegrationLogo'
+import { subscribeOauthResult, type OauthResult } from '../oauth/channel'
+import {
+  isPopupBlocked,
+  navigateOauthPopup,
+  openOauthOnGesture,
+  openOauthPlaceholder,
+  watchOauthWindow,
+} from '../oauth/popup'
 
 interface Props {
   state: WizardState
@@ -55,6 +68,15 @@ const GUIDES: Record<
       'Prefer Connect with GitHub. Use a personal access token below if the popup or OAuth app is unavailable.',
       'Create a classic PAT with repo and read:org, or a fine-grained token that can create repositories.',
       'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set GITHUB_PERSONAL_ACCESS_TOKEN for Cursor MCP.',
+    ],
+  },
+  figma: {
+    tokenLabel: 'Personal access token',
+    tokenUrl: 'https://www.figma.com/developers/api#access-tokens',
+    steps: [
+      'Prefer Connect with Figma. Use a personal access token below if the popup or OAuth app is unavailable.',
+      'Create a Figma PAT from your account settings, then pick a team (or paste a team URL).',
+      'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set FIGMA_ACCESS_TOKEN for Cursor MCP.',
     ],
   },
   jira: {
@@ -100,6 +122,12 @@ const DISPLAY_CARDS = [
     purpose: 'Jira for issues · Confluence for documentation',
   },
   {
+    id: 'figma',
+    openId: 'figma' as const,
+    label: 'Figma',
+    purpose: 'Design files and team libraries',
+  },
+  {
     id: 'bitbucket',
     openId: 'bitbucket' as const,
     label: 'Bitbucket',
@@ -108,16 +136,14 @@ const DISPLAY_CARDS = [
 ]
 
 function purposeFor(id: string): string {
-  if (id === 'github') return DISPLAY_CARDS[0].purpose
-  if (id === 'bitbucket') return DISPLAY_CARDS[2].purpose
-  return DISPLAY_CARDS[1].purpose
+  return DISPLAY_CARDS.find((card) => card.id === id || card.openId === id)?.purpose ?? DISPLAY_CARDS[0].purpose
 }
 
 function formFromItem(item: IntegrationItem, jira?: IntegrationItem): ConnectForm {
   const fromJira = item.id === 'confluence' && jira?.connected
   return {
     ...EMPTY_FORM,
-    baseUrl: item.baseUrl || (fromJira ? jira?.baseUrl ?? '' : item.id === 'github' ? 'https://github.com' : ''),
+    baseUrl: item.baseUrl || (fromJira ? jira?.baseUrl ?? '' : item.id === 'github' ? 'https://github.com' : item.id === 'figma' ? 'https://www.figma.com' : ''),
     email: item.email || (fromJira ? jira?.email ?? '' : ''),
     organization: item.organization ?? '',
     workspace: item.workspace ?? '',
@@ -134,6 +160,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   const [saving, setSaving] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
   const [oauthNotice, setOauthNotice] = useState<string | null>(null)
+  const [oauthResume, setOauthResume] = useState<{ provider: 'github' | 'jira' | 'figma'; url: string } | null>(null)
   const [projects, setProjects] = useState<JiraProjectItem[]>([])
   const [githubOrgs, setGithubOrgs] = useState<GithubOrgItem[]>([])
   const [discoveringProjects, setDiscoveringProjects] = useState(false)
@@ -143,6 +170,8 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   const oauthRedirectUriRef = useRef<string | undefined>(undefined)
   const githubOrgRef = useRef('')
   const projectIdRef = useRef(state.projectId)
+  const stopWatchingOauthRef = useRef<(() => void) | null>(null)
+  const lastOauthCodeRef = useRef<string | null>(null)
 
   useEffect(() => {
     projectIdRef.current = state.projectId
@@ -166,6 +195,13 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   const confluence = state.integrations.find((item) => item.id === 'confluence')
   const guide = active ? GUIDES[active.id] : null
 
+  useEffect(() => {
+    const known = new Set(state.integrations.map((item) => item.id))
+    const missing = DEFAULT_INTEGRATIONS.filter((item) => !known.has(item.id))
+    if (missing.length === 0) return
+    onUpdate({ integrations: [...state.integrations, ...missing.map((item) => ({ ...item }))] })
+  }, [onUpdate, state.integrations])
+
   const patchItem = useCallback(
     (id: string, updates: Partial<IntegrationItem>) => {
       onUpdate({
@@ -184,89 +220,165 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
     return () => window.removeEventListener('keydown', onKey)
   }, [activeId, saving, oauthLoading])
 
-  // Listen for Atlassian / GitHub OAuth popup callbacks
-  useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.data?.type === 'GITHUB_OAUTH_RESPONSE') {
-        const { code, error: oauthErr } = event.data
-        if (oauthErr) {
-          setError(`GitHub authorization failed: ${oauthErr}`)
+  const stopWatchingOauth = () => {
+    stopWatchingOauthRef.current?.()
+    stopWatchingOauthRef.current = null
+  }
+
+  const watchOpenedOauth = (popup: Window) => {
+    stopWatchingOauth()
+    stopWatchingOauthRef.current = watchOauthWindow(popup, () => {
+      setOauthLoading(false)
+      stopWatchingOauthRef.current = null
+    })
+  }
+
+  const completeOauth = useCallback(
+    async (result: OauthResult) => {
+      if (result.code && lastOauthCodeRef.current === result.code) return
+      if (result.code) lastOauthCodeRef.current = result.code
+      if (result.type === 'GITHUB_OAUTH_RESPONSE') {
+        if (result.error) {
+          setError(`GitHub authorization failed: ${result.error}`)
           setOauthLoading(false)
           return
         }
-        if (code) {
-          setOauthLoading(true)
-          setError(null)
-          try {
-            const res = await exchangeGithubOAuth(
-              code,
-              oauthRedirectUriRef.current,
-              projectIdRef.current,
-              githubOrgRef.current || undefined,
-            )
-            const orgs = res.organizations || []
-            setGithubOrgs(orgs)
-            setForm((prev) => ({ ...prev, organization: res.organization || githubOrgRef.current || '' }))
-            patchItem('github', {
-              connected: true,
-              account: res.account,
-              detail: res.detail,
-              baseUrl: res.baseUrl || 'https://github.com',
-              organization: res.organization || githubOrgRef.current || undefined,
-              authType: 'oauth',
-              token: undefined,
-              availableOrganizations: orgs,
-            })
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to complete GitHub OAuth.')
-          } finally {
-            setOauthLoading(false)
-          }
+        if (!result.code) return
+        setOauthLoading(true)
+        setError(null)
+        setOauthResume(null)
+        try {
+          const res = await exchangeGithubOAuth(
+            result.code,
+            oauthRedirectUriRef.current,
+            projectIdRef.current,
+            githubOrgRef.current || undefined,
+          )
+          const orgs = res.organizations || []
+          setGithubOrgs(orgs)
+          setForm((prev) => ({ ...prev, organization: res.organization || githubOrgRef.current || '' }))
+          patchItem('github', {
+            connected: true,
+            account: res.account,
+            detail: res.detail,
+            baseUrl: res.baseUrl || 'https://github.com',
+            organization: res.organization || githubOrgRef.current || undefined,
+            authType: 'oauth',
+            token: undefined,
+            availableOrganizations: orgs,
+          })
+          setActiveId('github')
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to complete GitHub OAuth.')
+        } finally {
+          setOauthLoading(false)
+          stopWatchingOauth()
         }
         return
       }
-      if (event.data?.type === 'JIRA_OAUTH_RESPONSE') {
-        const { code, error: oauthErr } = event.data
-        if (oauthErr) {
-          setError(`Atlassian authorization failed: ${oauthErr}`)
+      if (result.type === 'FIGMA_OAUTH_RESPONSE') {
+        if (result.error) {
+          setError(`Figma authorization failed: ${result.error}`)
           setOauthLoading(false)
           return
         }
-        if (code) {
-          setOauthLoading(true)
-          setError(null)
-          try {
-            const res = await exchangeJiraOAuth(code, oauthRedirectUriRef.current, projectIdRef.current)
-            patchItem('jira', {
-              connected: true,
-              account: res.account,
-              detail: res.detail,
-              baseUrl: res.baseUrl,
-              cloudId: res.cloudId,
-              authType: 'oauth',
-              token: undefined,
-              projectKey: res.projectKey,
-              projectName: res.projectName,
-              availableProjects: res.projects,
-            })
-            setForm((prev) => ({
-              ...prev,
-              projectKey: res.projectKey || prev.projectKey,
-              baseUrl: res.baseUrl || prev.baseUrl,
-            }))
-            setProjects(res.projects || [])
-            setSelectedProjectName(res.projectName || '')
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to complete Atlassian OAuth.')
-          } finally {
-            setOauthLoading(false)
-          }
+        if (!result.code) return
+        setOauthLoading(true)
+        setError(null)
+        setOauthResume(null)
+        try {
+          const res = await exchangeFigmaOAuth(
+            result.code,
+            oauthRedirectUriRef.current,
+            projectIdRef.current,
+            githubOrgRef.current || undefined,
+          )
+          const teams = res.organizations || []
+          setGithubOrgs(teams)
+          setProjects(res.projects || [])
+          setSelectedProjectName(res.projectName || '')
+          setForm((prev) => ({
+            ...prev,
+            organization: res.organization || githubOrgRef.current || '',
+            projectKey: res.projectKey || prev.projectKey,
+            baseUrl: res.baseUrl || prev.baseUrl || 'https://www.figma.com',
+          }))
+          patchItem('figma', {
+            connected: true,
+            account: res.account,
+            detail: res.detail,
+            baseUrl: res.baseUrl || 'https://www.figma.com',
+            organization: res.organization || githubOrgRef.current || undefined,
+            projectKey: res.projectKey,
+            projectName: res.projectName,
+            authType: 'oauth',
+            token: undefined,
+            availableOrganizations: teams,
+            availableProjects: res.projects,
+          })
+          setActiveId('figma')
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to complete Figma OAuth.')
+        } finally {
+          setOauthLoading(false)
+          stopWatchingOauth()
         }
+        return
+      }
+      if (result.error) {
+        setError(`Atlassian authorization failed: ${result.error}`)
+        setOauthLoading(false)
+        return
+      }
+      if (!result.code) return
+      setOauthLoading(true)
+      setError(null)
+      setOauthResume(null)
+      try {
+        const res = await exchangeJiraOAuth(result.code, oauthRedirectUriRef.current, projectIdRef.current)
+        patchItem('jira', {
+          connected: true,
+          account: res.account,
+          detail: res.detail,
+          baseUrl: res.baseUrl,
+          cloudId: res.cloudId,
+          authType: 'oauth',
+          token: undefined,
+          projectKey: res.projectKey,
+          projectName: res.projectName,
+          availableProjects: res.projects,
+        })
+        setForm((prev) => ({
+          ...prev,
+          projectKey: res.projectKey || prev.projectKey,
+          baseUrl: res.baseUrl || prev.baseUrl,
+        }))
+        setProjects(res.projects || [])
+        setSelectedProjectName(res.projectName || '')
+        setActiveId('jira')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to complete Atlassian OAuth.')
+      } finally {
+        setOauthLoading(false)
+        stopWatchingOauth()
+      }
+    },
+    [patchItem],
+  )
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GITHUB_OAUTH_RESPONSE' || event.data?.type === 'JIRA_OAUTH_RESPONSE' || event.data?.type === 'FIGMA_OAUTH_RESPONSE') {
+        void completeOauth(event.data as OauthResult)
       }
     }
     window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [patchItem])
+    const stopChannel = subscribeOauthResult((result) => void completeOauth(result))
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      stopChannel()
+    }
+  }, [completeOauth])
 
   const connectedCount = useMemo(() => {
     return DISPLAY_CARDS.filter((card) =>
@@ -317,15 +429,18 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       }
     }
 
-    if (item.id === 'github') {
+    if (item.id === 'github' || item.id === 'figma') {
       const existingOrgs = item.availableOrganizations || []
       setGithubOrgs(existingOrgs)
+      setProjects(item.availableProjects || [])
+      setSelectedProjectName(item.projectName || '')
       if (item.connected && existingOrgs.length === 0 && state.projectId) {
-        void fetchGithubOrgs({ projectId: state.projectId })
+        const loader = item.id === 'figma' ? fetchFigmaTeams : fetchGithubOrgs
+        void loader({ projectId: state.projectId })
           .then((list) => {
             if (list.length > 0) {
               setGithubOrgs(list)
-              patchItem('github', { availableOrganizations: list })
+              patchItem(item.id, { availableOrganizations: list })
             }
           })
           .catch(() => {
@@ -362,14 +477,17 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   }
 
   const handleStartOAuth = async () => {
+    const popup = openOauthPlaceholder('atlassian_oauth', 'Atlassian')
     setError(null)
     setOauthNotice(null)
+    setOauthResume(null)
     setOauthLoading(true)
     try {
       await requireStoredProject()
       const urlRes = await fetchJiraOAuthUrl()
       oauthRedirectUriRef.current = urlRes.redirectUri
       if (!urlRes.configured || !urlRes.url) {
+        popup?.close()
         setOauthNotice(
           urlRes.message ||
             'Atlassian OAuth Client ID is not configured on the server. You can connect using an API token below.'
@@ -377,30 +495,31 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
         setOauthLoading(false)
         return
       }
-      const width = 600
-      const height = 720
-      const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2)
-      const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2)
-      const popup = window.open(
-        urlRes.url,
-        'atlassian_oauth',
-        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`
-      )
-      const timer = setInterval(() => {
-        if (!popup || popup.closed) {
-          clearInterval(timer)
+      const authUrl = urlRes.url
+      if (popup && !isPopupBlocked(popup) && navigateOauthPopup(popup, authUrl)) {
+        watchOpenedOauth(popup)
+        window.setTimeout(() => {
+          if (!isPopupBlocked(popup)) return
+          setOauthResume({ provider: 'jira', url: authUrl })
           setOauthLoading(false)
-        }
-      }, 1000)
+        }, 500)
+        return
+      }
+      popup?.close()
+      setOauthResume({ provider: 'jira', url: authUrl })
+      setOauthLoading(false)
     } catch (err) {
+      popup?.close()
       setError(err instanceof Error ? err.message : 'Could not initialize Atlassian OAuth.')
       setOauthLoading(false)
     }
   }
 
   const handleStartGithubOAuth = async () => {
+    const popup = openOauthPlaceholder('github_oauth', 'GitHub')
     setError(null)
     setOauthNotice(null)
+    setOauthResume(null)
     setOauthLoading(true)
     try {
       await requireStoredProject()
@@ -408,6 +527,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       const urlRes = await fetchGithubOAuthUrl()
       oauthRedirectUriRef.current = urlRes.redirectUri
       if (!urlRes.configured || !urlRes.url) {
+        popup?.close()
         setOauthNotice(
           urlRes.message ||
             'GitHub OAuth is not configured on the server. Set BLINK_GITHUB_CLIENT_ID and BLINK_GITHUB_CLIENT_SECRET.',
@@ -415,25 +535,74 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
         setOauthLoading(false)
         return
       }
-      const width = 600
-      const height = 720
-      const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2)
-      const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2)
-      const popup = window.open(
-        urlRes.url,
-        'github_oauth',
-        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`,
-      )
-      const timer = setInterval(() => {
-        if (!popup || popup.closed) {
-          clearInterval(timer)
+      const authUrl = urlRes.url
+      if (popup && !isPopupBlocked(popup) && navigateOauthPopup(popup, authUrl)) {
+        watchOpenedOauth(popup)
+        window.setTimeout(() => {
+          if (!isPopupBlocked(popup)) return
+          setOauthResume({ provider: 'github', url: authUrl })
           setOauthLoading(false)
-        }
-      }, 1000)
+        }, 500)
+        return
+      }
+      popup?.close()
+      setOauthResume({ provider: 'github', url: authUrl })
+      setOauthLoading(false)
     } catch (err) {
+      popup?.close()
       setError(err instanceof Error ? err.message : 'Could not initialize GitHub OAuth.')
       setOauthLoading(false)
     }
+  }
+
+  const handleStartFigmaOAuth = async () => {
+    const popup = openOauthPlaceholder('figma_oauth', 'Figma')
+    setError(null)
+    setOauthNotice(null)
+    setOauthResume(null)
+    setOauthLoading(true)
+    try {
+      await requireStoredProject()
+      githubOrgRef.current = form.organization.trim()
+      const urlRes = await fetchFigmaOAuthUrl()
+      oauthRedirectUriRef.current = urlRes.redirectUri
+      if (!urlRes.configured || !urlRes.url) {
+        popup?.close()
+        setOauthNotice(
+          urlRes.message ||
+            'Figma OAuth is not configured on the server. Set BLINK_FIGMA_CLIENT_ID and BLINK_FIGMA_CLIENT_SECRET.',
+        )
+        setOauthLoading(false)
+        return
+      }
+      if (popup && !isPopupBlocked(popup) && navigateOauthPopup(popup, urlRes.url)) {
+        watchOpenedOauth(popup)
+        return
+      }
+      popup?.close()
+      setOauthResume({ provider: 'figma', url: urlRes.url })
+      setOauthLoading(false)
+    } catch (err) {
+      popup?.close()
+      setError(err instanceof Error ? err.message : 'Could not initialize Figma OAuth.')
+      setOauthLoading(false)
+    }
+  }
+
+  const handleResumeOauth = () => {
+    if (!oauthResume) return
+    setError(null)
+    const opened = openOauthOnGesture(
+      oauthResume.url,
+      oauthResume.provider === 'github' ? 'github_oauth' : oauthResume.provider === 'figma' ? 'figma_oauth' : 'atlassian_oauth',
+    )
+    if (!opened) {
+      setError('Allow popups for Blink, then click Continue again.')
+      return
+    }
+    setOauthResume(null)
+    setOauthLoading(true)
+    watchOpenedOauth(opened)
   }
 
   const handleDiscoverProjects = async () => {
@@ -496,39 +665,52 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   }
 
   const handleDiscoverOrgs = async () => {
-    if (!active || active.id !== 'github') return
+    if (!active || (active.id !== 'github' && active.id !== 'figma')) return
     setDiscoveringOrgs(true)
     setError(null)
     try {
       const projectId = await requireStoredProject()
-      const list = await fetchGithubOrgs({ projectId })
+      const list = active.id === 'figma' ? await fetchFigmaTeams({ projectId }) : await fetchGithubOrgs({ projectId })
       setGithubOrgs(list)
-      patchItem('github', { availableOrganizations: list })
+      patchItem(active.id, { availableOrganizations: list })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not fetch GitHub organizations.')
+      setError(err instanceof Error ? err.message : active.id === 'figma' ? 'Could not fetch Figma teams.' : 'Could not fetch GitHub organizations.')
     } finally {
       setDiscoveringOrgs(false)
     }
   }
 
   const handleOrgSelect = (val: string) => {
-    setForm((prev) => ({ ...prev, organization: val }))
+    setForm((prev) => ({ ...prev, organization: val, projectKey: active?.id === 'figma' ? '' : prev.projectKey }))
     githubOrgRef.current = val
     if (!active?.connected) {
       return
     }
-    patchItem('github', {
+    const provider = active.id
+    patchItem(provider, {
       organization: val || undefined,
       detail: val ? `Connected as ${active.account} to ${val}` : `Connected as ${active.account}`,
+      projectKey: provider === 'figma' ? undefined : active.projectKey,
+      projectName: provider === 'figma' ? undefined : active.projectName,
     })
     if (state.projectId) {
       void saveIntegrationBinding({
         projectId: state.projectId,
-        provider: 'github',
+        provider,
         organization: val,
       }).catch(() => {
         // selection is still kept in the wizard; reconnect if the server missed it
       })
+    }
+    if (provider === 'figma' && val && state.projectId) {
+      void fetchFigmaProjects({ projectId: state.projectId, organization: val })
+        .then((list) => {
+          setProjects(list)
+          patchItem('figma', { availableProjects: list })
+        })
+        .catch(() => {
+          setProjects([])
+        })
     }
   }
 
@@ -542,25 +724,31 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       setError('Workspace and username are required.')
       return
     }
-    if (active.id === 'github' && !form.token.trim()) {
-      setError('Paste a GitHub personal access token, or use Connect with GitHub.')
+    if ((active.id === 'github' || active.id === 'figma') && !form.token.trim() && !active.connected) {
+      setError(
+        active.id === 'figma'
+          ? 'Paste a Figma personal access token, or use Connect with Figma.'
+          : 'Paste a GitHub personal access token, or use Connect with GitHub.',
+      )
       return
     }
     setSaving(true)
     setError(null)
     try {
       const projectId = await requireStoredProject()
-      if (active.connected && !form.token.trim() && (form.projectKey.trim() || form.spaceKey.trim())) {
+      if (active.connected && !form.token.trim() && (form.projectKey.trim() || form.spaceKey.trim() || form.organization.trim())) {
         const result = await saveIntegrationBinding({
           projectId,
           provider: active.id,
           projectKey: form.projectKey.trim() || undefined,
           projectName: selectedProjectName || undefined,
           spaceKey: form.spaceKey.trim() || undefined,
+          organization: form.organization.trim() || undefined,
         })
         patchItem(active.id, {
           projectKey: form.projectKey.trim() || result.projectKey,
           projectName: selectedProjectName || result.projectName,
+          organization: form.organization.trim() || result.organization,
           spaceKey: form.spaceKey.trim() || undefined,
           token: undefined,
         })
@@ -584,8 +772,11 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       const projName = selectedProjectName || result.projectName
       const finalProjects = result.projects && result.projects.length > 0 ? result.projects : projects
       const orgs = result.organizations || []
-      if (active.id === 'github' && orgs.length > 0) {
+      if ((active.id === 'github' || active.id === 'figma') && orgs.length > 0) {
         setGithubOrgs(orgs)
+      }
+      if (active.id === 'figma' && finalProjects.length > 0) {
+        setProjects(finalProjects)
       }
       patchItem(active.id, {
         connected: true,
@@ -603,7 +794,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
         authType: (result.authType as 'oauth' | 'token') || 'token',
         spaceKey: payload.spaceKey,
         availableProjects: finalProjects,
-        availableOrganizations: active.id === 'github' ? orgs : undefined,
+        availableOrganizations: active.id === 'github' || active.id === 'figma' ? orgs : undefined,
       })
       if (active.id === 'jira' && payload.token && (payload.baseUrl || result.baseUrl) && payload.email) {
         try {
@@ -629,7 +820,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
         }
       }
       setForm((prev) => ({ ...prev, token: '', organization: result.organization || prev.organization }))
-      if (active.id !== 'github' && active.id !== 'jira') {
+      if (active.id !== 'github' && active.id !== 'jira' && active.id !== 'figma') {
         setActiveId(null)
       }
     } catch (err) {
@@ -644,8 +835,8 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       <div className="screen-header">
         <h2>Integrations</h2>
         <p>
-          Sign in to GitHub to create repositories. Connect Atlassian for Jira tickets and Confluence docs. Blink
-          creates epics and stories after you clear the requirement wording on the next step.
+          Sign in to GitHub to create repositories, Atlassian for Jira tickets and Confluence docs, and Figma for
+          design files. Blink creates epics and stories after you clear the requirement wording on the next step.
         </p>
       </div>
 
@@ -660,9 +851,10 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
           <ol className="connect-howto">
             <li>Connect GitHub by signing in, or with a personal access token if the popup fails.</li>
             <li>Connect Atlassian for Jira issues and Confluence documentation, then pick the Jira project for tickets.</li>
+            <li>Connect Figma by signing in, then pick a team (or paste a team URL).</li>
             <li>Tickets are created after you answer the requirement questions on the next step.</li>
             <li>
-              After you download the zip, put GitHub/Jira tokens in <code>automation_sdlc/.env.mcp</code>. Blink never
+              After you download the zip, put GitHub/Jira/Figma tokens in <code>automation_sdlc/.env.mcp</code>. Blink never
               writes credentials into the workspace kit.
             </li>
           </ol>
@@ -769,7 +961,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                   <strong>Sign in with GitHub</strong>
                 </div>
                 <p className="jira-oauth-desc">
-                  Sign in with your GitHub account. If the popup fails, connect with a personal access token below.
+                  Sign in with your GitHub account. Blink opens a sign-in window; if your browser blocks it, continue from the prompt below.
                 </p>
                 <button
                   type="button"
@@ -780,6 +972,68 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                   <Sparkles size={14} />
                   {oauthLoading ? 'Connecting to GitHub…' : 'Connect with GitHub'}
                 </button>
+                {oauthResume?.provider === 'github' && (
+                  <div className="oauth-blocked">
+                    <p>Your browser blocked the GitHub sign-in window.</p>
+                    <button type="button" className="oauth-btn github" onClick={handleResumeOauth}>
+                      Continue with GitHub
+                    </button>
+                    <a
+                      className="oauth-resume-link"
+                      href={oauthResume.url}
+                      target="github_oauth"
+                      rel="opener"
+                      onClick={() => {
+                        setOauthLoading(true)
+                        setOauthResume(null)
+                      }}
+                    >
+                      Open GitHub in a new tab
+                    </a>
+                  </div>
+                )}
+                {oauthNotice && <p className="oauth-notice">{oauthNotice}</p>}
+              </div>
+            )}
+
+            {active.id === 'figma' && !active.connected && (
+              <div className="jira-oauth-card figma-oauth-card">
+                <div className="jira-oauth-header">
+                  <span className="jira-badge figma-badge">Recommended</span>
+                  <strong>Sign in with Figma</strong>
+                </div>
+                <p className="jira-oauth-desc">
+                  Sign in with your Figma account. If the popup fails, connect with a personal access token below.
+                </p>
+                <button
+                  type="button"
+                  className="oauth-btn figma"
+                  disabled={saving || oauthLoading}
+                  onClick={() => void handleStartFigmaOAuth()}
+                >
+                  <Sparkles size={14} />
+                  {oauthLoading ? 'Connecting to Figma…' : 'Connect with Figma'}
+                </button>
+                {oauthResume?.provider === 'figma' && (
+                  <div className="oauth-blocked">
+                    <p>Your browser blocked the Figma sign-in window.</p>
+                    <button type="button" className="oauth-btn figma" onClick={handleResumeOauth}>
+                      Continue with Figma
+                    </button>
+                    <a
+                      className="oauth-resume-link"
+                      href={oauthResume.url}
+                      target="figma_oauth"
+                      rel="opener"
+                      onClick={() => {
+                        setOauthLoading(true)
+                        setOauthResume(null)
+                      }}
+                    >
+                      Open Figma in a new tab
+                    </a>
+                  </div>
+                )}
                 {oauthNotice && <p className="oauth-notice">{oauthNotice}</p>}
               </div>
             )}
@@ -803,6 +1057,26 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                   <Sparkles size={14} />
                   {oauthLoading ? 'Connecting to Atlassian…' : 'Connect with Atlassian'}
                 </button>
+                {oauthResume?.provider === 'jira' && (
+                  <div className="oauth-blocked">
+                    <p>Your browser blocked the Atlassian sign-in window.</p>
+                    <button type="button" className="oauth-btn" onClick={handleResumeOauth}>
+                      Continue with Atlassian
+                    </button>
+                    <a
+                      className="oauth-resume-link"
+                      href={oauthResume.url}
+                      target="atlassian_oauth"
+                      rel="opener"
+                      onClick={() => {
+                        setOauthLoading(true)
+                        setOauthResume(null)
+                      }}
+                    >
+                      Open Atlassian in a new tab
+                    </a>
+                  </div>
+                )}
                 {oauthNotice && <p className="oauth-notice">{oauthNotice}</p>}
               </div>
             )}
@@ -819,6 +1093,12 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
               </div>
             )}
 
+            {active.id === 'figma' && !active.connected && (
+              <div className="connect-divider">
+                <span>or connect with a personal access token</span>
+              </div>
+            )}
+
             <ol className="connect-steps">
               {guide.steps.map((step) => (
                 <li key={step}>{step}</li>
@@ -829,10 +1109,10 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
             </a>
 
             <div className="connect-fields">
-              {active.id === 'github' && active.connected && (
+              {(active.id === 'github' || active.id === 'figma') && active.connected && (
                 <div className="field-group">
                   <div className="field-label-row">
-                    <label htmlFor="gh-org-select">GitHub destination</label>
+                    <label htmlFor="gh-org-select">{active.id === 'figma' ? 'Figma team' : 'GitHub destination'}</label>
                     <button
                       type="button"
                       className="mini-btn"
@@ -840,28 +1120,105 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                       onClick={() => void handleDiscoverOrgs()}
                     >
                       <RefreshCw size={11} className={discoveringOrgs ? 'spin' : ''} />
-                      {discoveringOrgs ? 'Loading…' : 'Find organizations'}
+                      {discoveringOrgs ? 'Loading…' : active.id === 'figma' ? 'Find teams' : 'Find organizations'}
                     </button>
                   </div>
-                  <select
-                    id="gh-org-select"
-                    value={form.organization}
-                    onChange={(e) => handleOrgSelect(e.target.value)}
-                  >
-                    <option value="">Personal account{active.account ? ` (${active.account})` : ''}</option>
-                    {githubOrgs
-                      .filter((org) => !org.personal)
-                      .map((org) => (
-                        <option key={org.login} value={org.login}>
-                          {org.name && org.name !== org.login ? `${org.name} (${org.login})` : org.login}
+                  {active.id === 'github' ? (
+                    <select
+                      id="gh-org-select"
+                      value={form.organization}
+                      onChange={(e) => handleOrgSelect(e.target.value)}
+                    >
+                      <option value="">Personal account{active.account ? ` (${active.account})` : ''}</option>
+                      {githubOrgs
+                        .filter((org) => !org.personal)
+                        .map((org) => (
+                          <option key={org.login} value={org.login}>
+                            {org.name && org.name !== org.login ? `${org.name} (${org.login})` : org.login}
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <>
+                      {githubOrgs.length > 0 && (
+                        <select
+                          id="gh-org-select"
+                          value={githubOrgs.some((org) => org.login === form.organization) ? form.organization : ''}
+                          onChange={(e) => handleOrgSelect(e.target.value)}
+                        >
+                          <option value="">-- Choose Figma team --</option>
+                          {githubOrgs.map((org) => (
+                            <option key={org.login} value={org.login}>
+                              {org.name && org.name !== org.login ? `${org.name} (${org.login})` : org.name || org.login}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        id="figma-team-url"
+                        value={form.organization}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setForm((prev) => ({ ...prev, organization: val }))
+                          githubOrgRef.current = val
+                        }}
+                        placeholder="or paste https://www.figma.com/files/team/123456/Name"
+                      />
+                    </>
+                  )}
+                  <span className="field-hint">
+                    {active.id === 'figma'
+                      ? form.organization
+                        ? `Bound to Figma team ${form.organization}.`
+                        : 'Paste a team URL from the Figma file browser if the list is empty.'
+                      : form.organization
+                        ? `New repositories will be created in ${form.organization}.`
+                        : 'New repositories will be created under your personal account.'}
+                  </span>
+                </div>
+              )}
+              {active.id === 'figma' && active.connected && form.organization && form.organization !== '__custom__' && (
+                <div className="field-group">
+                  <div className="field-label-row">
+                    <label htmlFor="figma-project-select">Figma project</label>
+                    <button
+                      type="button"
+                      className="mini-btn"
+                      disabled={discoveringProjects}
+                      onClick={() => {
+                        if (!state.projectId || !form.organization) return
+                        setDiscoveringProjects(true)
+                        void fetchFigmaProjects({ projectId: state.projectId, organization: form.organization })
+                          .then((list) => {
+                            setProjects(list)
+                            patchItem('figma', { availableProjects: list })
+                          })
+                          .catch((err) => {
+                            setError(err instanceof Error ? err.message : 'Could not fetch Figma projects.')
+                          })
+                          .finally(() => setDiscoveringProjects(false))
+                      }}
+                    >
+                      <RefreshCw size={11} className={discoveringProjects ? 'spin' : ''} />
+                      {discoveringProjects ? 'Loading…' : 'Find projects'}
+                    </button>
+                  </div>
+                  {projects.length > 0 ? (
+                    <select
+                      id="figma-project-select"
+                      value={form.projectKey}
+                      onChange={(e) => handleProjectSelect(e.target.value)}
+                    >
+                      <option value="">-- Choose Figma project --</option>
+                      {projects.map((p) => (
+                        <option key={p.key} value={p.key}>
+                          {p.name}
                         </option>
                       ))}
-                  </select>
-                  <span className="field-hint">
-                    {form.organization
-                      ? `New repositories will be created in ${form.organization}.`
-                      : 'New repositories will be created under your personal account.'}
-                  </span>
+                    </select>
+                  ) : (
+                    <span className="field-hint">No Figma projects listed yet. Find projects after picking a team.</span>
+                  )}
                 </div>
               )}
               {(active.id === 'jira' || active.id === 'confluence') && (
@@ -1000,9 +1357,13 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                       ? active.connected
                         ? 'Paste a new PAT to reconnect without OAuth'
                         : 'Paste classic or fine-grained PAT'
-                      : active.connected
-                        ? 'Enter a new token to reconnect'
-                        : 'Paste token'
+                      : active.id === 'figma'
+                        ? active.connected
+                          ? 'Paste a new Figma PAT to reconnect without OAuth'
+                          : 'Paste a Figma personal access token'
+                        : active.connected
+                          ? 'Enter a new token to reconnect'
+                          : 'Paste token'
                   }
                 />
               </div>
@@ -1030,14 +1391,15 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
               >
                 Cancel
               </button>
-              {(active.id !== 'github' || form.token.trim()) && (
+              {(active.id !== 'github' && active.id !== 'figma') || form.token.trim() ? (
                 <button
                   type="button"
                   className="primary-btn"
                   disabled={
                     saving ||
                     oauthLoading ||
-                    (!form.token.trim() && !(active.connected && (form.projectKey.trim() || form.spaceKey.trim())))
+                    (!form.token.trim() &&
+                      !(active.connected && (form.projectKey.trim() || form.spaceKey.trim() || form.organization.trim())))
                   }
                   onClick={() => void handleConnect()}
                 >
@@ -1045,11 +1407,11 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                     ? 'Verifying…'
                     : active.connected && !form.token.trim()
                       ? 'Save'
-                      : active.id === 'github'
+                      : active.id === 'github' || active.id === 'figma'
                         ? 'Connect with token'
                         : 'Connect'}
                 </button>
-              )}
+              ) : null}
               {active.id === 'github' && active.connected && (
                 <button
                   type="button"
@@ -1058,6 +1420,16 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                   onClick={() => void handleStartGithubOAuth()}
                 >
                   {oauthLoading ? 'Reconnecting…' : 'Reconnect with GitHub'}
+                </button>
+              )}
+              {active.id === 'figma' && active.connected && (
+                <button
+                  type="button"
+                  className="oauth-btn figma"
+                  disabled={saving || oauthLoading}
+                  onClick={() => void handleStartFigmaOAuth()}
+                >
+                  {oauthLoading ? 'Reconnecting…' : 'Reconnect with Figma'}
                 </button>
               )}
             </footer>

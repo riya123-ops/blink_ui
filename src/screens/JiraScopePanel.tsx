@@ -54,7 +54,7 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
 
   const handleCreateInJira = useCallback(async () => {
     if (!isJiraReady(state)) {
-      setCreateError('Connect Jira and choose a project on Integrations first.')
+      setCreateError('Connect Atlassian and choose a Jira project on Integrations first.')
       return
     }
     if (epics.length === 0 && stories.length === 0) {
@@ -181,7 +181,7 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
 
       {createError && <p className="connect-error">{createError}</p>}
       {!jiraReady && (
-        <p className="field-hint">Connect Jira and pick a project on Integrations to create these tickets.</p>
+        <p className="field-hint">Connect Atlassian and pick a Jira project on Integrations to create these tickets.</p>
       )}
 
       <div className="jira-scope-actions">

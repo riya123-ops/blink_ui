@@ -64,7 +64,7 @@ export async function planScopeFromWording(
 export async function createJiraIssuesFromState(state: WizardState) {
   const payload = toCreateJiraPayload(state)
   if (!payload) {
-    throw new Error('Connect Jira and choose a project on Integrations first.')
+    throw new Error('Connect Atlassian and choose a Jira project on Integrations first.')
   }
   const result = await createJiraIssues(payload)
   return {

@@ -2031,6 +2031,42 @@ textarea::placeholder {
   text-align: center;
 }
 
+.int-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.int-logo svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+  fill: currentColor;
+}
+
+.int-logo-github {
+  color: #181717;
+}
+
+.int-logo-atlassian,
+.int-logo-bitbucket {
+  color: #0052cc;
+}
+
+.int-body strong {
+  font-size: 0.82rem;
+}
+
+.int-purpose {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .int-body {
   flex: 1;
   display: flex;
@@ -2045,6 +2081,23 @@ textarea::placeholder {
 .int-category {
   font-size: 0.68rem;
   color: var(--muted);
+}
+
+.connect-modal-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.connect-modal-header .int-logo {
+  width: 28px;
+  height: 28px;
+}
+
+.connect-modal-header .int-logo svg {
+  width: 24px;
+  height: 24px;
 }
 
 .info-note {
@@ -2610,6 +2663,10 @@ textarea::placeholder {
   z-index: 2;
   background: transparent;
   border-bottom: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 .app-header.compact {
@@ -4423,5 +4480,3 @@ textarea::placeholder {
     flex-direction: column;
   }
 }
-
-

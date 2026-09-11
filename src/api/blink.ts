@@ -85,10 +85,23 @@ export function oauthCallbackUrl(provider: 'github' | 'jira'): string {
   const path = `/integrations/${provider}/oauth/callback`
   const resolved = apiUrl(path)
   if (/^https?:\/\//i.test(resolved)) {
-    return resolved
+    return canonicalizeOAuthCallback(resolved)
   }
   const prefix = resolved.startsWith('/') ? resolved : `/${resolved}`
-  return `${window.location.origin}${prefix}`
+  return canonicalizeOAuthCallback(`${window.location.origin}${prefix}`)
+}
+
+/** GitHub OAuth apps treat localhost and 127.0.0.1 as different callback URLs. */
+export function canonicalizeOAuthCallback(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]' || parsed.hostname === '::1') {
+      parsed.hostname = 'localhost'
+    }
+    return parsed.toString().replace(/\/$/, '')
+  } catch {
+    return url
+  }
 }
 
 function isLocalApi(): boolean {
@@ -252,6 +265,13 @@ export interface JiraProjectItem {
   avatarUrl?: string
 }
 
+export interface GithubOrgItem {
+  login: string
+  name: string
+  avatarUrl?: string
+  personal?: boolean
+}
+
 export interface IntegrationConnectResult {
   connected: boolean
   provider: string
@@ -264,6 +284,8 @@ export interface IntegrationConnectResult {
   authType?: 'oauth' | 'token'
   token?: string
   projects?: JiraProjectItem[]
+  organization?: string
+  organizations?: GithubOrgItem[]
 }
 
 export interface JiraOAuthUrlResult {
@@ -358,9 +380,10 @@ export async function saveIntegrationBinding(payload: {
   projectKey?: string
   projectName?: string
   spaceKey?: string
+  organization?: string
 }): Promise<IntegrationConnectResult> {
   const url = apiUrl('/integrations/binding')
-  console.info(`[blink] POST ${url}`, { provider: payload.provider, projectKey: payload.projectKey })
+  console.info(`[blink] POST ${url}`, { provider: payload.provider, projectKey: payload.projectKey, organization: payload.organization })
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -387,6 +410,21 @@ export async function fetchJiraProjects(payload: {
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<JiraProjectItem[]>
+}
+
+export async function fetchGithubOrgs(payload: {
+  projectId?: string | null
+  token?: string
+}): Promise<GithubOrgItem[]> {
+  const url = apiUrl('/integrations/github/orgs')
+  console.info(`[blink] POST ${url}`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<GithubOrgItem[]>
 }
 
 export interface JiraCreatedIssueResult {

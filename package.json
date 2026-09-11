@@ -6,11 +6,12 @@
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
-  },
+    "scripts": {
+      "dev": "vite",
+      "build": "tsc -b && vite build",
+      "preview": "vite preview",
+      "test:jira-match": "node --experimental-strip-types src/wizard/jiraMatch.check.ts"
+    },
   "dependencies": {
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",

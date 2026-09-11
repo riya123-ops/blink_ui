@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Check, ChevronDown, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, Mail, MessageSquare, Sparkles } from 'lucide-react'
 import { JiraScopePanel } from './JiraScopePanel'
+import { assigneeForQuestion } from '../wizard/questions'
+import { roleLabel, STAKEHOLDER_ROLES } from '../wizard/stakeholders'
 import type { GroomQuestion, WizardState } from '../wizard/types'
 import {
   GROOM_BANDS,
@@ -29,18 +31,22 @@ function QuestionCard({
   onPick,
   onOther,
   onToggleOther,
+  onUpdate,
 }: {
   question: GroomQuestion
   state: WizardState
   onPick: Props['onPick']
   onOther: Props['onOther']
   onToggleOther: Props['onToggleOther']
+  onUpdate: Props['onUpdate']
 }) {
   const options = (Array.isArray(question.options) ? question.options : []).filter(
     (option) => option.id !== 'other' && option.label.trim().toLowerCase() !== 'other',
   )
   if (!question.id || !question.text || options.length < 2) return null
 
+  const roleId = question.ownerRole || 'product_owner'
+  const assignee = assigneeForQuestion(state, roleId)
   const isMultiple = Boolean(question.allowMultiple)
   const selectedIds = new Set(
     state.groomAnswers.filter((item) => item.questionId === question.id).map((item) => item.optionId),
@@ -48,6 +54,14 @@ function QuestionCard({
   const otherAnswer = state.groomAnswers.find((item) => item.questionId === question.id && item.optionId === 'other')
   const [showOtherText, setShowOtherText] = useState(Boolean(otherAnswer))
   const isOtherSelected = Boolean(otherAnswer) || showOtherText
+
+  function patchQuestion(updates: Partial<GroomQuestion>) {
+    onUpdate({
+      groomQuestions: state.groomQuestions.map((item) =>
+        item.id === question.id ? { ...item, ...updates } : item,
+      ),
+    })
+  }
 
   function toggleOther(checked: boolean) {
     setShowOtherText(checked)
@@ -62,17 +76,56 @@ function QuestionCard({
           {isMultiple ? 'Select all that apply' : 'Select one'}
         </span>
       </legend>
-      {question.subtitle ? (
-        <p className="groom-question-subtitle">{question.subtitle}</p>
-      ) : null}
+      {question.subtitle ? <p className="groom-question-subtitle">{question.subtitle}</p> : null}
+
+      <div className="groom-assignee-row">
+        <label className="groom-role-field">
+          <span>Role</span>
+          <select
+            value={roleId}
+            onChange={(event) => patchQuestion({ ownerRole: event.target.value })}
+          >
+            {STAKEHOLDER_ROLES.map((role) => (
+              <option key={role.id} value={role.id}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className={`groom-person-chip${assignee.assigned ? '' : ' is-unassigned'}`}>
+          <strong>{assignee.name}</strong>
+          <span>{assignee.assigned ? assignee.email : `Assign ${roleLabel(roleId)} on Project & Stakeholders to email or Jira`}</span>
+        </div>
+      </div>
+
+      <div className="groom-queue-row">
+        <label className={`groom-queue-toggle${question.queueEmail ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(question.queueEmail)}
+            disabled={!assignee.assigned}
+            onChange={(event) => patchQuestion({ queueEmail: event.target.checked })}
+          />
+          <Mail size={13} />
+          Email later
+        </label>
+        <label className={`groom-queue-toggle${question.queueJira ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(question.queueJira)}
+            disabled={!assignee.assigned}
+            onChange={(event) => patchQuestion({ queueJira: event.target.checked })}
+          />
+          <MessageSquare size={13} />
+          Jira later
+        </label>
+      </div>
+
       <div className="groom-options">
         {options.map((option) => {
           const checked = selectedIds.has(option.id)
           return (
-            <label
-              key={option.id}
-              className={`groom-option ${checked ? 'selected' : ''}`}
-            >
+            <label key={option.id} className={`groom-option ${checked ? 'selected' : ''}`}>
               <input
                 type={isMultiple ? 'checkbox' : 'radio'}
                 name={isMultiple ? undefined : question.id}
@@ -81,9 +134,7 @@ function QuestionCard({
               />
               <div className="groom-option-content">
                 <span className="groom-option-label">{option.label}</span>
-                {option.description ? (
-                  <span className="groom-option-desc">{option.description}</span>
-                ) : null}
+                {option.description ? <span className="groom-option-desc">{option.description}</span> : null}
               </div>
             </label>
           )
@@ -127,6 +178,7 @@ function Band({
   onPick,
   onOther,
   onToggleOther,
+  onUpdate,
 }: {
   band: (typeof GROOM_BANDS)[number]
   questions: GroomQuestion[]
@@ -135,6 +187,7 @@ function Band({
   onPick: Props['onPick']
   onOther: Props['onOther']
   onToggleOther: Props['onToggleOther']
+  onUpdate: Props['onUpdate']
 }) {
   const [open, setOpen] = useState(defaultOpen)
   if (!questions.length) return null
@@ -162,6 +215,7 @@ function Band({
               onPick={onPick}
               onOther={onOther}
               onToggleOther={onToggleOther}
+              onUpdate={onUpdate}
             />
           ))}
         </>
@@ -196,7 +250,8 @@ export function GroomingPanel({
       <div className="groom-panel-intro">
         <h3>Make it clearer</h3>
         <p>
-          One round of choices on this page. Answer Need clarification. Important and Suggestions are optional.
+          One round of choices on this page. Each question is tagged to a role member. Answer Need clarification
+          here (operator proxy). Optional questions can be emailed or posted to Jira after tickets exist.
         </p>
       </div>
 
@@ -228,6 +283,7 @@ export function GroomingPanel({
           onPick={onPick}
           onOther={onOther}
           onToggleOther={onToggleOther}
+          onUpdate={onUpdate}
         />
       ))}
 

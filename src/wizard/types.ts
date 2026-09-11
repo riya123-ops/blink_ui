@@ -58,6 +58,18 @@ export interface StakeholderQuestion {
   deliveryStatus: 'pending' | 'sent' | 'failed'
   sentAt: string | null
   deliveryMessage: string
+  /** From clarify priority — need_clarification maps to mandatory */
+  priority?: 'need_clarification' | 'important' | 'suggestion'
+  /** Operator proxy answer text, if any */
+  proposedAnswer?: string
+  /** Matched / chosen Jira issue key for comments */
+  jiraIssueKey?: string | null
+  jiraIssueUrl?: string | null
+  jiraCommentId?: string | null
+  jiraCommentStatus?: 'pending' | 'posted' | 'failed' | 'replied'
+  jiraCommentMessage?: string
+  queueEmail?: boolean
+  queueJira?: boolean
 }
 
 export interface QuestionResponse {
@@ -87,6 +99,12 @@ export interface GroomQuestion {
   allowOther: boolean
   allowMultiple?: boolean
   priority: 'need_clarification' | 'important' | 'suggestion'
+  /** Canonical role id from LLM / operator override */
+  ownerRole?: string
+  /** Queue for email after wording (optional band leftovers) */
+  queueEmail?: boolean
+  /** Queue for Jira comment after tickets exist */
+  queueJira?: boolean
 }
 
 export interface GroomAnswer {

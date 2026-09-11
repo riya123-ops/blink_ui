@@ -136,6 +136,13 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
         : row.priority
           ? ('need_clarification' as const)
           : undefined
+    const ownerRoleRaw = String(
+      row.ownerRole || row.owner_role || row.role || '',
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_')
+    const ownerRole = ownerRoleRaw || undefined
     return [
       {
         id: id || `q-${index + 1}`,
@@ -145,6 +152,7 @@ function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {
         allowOther: row.allowOther !== false,
         allowMultiple: Boolean(row.allowMultiple),
         ...(priority ? { priority } : {}),
+        ...(ownerRole ? { ownerRole } : {}),
       },
     ]
   })
@@ -544,6 +552,63 @@ export async function createJiraIssues(payload: CreateJiraIssuesPayload): Promis
   return response.json() as Promise<CreateJiraIssuesResult>
 }
 
+export interface CreateJiraCommentPayload {
+  projectId?: string | null
+  issueKey: string
+  body: string
+  blinkQuestionId?: string
+}
+
+export interface CreateJiraCommentResult {
+  status: string
+  message: string
+  issueKey: string
+  commentId?: string | null
+  blinkQuestionId?: string | null
+}
+
+export async function createJiraComment(payload: CreateJiraCommentPayload): Promise<CreateJiraCommentResult> {
+  const url = apiUrl('/integrations/jira/comments')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<CreateJiraCommentResult>
+}
+
+export interface PollJiraCommentsPayload {
+  projectId?: string | null
+  items: { issueKey: string; blinkQuestionId: string }[]
+}
+
+export interface PollJiraCommentReply {
+  blinkQuestionId: string
+  issueKey: string
+  commentId?: string | null
+  author?: string | null
+  body: string
+  created?: string | null
+}
+
+export interface PollJiraCommentsResult {
+  status: string
+  message: string
+  replies: PollJiraCommentReply[]
+}
+
+export async function pollJiraComments(payload: PollJiraCommentsPayload): Promise<PollJiraCommentsResult> {
+  const url = apiUrl('/integrations/jira/comments/poll')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<PollJiraCommentsResult>
+}
+
 export interface CreateRepositoriesPayload {
   provider: string
   projectId?: string | null
@@ -713,6 +778,7 @@ export interface GroomQuestionDto {
   allowOther: boolean
   allowMultiple?: boolean
   priority?: 'need_clarification' | 'important' | 'suggestion'
+  ownerRole?: string
 }
 
 export interface GroomClarifyResult {

@@ -1,78 +1,86 @@
-import type { StakeholderQuestion, WizardState } from './types'
+import type { GroomAnswer, GroomQuestion, StakeholderQuestion, WizardState } from './types'
+import { isAnswered, questionPriority } from './grooming'
 import { roleLabel } from './stakeholders'
 
 function uid(): string {
   return `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-export function generateQuestionsFromRequirements(state: WizardState): StakeholderQuestion[] {
-  const text = state.requirementsText.toLowerCase()
-  const questions: StakeholderQuestion[] = []
-
-  const add = (question: string, roleId: string, mandatory = true) => {
-    questions.push({
-      id: uid(),
-      question,
-      assignedRoleId: roleId,
-      mandatory,
-      sent: false,
-      deliveryStatus: 'pending',
-      sentAt: null,
-      deliveryMessage: '',
-    })
-  }
-
-  add('Which authentication mechanism should be used (OAuth2, SAML, JWT, or other)?', 'security_champion', true)
-  add('What is the expected maximum concurrent user count?', 'platform_architect', true)
-  add('Are there regulatory or data-retention requirements (GDPR, HIPAA, etc.)?', 'security_champion', true)
-  add('Is multi-factor authentication required for all users?', 'security_champion', false)
-
-  if (text.includes('payment') || text.includes('billing')) {
-    add('Which payment gateway or billing provider should be integrated?', 'product_owner', true)
-  }
-
-  if (text.includes('api') || text.includes('integration')) {
-    add('Should external APIs be exposed as REST, GraphQL, or gRPC?', 'tech_lead', true)
-  }
-
-  if (state.projectType === 'existing') {
-    add('Are there legacy modules that must remain unchanged during migration?', 'tech_lead', true)
-  }
-
-  add('What are the primary acceptance criteria for the first release?', 'product_owner', true)
-  add('Which environments are required (dev, staging, production)?', 'sre', false)
-
-  return questions
+/** @deprecated Prefer carryClarifyQuestionsForward — canned list removed by plan. */
+export function generateQuestionsFromRequirements(_state: WizardState): StakeholderQuestion[] {
+  return []
 }
 
-export function assigneeForQuestion(state: WizardState, roleId: string): { name: string; email: string } {
+export function assigneeForQuestion(
+  state: WizardState,
+  roleId: string,
+): { name: string; email: string; assigned: boolean } {
   const assignment = state.stakeholderAssignments.find((a) => a.roleId === roleId)
-  if (assignment?.personName && assignment.personEmail) {
-    return { name: assignment.personName, email: assignment.personEmail }
+  if (assignment?.personName?.trim() && assignment?.personEmail?.trim()) {
+    return {
+      name: assignment.personName.trim(),
+      email: assignment.personEmail.trim(),
+      assigned: true,
+    }
   }
-  return { name: roleLabel(roleId), email: `${roleId}@example.com` }
+  return { name: `Unassigned ${roleLabel(roleId)}`, email: '', assigned: false }
+}
+
+function proposedAnswerText(question: GroomQuestion, answers: GroomAnswer[]): string {
+  const rows = answers.filter((item) => item.questionId === question.id)
+  if (!rows.length) return ''
+  const parts = rows.map((row) => {
+    if (row.optionId === 'other') return (row.otherText || '').trim()
+    return (row.optionLabel || row.optionId || '').trim()
+  })
+  return parts.filter(Boolean).join('; ')
+}
+
+/**
+ * Leftover clarify items become the Stakeholder Questions queue:
+ * - unanswered optional (important/suggestion) questions
+ * - any question flagged queueEmail / queueJira (even if answered as proxy)
+ */
+export function carryClarifyQuestionsForward(state: WizardState): StakeholderQuestion[] {
+  const out: StakeholderQuestion[] = []
+  for (const q of state.groomQuestions) {
+    const answered = isAnswered(q, state.groomAnswers)
+    const priority = questionPriority(q)
+    const mandatory = priority === 'need_clarification'
+    const queued = Boolean(q.queueEmail || q.queueJira)
+    // Required answered with no outbound queue → done on Requirements
+    if (mandatory && answered && !queued) continue
+    // Required unanswered should be blocked by wording gate; skip if present
+    if (mandatory && !answered) continue
+    // Optional unanswered, or anything explicitly queued
+    if (!answered || queued) {
+      out.push({
+        id: q.id || uid(),
+        question: q.text,
+        assignedRoleId: q.ownerRole || 'product_owner',
+        mandatory,
+        sent: false,
+        deliveryStatus: 'pending',
+        sentAt: null,
+        deliveryMessage: '',
+        priority,
+        proposedAnswer: proposedAnswerText(q, state.groomAnswers) || undefined,
+        queueEmail: Boolean(q.queueEmail) || !answered,
+        queueJira: Boolean(q.queueJira) || !answered,
+        jiraIssueKey: null,
+        jiraIssueUrl: null,
+        jiraCommentId: null,
+        jiraCommentStatus: 'pending',
+      })
+    }
+  }
+  return out
 }
 
 export function mockResponsesForQuestions(questions: StakeholderQuestion[]): Record<string, string> {
   const responses: Record<string, string> = {}
   for (const q of questions) {
-    if (q.question.includes('authentication')) {
-      responses[q.id] = 'OAuth2/OIDC with JWT tokens; Spring Security recommended.'
-    } else if (q.question.includes('concurrent')) {
-      responses[q.id] = 'Up to 5,000 concurrent users at peak.'
-    } else if (q.question.includes('regulatory')) {
-      responses[q.id] = 'GDPR compliance required; data retained for 7 years.'
-    } else if (q.question.includes('multi-factor')) {
-      responses[q.id] = 'Yes, MFA required for admin and privileged roles.'
-    } else if (q.question.includes('REST')) {
-      responses[q.id] = 'REST with OpenAPI documentation.'
-    } else if (q.question.includes('acceptance')) {
-      responses[q.id] = 'User registration, core CRUD flows, and API documentation.'
-    } else if (q.question.includes('environments')) {
-      responses[q.id] = 'Dev, staging, and production with CI/CD pipeline.'
-    } else {
-      responses[q.id] = 'Confirmed — proceed with the recommended approach.'
-    }
+    responses[q.id] = q.proposedAnswer?.trim() || 'Confirmed — proceed with the recommended approach.'
   }
   return responses
 }

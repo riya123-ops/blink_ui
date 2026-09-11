@@ -7,6 +7,7 @@ export interface SendQuestionPayload {
   recipient_name: string
   role: string
   project_name: string
+  proposed_answer?: string
 }
 
 export interface EmailDeliveryResult {
@@ -35,3 +36,4 @@ export async function sendStakeholderQuestions(
   }
   return response.json() as Promise<SendQuestionsResponse>
 }
+

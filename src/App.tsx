@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, type ProjectPayload } from './api/blink'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
@@ -23,6 +23,7 @@ import { RequirementsScreen, validateRequirements } from './screens/Requirements
 import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import {
   StakeholderQuestionsScreen,
+  jiraCommentForQuestion,
   validateStakeholderQuestions,
 } from './screens/StakeholderQuestionsScreen'
 import {
@@ -32,7 +33,7 @@ import {
 import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
   assigneeForQuestion,
-  generateQuestionsFromRequirements,
+  carryClarifyQuestionsForward,
   mockResponsesForQuestions,
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
@@ -89,8 +90,10 @@ function buildEmailPayload(state: WizardState, questionIds: string[]) {
         recipient_name: assignee.name,
         role: roleLabel(q.assignedRoleId),
         project_name: state.projectName,
+        proposed_answer: q.proposedAnswer || undefined,
       }
     })
+    .filter((row) => Boolean(row.recipient_email.trim()))
 }
 
 export default function App() {
@@ -102,6 +105,8 @@ export default function App() {
   const [grooming, setGrooming] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
+  const [postingJira, setPostingJira] = useState(false)
+  const [refreshingJira, setRefreshingJira] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
@@ -414,12 +419,17 @@ export default function App() {
       setStatus(null)
       const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
       const nextState = { ...state, requirementsText: wording }
-      const questions = generateQuestionsFromRequirements(nextState)
+      const questions = carryClarifyQuestionsForward(nextState)
       const baseReqPatch = {
         requirementsText: wording,
         questions,
         requirementsAnalyzed: true,
-        responses: [],
+        responses: questions.map((q) => ({
+          questionId: q.id,
+          status: 'pending' as const,
+          response: q.proposedAnswer || '',
+          receivedAt: null,
+        })),
         questionsSent: false,
       }
       const alreadyPlanned = Boolean(state.productScope?.epics?.length)
@@ -614,7 +624,7 @@ export default function App() {
     }
     if (!draft) return
     const nextState = { ...state, requirementsText: draft, groomConfirmed: true, groomDraft: draft }
-    const questions = generateQuestionsFromRequirements(nextState)
+    const questions = carryClarifyQuestionsForward(nextState)
     const basePatch: Partial<WizardState> = {
       requirementsText: draft,
       groomDraft: draft,
@@ -622,7 +632,12 @@ export default function App() {
       groomStatus: 'draft_ready',
       questions,
       requirementsAnalyzed: true,
-      responses: [],
+      responses: questions.map((q) => ({
+        questionId: q.id,
+        status: 'pending' as const,
+        response: q.proposedAnswer || '',
+        receivedAt: null,
+      })),
       questionsSent: false,
     }
     setSaving(true)
@@ -713,6 +728,10 @@ export default function App() {
       setStatus(null)
       try {
         const payload = buildEmailPayload(state, [questionId])
+        if (!payload.length) {
+          setStatus({ type: 'error', message: 'Assign name and email on Project & Stakeholders before emailing.' })
+          return
+        }
         const res = await sendStakeholderQuestions(payload)
         applySendResults(res.results, res.delivery_mode, res.outbox_dir)
       } catch (e) {
@@ -725,12 +744,21 @@ export default function App() {
   )
 
   const handleSendAll = useCallback(async () => {
-    const unsent = state.questions.filter((q) => !q.sent).map((q) => q.id)
-    if (!unsent.length) return
+    const unsent = state.questions
+      .filter((q) => !q.sent && assigneeForQuestion(state, q.assignedRoleId).assigned)
+      .map((q) => q.id)
+    if (!unsent.length) {
+      setStatus({ type: 'error', message: 'No questions with assigned recipients to email.' })
+      return
+    }
     setSending(true)
     setStatus(null)
     try {
       const payload = buildEmailPayload(state, unsent)
+      if (!payload.length) {
+        setStatus({ type: 'error', message: 'Assign name and email on Project & Stakeholders before emailing.' })
+        return
+      }
       const res = await sendStakeholderQuestions(payload)
       applySendResults(res.results, res.delivery_mode, res.outbox_dir)
     } catch (e) {
@@ -739,6 +767,133 @@ export default function App() {
       setSending(false)
     }
   }, [state, applySendResults])
+
+  const applyJiraPollReplies = useCallback(
+    (replies: { blinkQuestionId: string; body: string; created?: string | null }[]) => {
+      if (!replies.length) return
+      const now = new Date().toISOString()
+      setState((prev) => {
+        const questionIds = new Set(replies.map((r) => r.blinkQuestionId))
+        const questions = prev.questions.map((q) =>
+          questionIds.has(q.id)
+            ? { ...q, jiraCommentStatus: 'replied' as const, jiraCommentMessage: 'Reply received from Jira' }
+            : q,
+        )
+        const responses = prev.questions.map((q) => {
+          const reply = replies.find((r) => r.blinkQuestionId === q.id)
+          const existing = prev.responses.find((r) => r.questionId === q.id)
+          if (!reply) {
+            return existing ?? { questionId: q.id, status: 'pending' as const, response: q.proposedAnswer || '', receivedAt: null }
+          }
+          return {
+            questionId: q.id,
+            status: 'answered' as const,
+            response: reply.body,
+            receivedAt: reply.created || now,
+          }
+        })
+        return { ...prev, questions, responses }
+      })
+    },
+    [],
+  )
+
+  const handleRefreshJira = useCallback(async () => {
+    const items = state.questions
+      .filter((q) => q.jiraIssueKey && (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied'))
+      .map((q) => ({ issueKey: q.jiraIssueKey!, blinkQuestionId: q.id }))
+    if (!items.length || !state.projectId) {
+      setStatus({ type: 'info', message: 'No posted Jira comments to refresh yet.' })
+      return
+    }
+    setRefreshingJira(true)
+    setStatus(null)
+    try {
+      const res = await pollJiraComments({ projectId: state.projectId, items })
+      applyJiraPollReplies(res.replies || [])
+      setStatus({
+        type: 'success',
+        message: res.replies?.length
+          ? `Loaded ${res.replies.length} Jira reply(ies).`
+          : res.message || 'No new Jira replies.',
+      })
+    } catch (e) {
+      setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Failed to poll Jira comments.' })
+    } finally {
+      setRefreshingJira(false)
+    }
+  }, [state.questions, state.projectId, applyJiraPollReplies])
+
+  const handlePostJiraOne = useCallback(
+    async (questionId: string) => {
+      const question = state.questions.find((q) => q.id === questionId)
+      if (!question?.jiraIssueKey || !state.projectId) {
+        setStatus({ type: 'error', message: 'Pick a Jira ticket before posting.' })
+        return
+      }
+      if (!assigneeForQuestion(state, question.assignedRoleId).assigned) {
+        setStatus({ type: 'error', message: 'Assign a person with email before posting to Jira.' })
+        return
+      }
+      setPostingJira(true)
+      setStatus(null)
+      try {
+        const body = jiraCommentForQuestion(state, question)
+        const res = await createJiraComment({
+          projectId: state.projectId,
+          issueKey: question.jiraIssueKey,
+          body,
+          blinkQuestionId: question.id,
+        })
+        setState((prev) => ({
+          ...prev,
+          questions: prev.questions.map((q) =>
+            q.id === questionId
+              ? {
+                  ...q,
+                  jiraCommentId: res.commentId || null,
+                  jiraCommentStatus: 'posted' as const,
+                  jiraCommentMessage: res.message,
+                }
+              : q,
+          ),
+        }))
+        setStatus({ type: 'success', message: res.message || `Posted to ${question.jiraIssueKey}.` })
+      } catch (e) {
+        setState((prev) => ({
+          ...prev,
+          questions: prev.questions.map((q) =>
+            q.id === questionId
+              ? {
+                  ...q,
+                  jiraCommentStatus: 'failed' as const,
+                  jiraCommentMessage: e instanceof Error ? e.message : 'Post failed',
+                }
+              : q,
+          ),
+        }))
+        setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Failed to post Jira comment.' })
+      } finally {
+        setPostingJira(false)
+      }
+    },
+    [state],
+  )
+
+  const handlePostJiraAll = useCallback(async () => {
+    const ids = state.questions
+      .filter(
+        (q) =>
+          q.jiraIssueKey &&
+          assigneeForQuestion(state, q.assignedRoleId).assigned &&
+          q.jiraCommentStatus !== 'posted' &&
+          q.jiraCommentStatus !== 'replied',
+      )
+      .map((q) => q.id)
+    for (const id of ids) {
+      await handlePostJiraOne(id)
+    }
+  }, [state, handlePostJiraOne])
 
   const handleSimulateResponses = useCallback(() => {
     const answers = mockResponsesForQuestions(state.questions)
@@ -970,13 +1125,26 @@ export default function App() {
         return (
           <StakeholderQuestionsScreen
             state={state}
+            onUpdate={patch}
             onSendOne={handleSendOne}
             onSendAll={handleSendAll}
+            onPostJira={handlePostJiraOne}
+            onPostAllJira={handlePostJiraAll}
+            onRefreshJira={handleRefreshJira}
             sending={sending}
+            posting={postingJira}
+            refreshing={refreshingJira}
           />
         )
       case 'stakeholder-responses':
-        return <StakeholderResponsesScreen state={state} onSimulateResponses={handleSimulateResponses} />
+        return (
+          <StakeholderResponsesScreen
+            state={state}
+            onSimulateResponses={handleSimulateResponses}
+            onRefreshJira={() => void handleRefreshJira()}
+            refreshing={refreshingJira}
+          />
+        )
       case 'project-shape':
         return <ProjectShapeScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':

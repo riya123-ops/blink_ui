@@ -4087,6 +4087,100 @@ textarea::placeholder {
   line-height: 1.45;
 }
 
+.groom-assignee-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: stretch;
+  margin: 0.55rem 0 0.45rem;
+}
+
+.groom-role-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 160px;
+}
+
+.groom-role-field span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.groom-role-field select {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(18, 38, 58, 0.15);
+  background: #fff;
+}
+
+.groom-person-chip {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(15, 157, 74, 0.08);
+  border: 1px solid rgba(15, 157, 74, 0.2);
+}
+
+.groom-person-chip.is-unassigned {
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+.groom-person-chip strong {
+  font-size: 0.8rem;
+}
+
+.groom-person-chip span {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.groom-queue-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.groom-queue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(18, 38, 58, 0.12);
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.groom-queue-toggle.on {
+  border-color: rgba(0, 102, 204, 0.35);
+  background: rgba(0, 102, 204, 0.08);
+  color: #004f9e;
+}
+
+.groom-queue-toggle.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.groom-queue-toggle input {
+  margin: 0;
+}
+
 .groom-options {
   display: flex;
   flex-direction: column;
@@ -4537,4 +4631,32 @@ textarea::placeholder {
     display: flex;
     flex-direction: column;
   }
+}
+
+.stakeholder-clarify-table .jira-match-select {
+  width: 100%;
+  min-width: 140px;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid rgba(18, 38, 58, 0.15);
+  background: #fff;
+}
+
+.stake-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.stake-footer {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.muted-badge {
+  margin-top: 0.35rem;
+  opacity: 0.85;
 }

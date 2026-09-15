@@ -378,7 +378,7 @@ export async function configureStakeholders(
   const url = apiUrl(`/projects/${projectId}/configure-stakeholders`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(stakeholders || []),
   })
   if (!response.ok) throw new Error(await readError(response))
@@ -453,7 +453,7 @@ export async function connectIntegration(payload: IntegrationConnectPayload): Pr
   console.info(`[blink] POST ${url}`, { provider: payload.provider })
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -464,7 +464,7 @@ export async function fetchJiraOAuthUrl(): Promise<JiraOAuthUrlResult> {
   const redirectUri = oauthCallbackUrl('jira')
   const url = apiUrl(`/integrations/jira/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
   console.info(`[blink] GET ${url}`)
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: authHeaders() })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<JiraOAuthUrlResult>
 }
@@ -478,7 +478,7 @@ export async function exchangeJiraOAuth(
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify({ code, redirectUri, projectId: projectId || undefined }),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -489,7 +489,7 @@ export async function fetchGithubOAuthUrl(): Promise<GithubOAuthUrlResult> {
   const redirectUri = oauthCallbackUrl('github')
   const url = apiUrl(`/integrations/github/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
   console.info(`[blink] GET ${url}`)
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: authHeaders() })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<GithubOAuthUrlResult>
 }
@@ -504,7 +504,7 @@ export async function exchangeGithubOAuth(
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify({
       code,
       redirectUri,
@@ -520,7 +520,7 @@ export async function fetchFigmaOAuthUrl(): Promise<FigmaOAuthUrlResult> {
   const redirectUri = oauthCallbackUrl('figma')
   const url = apiUrl(`/integrations/figma/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)
   console.info(`[blink] GET ${url}`)
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: authHeaders() })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<FigmaOAuthUrlResult>
 }
@@ -535,7 +535,7 @@ export async function exchangeFigmaOAuth(
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify({
       code,
       redirectUri,
@@ -559,7 +559,7 @@ export async function saveIntegrationBinding(payload: {
   console.info(`[blink] POST ${url}`, { provider: payload.provider, projectKey: payload.projectKey, organization: payload.organization })
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -578,7 +578,7 @@ export async function fetchJiraProjects(payload: {
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -593,7 +593,7 @@ export async function fetchGithubOrgs(payload: {
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -608,7 +608,7 @@ export async function fetchFigmaTeams(payload: {
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -624,7 +624,7 @@ export async function fetchFigmaProjects(payload: {
   console.info(`[blink] POST ${url}`)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -678,7 +678,7 @@ export async function createJiraIssues(payload: CreateJiraIssuesPayload): Promis
   console.info(`[blink] POST ${url}`, { projectKey: payload.projectKey, epics: payload.epics?.length, stories: payload.stories?.length })
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -704,7 +704,7 @@ export async function createJiraComment(payload: CreateJiraCommentPayload): Prom
   const url = apiUrl('/integrations/jira/comments')
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -735,7 +735,7 @@ export async function pollJiraComments(payload: PollJiraCommentsPayload): Promis
   const url = apiUrl('/integrations/jira/comments/poll')
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -769,7 +769,7 @@ export async function createRepositories(payload: CreateRepositoriesPayload): Pr
   console.info(`[blink] POST ${url}`, { provider: payload.provider, count: payload.repositories.length })
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
@@ -858,6 +858,7 @@ export async function downloadWorkspace(options: {
   try {
     const response = await fetch(url, {
       method: 'POST',
+      headers: authHeaders(),
       body: form,
       signal: controller.signal,
     })
@@ -946,7 +947,7 @@ export async function clarifyRequirement(options: {
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(true),
       body: JSON.stringify(body),
       signal: controller.signal,
     })
@@ -1002,7 +1003,7 @@ export async function planProductScope(
   const url = apiUrl(path)
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(true),
     body: JSON.stringify({
       projectId: projectId || undefined,
       projectName: payload?.projectName,

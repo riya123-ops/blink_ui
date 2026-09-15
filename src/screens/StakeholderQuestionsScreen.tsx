@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { ChevronRight, Mail, MessageSquare, RefreshCw } from 'lucide-react'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
 import {
+  autoMapQuestionsToJira,
   buildJiraClarifyComment,
-  matchQuestionToJiraIssue,
   matchableJiraIssues,
   type MatchableIssue,
 } from '../wizard/jiraMatch'
@@ -16,7 +16,7 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
   onSendOne: (questionId: string) => Promise<void>
   onSendAll: () => Promise<void>
-  onPostJira: (questionId: string) => Promise<void>
+  onPostJira: (questionId: string) => Promise<boolean | void>
   onPostAllJira: () => Promise<void>
   onRefreshJira: () => Promise<void>
   sending?: boolean
@@ -25,17 +25,7 @@ interface Props {
 }
 
 function ensureMatches(state: WizardState): StakeholderQuestion[] {
-  const issues = matchableJiraIssues(state)
-  return state.questions.map((q) => {
-    if (q.jiraIssueKey) return q
-    const match = matchQuestionToJiraIssue(q.question, issues)
-    if (!match) return q
-    return {
-      ...q,
-      jiraIssueKey: match.key,
-      jiraIssueUrl: match.url || null,
-    }
-  })
+  return autoMapQuestionsToJira(state.questions, state)
 }
 
 export function StakeholderQuestionsScreen({
@@ -52,15 +42,17 @@ export function StakeholderQuestionsScreen({
 }: Props) {
   const issues = useMemo(() => matchableJiraIssues(state), [state])
   const jiraReady = isJiraReady(state) && issues.length > 0
-  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    if (hydrated || !state.questions.length) return
+    if (!state.questions.length || !issues.length) return
     const next = ensureMatches(state)
-    const changed = next.some((q, i) => q.jiraIssueKey !== state.questions[i]?.jiraIssueKey)
+    const changed = next.some(
+      (q, i) =>
+        q.jiraIssueKey !== state.questions[i]?.jiraIssueKey ||
+        q.jiraIssueUrl !== state.questions[i]?.jiraIssueUrl,
+    )
     if (changed) onUpdate({ questions: next })
-    setHydrated(true)
-  }, [hydrated, state, onUpdate])
+  }, [state.questions, state.jiraCreatedIssues, state.productScope, issues.length, onUpdate, state])
 
   useEffect(() => {
     if (!jiraReady || !state.questions.some((q) => q.jiraCommentStatus === 'posted')) return
@@ -71,10 +63,12 @@ export function StakeholderQuestionsScreen({
   const emailable = state.questions.filter((q) => !q.sent && assigneeForQuestion(state, q.assignedRoleId).assigned)
   const jiraPostable = state.questions.filter(
     (q) =>
-      q.jiraCommentStatus !== 'posted' &&
-      q.jiraCommentStatus !== 'replied' &&
       Boolean(q.jiraIssueKey) &&
-      assigneeForQuestion(state, q.assignedRoleId).assigned,
+      assigneeForQuestion(state, q.assignedRoleId).assigned &&
+      !(
+        (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
+        Boolean(q.jiraCommentId)
+      ),
   )
 
   function setIssue(questionId: string, issue: MatchableIssue | null) {
@@ -123,12 +117,10 @@ export function StakeholderQuestionsScreen({
                 {state.questions.map((q, idx) => {
                   const assignee = assigneeForQuestion(state, q.assignedRoleId)
                   const canEmail = assignee.assigned && !q.sent
-                  const canJira =
-                    assignee.assigned &&
-                    jiraReady &&
-                    Boolean(q.jiraIssueKey) &&
-                    q.jiraCommentStatus !== 'posted' &&
-                    q.jiraCommentStatus !== 'replied'
+                  const alreadyOnJira =
+                    (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
+                    Boolean(q.jiraCommentId)
+                  const canJira = assignee.assigned && jiraReady && Boolean(q.jiraIssueKey) && !alreadyOnJira
                   return (
                     <tr key={q.id}>
                       <td className="col-num">{idx + 1}</td>
@@ -168,7 +160,20 @@ export function StakeholderQuestionsScreen({
                           </select>
                         )}
                         {q.jiraCommentStatus && q.jiraCommentStatus !== 'pending' ? (
-                          <div className="sub">Jira: {q.jiraCommentStatus}</div>
+                          <div className="sub">
+                            Jira: {q.jiraCommentStatus}
+                            {q.jiraIssueUrl ? (
+                              <>
+                                {' · '}
+                                <a href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
+                                  open ticket
+                                </a>
+                              </>
+                            ) : null}
+                            {q.jiraCommentId ? ` · comment ${q.jiraCommentId}` : null}
+                          </div>
+                        ) : q.jiraIssueKey ? (
+                          <div className="sub">Mapped to {q.jiraIssueKey} (auto)</div>
                         ) : null}
                       </td>
                       <td className="col-action stake-actions">
@@ -198,9 +203,7 @@ export function StakeholderQuestionsScreen({
                           onClick={() => void onPostJira(q.id)}
                         >
                           <MessageSquare size={14} />
-                          {q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied'
-                            ? 'Posted ✓'
-                            : 'Post to Jira'}
+                          {alreadyOnJira ? 'Posted ✓' : q.jiraCommentStatus === 'failed' ? 'Retry Jira' : 'Post to Jira'}
                         </button>
                       </td>
                     </tr>
@@ -248,7 +251,8 @@ export function validateStakeholderQuestions(state: WizardState): string | null 
   if (state.questions.length === 0) return null
   const pending = state.questions.filter((q) => {
     const emailed = q.sent
-    const jiraDone = q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied'
+    const jiraDone =
+      (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
     const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
     return !(emailed || jiraDone || answered)
   })

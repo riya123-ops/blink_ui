@@ -100,15 +100,17 @@ export function matchQuestionToJiraIssue(
   return issues.find((item) => item.type === 'Epic') || issues[0] || null
 }
 
-export const BLINK_QUESTION_MARKER_PREFIX = '<!-- blink-question:'
+export const BLINK_QUESTION_MARKER_PREFIX = '[blink-question:'
 
 export function blinkQuestionMarker(questionId: string): string {
-  return `<!-- blink-question:${questionId} -->`
+  return `[blink-question:${questionId}]`
 }
 
 export function parseBlinkQuestionMarker(body: string): string | null {
-  const match = body.match(/<!--\s*blink-question:([^>\s]+)\s*-->/i)
-  return match?.[1]?.trim() || null
+  const bracket = body.match(/\[\s*blink-question:([^\]]+)\s*\]/i)
+  if (bracket?.[1]?.trim()) return bracket[1].trim()
+  const html = body.match(/<!--\s*blink-question:([^>\s]+)\s*-->/i)
+  return html?.[1]?.trim() || null
 }
 
 export function buildJiraClarifyComment(options: {
@@ -121,12 +123,33 @@ export function buildJiraClarifyComment(options: {
   const lines = [
     blinkQuestionMarker(options.questionId),
     `Blink clarification for ${options.personName} (${options.roleLabel})`,
-    '',
     `Question: ${options.question}`,
   ]
   if (options.proposedAnswer?.trim()) {
-    lines.push('', `Proposed answer (operator proxy): ${options.proposedAnswer.trim()}`)
+    lines.push(`Proposed answer (operator proxy): ${options.proposedAnswer.trim()}`)
   }
-  lines.push('', 'Please reply on this ticket with your confirmation or corrected answer.')
+  lines.push('Please reply on this ticket with your confirmation or corrected answer.')
   return lines.join('\n')
+}
+
+/** Auto-map questions that do not yet have a Jira ticket key. */
+export function autoMapQuestionsToJira(
+  questions: import('./types').StakeholderQuestion[],
+  state: WizardState,
+): import('./types').StakeholderQuestion[] {
+  const issues = matchableJiraIssues(state)
+  if (!issues.length) return questions
+  return questions.map((q) => {
+    if (q.jiraIssueKey) {
+      const known = issues.find((item) => item.key === q.jiraIssueKey)
+      return known?.url && !q.jiraIssueUrl ? { ...q, jiraIssueUrl: known.url } : q
+    }
+    const match = matchQuestionToJiraIssue(q.question, issues)
+    if (!match) return q
+    return {
+      ...q,
+      jiraIssueKey: match.key,
+      jiraIssueUrl: match.url || null,
+    }
+  })
 }

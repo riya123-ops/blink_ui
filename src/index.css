@@ -4231,6 +4231,17 @@ textarea::placeholder {
   margin: 0;
 }
 
+.groom-defer-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  color: #004f9e;
+  line-height: 1.4;
+}
+
+.groom-options.is-deferred {
+  opacity: 0.55;
+}
+
 .groom-options {
   display: flex;
   flex-direction: column;

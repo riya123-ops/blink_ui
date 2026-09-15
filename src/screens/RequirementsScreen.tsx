@@ -204,7 +204,7 @@ export function validateRequirements(state: WizardState): string | null {
   }
   const missing = unansweredRequired(state)
   if (missing.length) {
-    return `Answer the ${missing.length} required question${missing.length === 1 ? '' : 's'} under Need clarification.`
+    return `Answer or mark Jira later on the ${missing.length} required question${missing.length === 1 ? '' : 's'} under Need clarification.`
   }
   return 'Click Use this wording so Blink can rewrite from your answers.'
 }

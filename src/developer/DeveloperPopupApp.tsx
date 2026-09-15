@@ -7,6 +7,8 @@ import {
 } from './catalog'
 import { DeveloperModeProvider, useDeveloperMode } from './DeveloperModeContext'
 import { loadDeveloperSession, subscribeDeveloperSession, type DeveloperSessionSnapshot } from './session'
+import { S3WorkspacesPanel } from './S3WorkspacesPanel'
+import { JiraEpicsPanel } from './JiraEpicsPanel'
 
 function SessionBlock() {
   const { has } = useDeveloperMode()
@@ -99,6 +101,9 @@ function DeveloperToolsPage() {
       </div>
 
       <SessionBlock />
+
+      <S3WorkspacesPanel />
+      <JiraEpicsPanel />
 
       <footer className="dev-popup-foot">
         <button type="button" className="dev-mode-text-btn" onClick={resetCapabilities}>

@@ -206,6 +206,114 @@ export async function fetchWorkspaceStatus(projectName: string, projectId?: stri
   }>
 }
 
+export interface S3WorkspaceProjectDto {
+  folder: string
+  projectId?: number | null
+  url: string
+  objectCount: number
+  totalBytes: number
+  kitComplete: boolean
+}
+
+export interface S3WorkspaceListDto {
+  enabled: boolean
+  bucket?: string | null
+  workspaces: S3WorkspaceProjectDto[]
+}
+
+export interface S3WorkspaceDeleteDto {
+  deletedFolders: number
+  deletedObjects: number
+  folders: string[]
+}
+
+/** Developer panel: list Blink-owned `*_workspace` folders in the configured S3 bucket. */
+export async function fetchS3Workspaces(): Promise<S3WorkspaceListDto> {
+  const url = apiUrl('/dev/workspaces')
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 60_000)
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: authHeaders(),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    return response.json() as Promise<S3WorkspaceListDto>
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Listing S3 workspaces timed out. Check the API and AWS credentials.')
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+export async function deleteS3Workspace(folder: string): Promise<S3WorkspaceDeleteDto> {
+  const url = apiUrl(`/dev/workspaces/${encodeURIComponent(folder)}`)
+  const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<S3WorkspaceDeleteDto>
+}
+
+export async function deleteAllS3Workspaces(): Promise<S3WorkspaceDeleteDto> {
+  const url = apiUrl('/dev/workspaces')
+  const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<S3WorkspaceDeleteDto>
+}
+
+export interface BlinkJiraIssueDto {
+  key: string
+  issueType: string
+  summary: string
+  sourceKind: 'epic' | 'story' | string
+  sourceId: string
+  url: string
+}
+
+export interface BlinkJiraIssueListDto {
+  connected: boolean
+  blinkProjectId?: number | null
+  jiraProjectKey?: string | null
+  browseBase?: string | null
+  issues: BlinkJiraIssueDto[]
+  message?: string | null
+}
+
+export interface BlinkJiraIssueDeleteDto {
+  deleted: number
+  skipped: number
+  deletedKeys: string[]
+  skippedKeys: string[]
+  errors: string[]
+}
+
+/** Developer panel: list Blink-marked Jira issues for the connected Blink project. */
+export async function fetchBlinkJiraIssues(projectId: string): Promise<BlinkJiraIssueListDto> {
+  const url = apiUrl(`/dev/jira/issues?projectId=${encodeURIComponent(projectId)}`)
+  const response = await fetch(url, { cache: 'no-store', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<BlinkJiraIssueListDto>
+}
+
+export async function deleteBlinkJiraIssue(projectId: string, issueKey: string): Promise<BlinkJiraIssueDeleteDto> {
+  const url = apiUrl(
+    `/dev/jira/issues/${encodeURIComponent(issueKey)}?projectId=${encodeURIComponent(projectId)}`,
+  )
+  const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<BlinkJiraIssueDeleteDto>
+}
+
+export async function deleteAllBlinkJiraIssues(projectId: string): Promise<BlinkJiraIssueDeleteDto> {
+  const url = apiUrl(`/dev/jira/issues?projectId=${encodeURIComponent(projectId)}`)
+  const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<BlinkJiraIssueDeleteDto>
+}
+
 export async function fetchGovernanceStatus(projectId: string): Promise<{
   status?: 'idle' | 'preparing' | 'ready' | 'failed' | null
   sodWarnings?: string[]

@@ -7,6 +7,8 @@ import type { GroomQuestion, WizardState } from '../wizard/types'
 import {
   GROOM_BANDS,
   isAnswered,
+  isDeferredToJira,
+  isResolvedForWording,
   questionPriority,
   questionsInBand,
   unansweredRequired,
@@ -120,8 +122,14 @@ function QuestionCard({
           Jira later
         </label>
       </div>
+      {isDeferredToJira(question) ? (
+        <p className="groom-defer-hint">
+          Skipped here — will ask {assignee.name} on a Jira ticket after epics/stories exist.
+          {isAnswered(question, state.groomAnswers) ? ' Your in-app choice is kept as a proposed answer.' : ''}
+        </p>
+      ) : null}
 
-      <div className="groom-options">
+      <div className={`groom-options${isDeferredToJira(question) && !isAnswered(question, state.groomAnswers) ? ' is-deferred' : ''}`}>
         {options.map((option) => {
           const checked = selectedIds.has(option.id)
           return (
@@ -191,7 +199,7 @@ function Band({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   if (!questions.length) return null
-  const answered = questions.filter((question) => isAnswered(question, state.groomAnswers)).length
+  const resolved = questions.filter((question) => isResolvedForWording(question, state.groomAnswers)).length
   return (
     <section className={`groom-band ${band.required ? 'required' : 'optional'} ${open ? 'open' : ''}`}>
       <button type="button" className="groom-band-header" onClick={() => setOpen((value) => !value)}>
@@ -200,7 +208,7 @@ function Band({
           {band.required ? <span className="groom-required-tag">Required</span> : <span className="optional-tag">Optional</span>}
         </span>
         <span className="groom-band-meta">
-          {answered}/{questions.length} answered
+          {resolved}/{questions.length} resolved
           <ChevronDown size={16} className={open ? 'chevron open' : 'chevron'} />
         </span>
       </button>
@@ -241,8 +249,12 @@ export function GroomingPanel({
   const showDraft = Boolean(state.groomDraft && (state.groomStatus === 'draft_ready' || state.groomConfirmed))
   const required = questionsInBand(questions, 'need_clarification')
   const optional = questions.filter((question) => questionPriority(question) !== 'need_clarification')
-  const requiredAnswered = required.filter((question) => isAnswered(question, state.groomAnswers)).length
-  const optionalAnswered = optional.filter((question) => isAnswered(question, state.groomAnswers)).length
+  const requiredResolved = required.filter((question) =>
+    isResolvedForWording(question, state.groomAnswers),
+  ).length
+  const optionalResolved = optional.filter((question) =>
+    isResolvedForWording(question, state.groomAnswers),
+  ).length
   const canSave = missingRequired.length === 0 || state.groomStatus === 'error'
 
   return (
@@ -251,7 +263,7 @@ export function GroomingPanel({
         <h3>Make it clearer</h3>
         <p>
           One round of choices on this page. Each question is tagged to a role member. Answer Need clarification
-          here (operator proxy). Optional questions can be emailed or posted to Jira after tickets exist.
+          here, or select Jira later to skip and ask on a ticket after epics/stories exist.
         </p>
       </div>
 
@@ -268,8 +280,8 @@ export function GroomingPanel({
 
       {asked && questions.length > 0 && (
         <p className="groom-progress">
-          {requiredAnswered}/{required.length} required
-          {optional.length > 0 ? ` · ${optionalAnswered}/${optional.length} optional` : ''}
+          {requiredResolved}/{required.length} required
+          {optional.length > 0 ? ` · ${optionalResolved}/${optional.length} optional` : ''}
         </p>
       )}
 
@@ -320,8 +332,8 @@ export function GroomingPanel({
       )}
       {asked && !state.groomConfirmed && missingRequired.length > 0 && (
         <p className="field-hint">
-          Answer {missingRequired.length} required question{missingRequired.length === 1 ? '' : 's'} under Need
-          clarification.
+          Answer or mark Jira later on {missingRequired.length} required question
+          {missingRequired.length === 1 ? '' : 's'} under Need clarification.
         </p>
       )}
 

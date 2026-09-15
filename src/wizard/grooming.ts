@@ -68,8 +68,20 @@ export function isAnswered(question: GroomQuestion, answers: GroomAnswer[]): boo
   return pickedOption || otherFilled
 }
 
+/** Jira later defers the answer to a ticket comment — no in-app MCQ required. */
+export function isDeferredToJira(question: GroomQuestion): boolean {
+  return Boolean(question.queueJira)
+}
+
+/** Answered in Blink, or explicitly deferred to a Jira comment. */
+export function isResolvedForWording(question: GroomQuestion, answers: GroomAnswer[]): boolean {
+  return isAnswered(question, answers) || isDeferredToJira(question)
+}
+
 export function unansweredRequired(state: Pick<WizardState, 'groomQuestions' | 'groomAnswers'>): GroomQuestion[] {
-  return requiredGroomQuestions(state.groomQuestions).filter((question) => !isAnswered(question, state.groomAnswers))
+  return requiredGroomQuestions(state.groomQuestions).filter(
+    (question) => !isResolvedForWording(question, state.groomAnswers),
+  )
 }
 
 export function groomingComplete(state: WizardState): boolean {

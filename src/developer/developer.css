@@ -14,7 +14,7 @@ body {
 
 .dev-popup {
   min-height: 100%;
-  max-width: 440px;
+  max-width: 520px;
   margin: 0 auto;
   padding: 1.15rem 1.1rem 1.25rem;
   display: flex;
@@ -259,4 +259,120 @@ body {
   background: #7c3aed;
   color: #fff;
   border-color: #7c3aed;
+}
+
+.dev-popup-s3 {
+  padding: 0.8rem 0.85rem;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(18, 38, 58, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.dev-popup-s3-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dev-popup-s3-head h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7c3aed;
+}
+
+.dev-popup-s3-head p {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  color: #5d7084;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.dev-popup-s3-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.dev-s3-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.dev-s3-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid rgba(18, 38, 58, 0.06);
+}
+
+.dev-s3-list strong {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.dev-s3-list em {
+  display: block;
+  margin-top: 0.15rem;
+  font-style: normal;
+  font-size: 0.68rem;
+  color: #5d7084;
+  line-height: 1.35;
+}
+
+.dev-s3-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  background: transparent;
+  color: #b91c1c;
+  cursor: pointer;
+  padding: 0;
+  font: 650 0.68rem/1 Inter, system-ui, sans-serif;
+  flex-shrink: 0;
+}
+
+.dev-s3-danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dev-s3-danger:not(:disabled):hover {
+  color: #7f1d1d;
+}
+
+.dev-s3-msg {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: #5d7084;
+}
+
+.dev-s3-msg.is-error {
+  color: #b91c1c;
+}
+
+.dev-s3-msg.is-ok {
+  color: #047857;
 }

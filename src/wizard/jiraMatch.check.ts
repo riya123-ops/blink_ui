@@ -22,8 +22,9 @@ assert.equal(matched?.key, 'FIT-1')
 const weak = matchQuestionToJiraIssue('zzzz unrelated', issues)
 assert.equal(weak?.key, 'FIT-1', 'weak overlap falls back to first epic')
 
+assert.equal(parseBlinkQuestionMarker('[blink-question:q-9]\nHello'), 'q-9')
 assert.equal(parseBlinkQuestionMarker('<!-- blink-question:q-9 -->\nHello'), 'q-9')
-assert.equal(blinkQuestionMarker('q-9'), '<!-- blink-question:q-9 -->')
+assert.equal(blinkQuestionMarker('q-9'), '[blink-question:q-9]')
 
 const body = buildJiraClarifyComment({
   questionId: 'q-9',

@@ -40,6 +40,7 @@ function proposedAnswerText(question: GroomQuestion, answers: GroomAnswer[]): st
  * Leftover clarify items become the Stakeholder Questions queue:
  * - unanswered optional (important/suggestion) questions
  * - any question flagged queueEmail / queueJira (even if answered as proxy)
+ * - required questions deferred with Jira later (answered on the ticket)
  */
 export function carryClarifyQuestionsForward(state: WizardState): StakeholderQuestion[] {
   const out: StakeholderQuestion[] = []
@@ -47,12 +48,14 @@ export function carryClarifyQuestionsForward(state: WizardState): StakeholderQue
     const answered = isAnswered(q, state.groomAnswers)
     const priority = questionPriority(q)
     const mandatory = priority === 'need_clarification'
-    const queued = Boolean(q.queueEmail || q.queueJira)
-    // Required answered with no outbound queue → done on Requirements
+    const queueJira = Boolean(q.queueJira)
+    const queueEmail = Boolean(q.queueEmail)
+    const queued = queueEmail || queueJira
+    // Required answered in Blink with no outbound queue → done on Requirements
     if (mandatory && answered && !queued) continue
-    // Required unanswered should be blocked by wording gate; skip if present
-    if (mandatory && !answered) continue
-    // Optional unanswered, or anything explicitly queued
+    // Required unanswered without Jira later should be blocked by wording gate
+    if (mandatory && !answered && !queueJira) continue
+    // Optional unanswered, deferred to Jira, or anything explicitly queued
     if (!answered || queued) {
       out.push({
         id: q.id || uid(),
@@ -65,8 +68,8 @@ export function carryClarifyQuestionsForward(state: WizardState): StakeholderQue
         deliveryMessage: '',
         priority,
         proposedAnswer: proposedAnswerText(q, state.groomAnswers) || undefined,
-        queueEmail: Boolean(q.queueEmail) || !answered,
-        queueJira: Boolean(q.queueJira) || !answered,
+        queueEmail: queueEmail || (!answered && !queueJira),
+        queueJira: queueJira || !answered,
         jiraIssueKey: null,
         jiraIssueUrl: null,
         jiraCommentId: null,

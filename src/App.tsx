@@ -50,6 +50,7 @@ import {
 } from './wizard/types'
 import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
 import { createJiraIssuesFromState, isJiraReady, planScopeFromWording } from './wizard/jiraTickets'
+import { autoMapQuestionsToJira } from './wizard/jiraMatch'
 import {
   allowedStep,
   isWizardHistoryState,
@@ -781,7 +782,10 @@ export default function App() {
   const handleGroomLooksGood = useCallback(async () => {
     if (state.groomConfirmed) return
     if (unansweredRequired(state).length && state.groomStatus !== 'error') {
-      setStatus({ type: 'error', message: 'Answer every required question under Need clarification.' })
+      setStatus({
+        type: 'error',
+        message: 'Answer every required question under Need clarification, or mark Jira later to ask on a ticket.',
+      })
       return
     }
     const original = (state.groomOriginal || state.requirementsText).trim()
@@ -1015,32 +1019,41 @@ export default function App() {
   }, [state.questions, state.projectId, applyJiraPollReplies])
 
   const handlePostJiraOne = useCallback(
-    async (questionId: string) => {
-      const question = state.questions.find((q) => q.id === questionId)
+    async (questionId: string): Promise<boolean> => {
+      const mapped = autoMapQuestionsToJira(state.questions, state)
+      const question = mapped.find((q) => q.id === questionId)
       if (!question?.jiraIssueKey || !state.projectId) {
-        setStatus({ type: 'error', message: 'Pick a Jira ticket before posting.' })
-        return
+        setStatus({ type: 'error', message: 'Create Jira tickets first, or pick a ticket for this question.' })
+        return false
       }
       if (!assigneeForQuestion(state, question.assignedRoleId).assigned) {
         setStatus({ type: 'error', message: 'Assign a person with email before posting to Jira.' })
-        return
+        return false
+      }
+      if (mapped.some((q, i) => q.jiraIssueKey !== state.questions[i]?.jiraIssueKey)) {
+        patch({ questions: mapped })
       }
       setPostingJira(true)
       setStatus(null)
       try {
-        const body = jiraCommentForQuestion(state, question)
+        const body = jiraCommentForQuestion({ ...state, questions: mapped }, question)
         const res = await createJiraComment({
           projectId: state.projectId,
           issueKey: question.jiraIssueKey,
           body,
           blinkQuestionId: question.id,
         })
+        if (!res.commentId) {
+          throw new Error(`Jira did not return a comment id for ${question.jiraIssueKey}.`)
+        }
         setState((prev) => ({
           ...prev,
           questions: prev.questions.map((q) =>
             q.id === questionId
               ? {
                   ...q,
+                  jiraIssueKey: question.jiraIssueKey,
+                  jiraIssueUrl: question.jiraIssueUrl || q.jiraIssueUrl || null,
                   jiraCommentId: res.commentId || null,
                   jiraCommentStatus: 'posted' as const,
                   jiraCommentMessage: res.message,
@@ -1048,7 +1061,11 @@ export default function App() {
               : q,
           ),
         }))
-        setStatus({ type: 'success', message: res.message || `Posted to ${question.jiraIssueKey}.` })
+        setStatus({
+          type: 'success',
+          message: res.message || `Posted to ${question.jiraIssueKey}.`,
+        })
+        return true
       } catch (e) {
         setState((prev) => ({
           ...prev,
@@ -1063,27 +1080,51 @@ export default function App() {
           ),
         }))
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Failed to post Jira comment.' })
+        return false
       } finally {
         setPostingJira(false)
       }
     },
-    [state],
+    [state, patch],
   )
 
   const handlePostJiraAll = useCallback(async () => {
-    const ids = state.questions
+    const mapped = autoMapQuestionsToJira(state.questions, state)
+    if (mapped.some((q, i) => q.jiraIssueKey !== state.questions[i]?.jiraIssueKey)) {
+      patch({ questions: mapped })
+    }
+    const ids = mapped
       .filter(
         (q) =>
           q.jiraIssueKey &&
           assigneeForQuestion(state, q.assignedRoleId).assigned &&
-          q.jiraCommentStatus !== 'posted' &&
-          q.jiraCommentStatus !== 'replied',
+          !(
+            (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
+            Boolean(q.jiraCommentId)
+          ),
       )
       .map((q) => q.id)
-    for (const id of ids) {
-      await handlePostJiraOne(id)
+    if (!ids.length) {
+      setStatus({
+        type: 'error',
+        message: 'Nothing to post. Create Jira tickets and ensure each question is mapped to a ticket.',
+      })
+      return
     }
-  }, [state, handlePostJiraOne])
+    let ok = 0
+    let failed = 0
+    for (const id of ids) {
+      const success = await handlePostJiraOne(id)
+      if (success) ok += 1
+      else failed += 1
+    }
+    setStatus({
+      type: failed ? 'error' : 'success',
+      message: failed
+        ? `Posted ${ok} clarification(s); ${failed} failed. Open the ticket link after a successful post, or reconnect Jira.`
+        : `Posted ${ok} clarification comment(s) to Jira. Use Open ticket to verify, then Refresh for replies.`,
+    })
+  }, [state, handlePostJiraOne, patch])
 
   const handleSimulateResponses = useCallback(() => {
     const answers = mockResponsesForQuestions(state.questions)

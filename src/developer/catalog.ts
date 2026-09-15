@@ -14,6 +14,16 @@ export const DEVELOPER_CAPABILITY_GROUPS = [
     label: 'Inspect',
     description: 'Surface internals while you debug a session.',
   },
+  {
+    id: 'aws',
+    label: 'AWS workspaces',
+    description: 'Manage Blink project folders in the S3 kit bucket.',
+  },
+  {
+    id: 'jira',
+    label: 'Jira reset',
+    description: 'Remove Blink-created epics and stories from the connected Jira project.',
+  },
 ] as const
 
 export type DeveloperCapabilityGroupId = (typeof DEVELOPER_CAPABILITY_GROUPS)[number]['id']
@@ -44,6 +54,19 @@ export const DEVELOPER_CAPABILITIES = {
     label: 'Session inspector',
     description: 'Show project id, current step, and grooming state in this developer window.',
   },
+  manageS3Workspaces: {
+    id: 'manageS3Workspaces',
+    group: 'aws',
+    label: 'S3 workspace browser',
+    description: 'List Blink `*_workspace` folders on AWS and delete one or all.',
+  },
+  resetJiraEpics: {
+    id: 'resetJiraEpics',
+    group: 'jira',
+    label: 'Reset Blink Jira issues',
+    description:
+      'List and delete epics/stories Blink created (Source epic:/Source story: markers). Never wipes the whole Jira project.',
+  },
 } as const
 
 export type DeveloperCapabilityId = keyof typeof DEVELOPER_CAPABILITIES
@@ -60,6 +83,8 @@ export const DEFAULT_DEVELOPER_MODE: DeveloperModeState = {
     skipStepValidation: false,
     autoEnsureProject: true,
     showSessionInspector: true,
+    manageS3Workspaces: true,
+    resetJiraEpics: true,
   },
 }
 

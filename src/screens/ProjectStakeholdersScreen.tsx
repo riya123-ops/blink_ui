@@ -4,6 +4,7 @@ import { fetchStakeholderRoles } from '../api/blink'
 import {
   STAKEHOLDER_ROLES,
   assignmentsFromRoles,
+  roleLabel,
   type StakeholderRoleDef,
 } from '../wizard/stakeholders'
 import { syncRepositoriesFromArtifact, type WizardState } from '../wizard/types'
@@ -16,6 +17,10 @@ interface Props {
 /** Matches backend ProjectRequest @Size limits. */
 export const PROJECT_NAME_MAX = 255
 export const PROJECT_DESCRIPTION_MAX = 8000
+
+/** Show character count only when the field is getting long. */
+const NAME_COUNT_SHOW_AT = Math.floor(PROJECT_NAME_MAX * 0.85)
+const DESC_COUNT_SHOW_AT = Math.floor(PROJECT_DESCRIPTION_MAX * 0.9)
 
 function slugify(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-')
@@ -30,9 +35,16 @@ function toRoleDef(role: StakeholderRoleDef): StakeholderRoleDef {
   }
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
 export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
   const [roles, setRoles] = useState<StakeholderRoleDef[]>(STAKEHOLDER_ROLES)
-  const [catalogHint, setCatalogHint] = useState('Loading stakeholder directory…')
+  const [catalogQuiet, setCatalogQuiet] = useState<string | null>('Loading directory…')
   const dirtyRef = useRef(false)
   const catalogLoadedRef = useRef(state.stakeholdersCatalogLoaded)
   const assignmentsRef = useRef(state.stakeholderAssignments)
@@ -54,7 +66,7 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
           }),
         )
         setRoles(mapped.length ? mapped : STAKEHOLDER_ROLES)
-        setCatalogHint('Loaded from stakeholders.yaml')
+        setCatalogQuiet(null)
         if (!dirtyRef.current && !catalogLoadedRef.current) {
           onUpdate({
             stakeholderAssignments: assignmentsFromRoles(mapped.length ? mapped : STAKEHOLDER_ROLES),
@@ -63,14 +75,10 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         } else if (!catalogLoadedRef.current) {
           onUpdate({ stakeholdersCatalogLoaded: true })
         }
-      } catch (error) {
+      } catch {
         if (cancelled) return
         setRoles(STAKEHOLDER_ROLES)
-        setCatalogHint(
-          error instanceof Error
-            ? `Using local directory (${error.message})`
-            : 'Using local directory (API unreachable)',
-        )
+        setCatalogQuiet(null)
         const catalogIds = new Set(STAKEHOLDER_ROLES.map((role) => role.id))
         const stale = assignmentsRef.current.some((row) => !catalogIds.has(row.roleId))
         if (!dirtyRef.current && (stale || assignmentsRef.current.length === 0) && !catalogLoadedRef.current) {
@@ -122,8 +130,8 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         {
           id: `sa-${Date.now()}`,
           roleId: fallback.id,
-          personName: fallback.defaultName ?? '',
-          personEmail: fallback.defaultEmail ?? '',
+          personName: '',
+          personEmail: '',
         },
       ],
     })
@@ -136,11 +144,14 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
     })
   }
 
+  const showNameCount = state.projectName.length >= NAME_COUNT_SHOW_AT
+  const showDescCount = state.description.length >= DESC_COUNT_SHOW_AT
+
   return (
-    <div className="screen">
+    <div className="screen screen-project">
       <div className="screen-header">
-        <h2>Project &amp; Stakeholders</h2>
-        <p>Define your project and assign stakeholders to roles.</p>
+        <h2>Project</h2>
+        <p>Name it and who should be in the loop. We use this roster for Jira, email, and clarify.</p>
       </div>
 
       {state.governanceStatus === 'preparing' && (
@@ -154,25 +165,11 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         </div>
       )}
       {state.sodWarnings && state.sodWarnings.length > 0 && (
-        <div
-          className="sod-banner"
-          style={{
-            background: 'rgba(234, 179, 8, 0.1)',
-            border: '1px solid rgba(234, 179, 8, 0.3)',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            color: '#ca8a04',
-            fontSize: '13px',
-          }}
-        >
-          <ShieldAlert size={18} style={{ flexShrink: 0 }} />
+        <div className="sod-banner is-note" role="status">
+          <ShieldAlert size={18} aria-hidden />
           <div>
-            <strong>Governance Note (Separation of Duties):</strong>
-            <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+            <strong>Governance note</strong>
+            <ul>
               {state.sodWarnings.map((w, idx) => (
                 <li key={idx}>{w}</li>
               ))}
@@ -181,103 +178,120 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         </div>
       )}
 
-      <section className="card">
-        <h3 className="card-title">Project Details</h3>
-        <div className="field-grid two-col">
-          <div className="field-group">
-            <div className="field-label-row">
-              <label htmlFor="projectName">Project Name *</label>
+      <section className="card project-setup-card">
+        <div className="field-group project-name-field">
+          <div className="field-label-row">
+            <label htmlFor="projectName">Project name</label>
+            {showNameCount ? (
               <span
                 id="projectName-count"
                 className={`field-count${state.projectName.length >= PROJECT_NAME_MAX ? ' is-limit' : ''}`}
               >
                 {state.projectName.length.toLocaleString()} / {PROJECT_NAME_MAX.toLocaleString()}
               </span>
-            </div>
-            <input
-              id="projectName"
-              placeholder="e.g. Banking Application"
-              value={state.projectName}
-              maxLength={PROJECT_NAME_MAX}
-              aria-describedby="projectName-count"
-              onChange={(e) => updateField('projectName', e.target.value.slice(0, PROJECT_NAME_MAX))}
-            />
+            ) : null}
           </div>
-          <div className="field-group span-full">
-            <div className="field-label-row">
-              <label htmlFor="description">Project Description *</label>
+          <input
+            id="projectName"
+            className="project-name-input"
+            placeholder="e.g. Banking Application"
+            value={state.projectName}
+            maxLength={PROJECT_NAME_MAX}
+            aria-describedby={showNameCount ? 'projectName-count' : undefined}
+            onChange={(e) => updateField('projectName', e.target.value.slice(0, PROJECT_NAME_MAX))}
+          />
+        </div>
+
+        <div className="field-group">
+          <div className="field-label-row">
+            <label htmlFor="description">Short description</label>
+            {showDescCount ? (
               <span
                 id="description-count"
                 className={`field-count${state.description.length >= PROJECT_DESCRIPTION_MAX ? ' is-limit' : ''}`}
               >
                 {state.description.length.toLocaleString()} / {PROJECT_DESCRIPTION_MAX.toLocaleString()}
               </span>
-            </div>
-            <textarea
-              id="description"
-              rows={3}
-              placeholder="Provide the short description of you requirement"
-              value={state.description}
-              maxLength={PROJECT_DESCRIPTION_MAX}
-              aria-describedby="description-count"
-              onChange={(e) => updateField('description', e.target.value.slice(0, PROJECT_DESCRIPTION_MAX))}
-            />
+            ) : null}
           </div>
+          <textarea
+            id="description"
+            rows={3}
+            placeholder="What are we building, in a sentence or two?"
+            value={state.description}
+            maxLength={PROJECT_DESCRIPTION_MAX}
+            aria-describedby={showDescCount ? 'description-count' : undefined}
+            onChange={(e) => updateField('description', e.target.value.slice(0, PROJECT_DESCRIPTION_MAX))}
+          />
         </div>
-      </section>
 
-      <section className="card">
-        <div className="card-title-row">
-          <h3 className="card-title">Stakeholders</h3>
-          <button type="button" className="text-btn" onClick={addRow}>
-            <Plus size={14} /> Add Stakeholder
-          </button>
-        </div>
-        <p className="field-hint">{catalogHint}</p>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Role</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="project-people-block">
+          <div className="project-people-head">
+            <div>
+              <h3>People</h3>
+              <p className="sub">Roles decide who gets clarify questions later.</p>
+            </div>
+            <button type="button" className="secondary-btn project-add-person" onClick={addRow}>
+              <Plus size={14} /> Add person
+            </button>
+          </div>
+
+          {catalogQuiet ? <p className="field-hint quiet-hint">{catalogQuiet}</p> : null}
+
+          {state.stakeholderAssignments.length === 0 ? (
+            <div className="empty-state-block compact">
+              <h3>No one yet</h3>
+              <p>Add at least one person so Blink knows who to ask.</p>
+            </div>
+          ) : (
+            <ul className="person-roster">
               {state.stakeholderAssignments.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <select value={row.roleId} onChange={(e) => updateRow(row.id, 'roleId', e.target.value)}>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>{r.label}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
+                <li key={row.id} className="person-roster-item">
+                  <span className="person-avatar" aria-hidden>
+                    {initials(row.personName)}
+                  </span>
+                  <div className="person-roster-fields">
                     <input
+                      className="person-name-input"
                       placeholder="Full name"
                       value={row.personName}
+                      aria-label={`Name for ${roleLabel(row.roleId)}`}
                       onChange={(e) => updateRow(row.id, 'personName', e.target.value)}
                     />
-                  </td>
-                  <td>
                     <input
                       type="email"
+                      className="person-email-input"
                       placeholder="email@example.com"
                       value={row.personEmail}
+                      aria-label={`Email for ${roleLabel(row.roleId)}`}
                       onChange={(e) => updateRow(row.id, 'personEmail', e.target.value)}
                     />
-                  </td>
-                  <td>
-                    <button type="button" className="icon-btn" onClick={() => removeRow(row.id)} title="Remove">
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
+                    <select
+                      className="person-role-select"
+                      value={row.roleId}
+                      aria-label="Role"
+                      onChange={(e) => updateRow(row.id, 'roleId', e.target.value)}
+                    >
+                      {roles.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn person-remove"
+                    onClick={() => removeRow(row.id)}
+                    title="Remove"
+                    aria-label={`Remove ${row.personName || roleLabel(row.roleId)}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+          )}
         </div>
       </section>
     </div>
@@ -293,8 +307,8 @@ export function validateProjectStakeholders(state: WizardState): string | null {
   if (state.description.length > PROJECT_DESCRIPTION_MAX) {
     return `Project description can be at most ${PROJECT_DESCRIPTION_MAX.toLocaleString()} characters.`
   }
-  if (state.stakeholderAssignments.length === 0) return 'Add at least one stakeholder.'
+  if (state.stakeholderAssignments.length === 0) return 'Add at least one person.'
   const missing = state.stakeholderAssignments.find((a) => !a.personEmail.trim() || !a.personName.trim())
-  if (missing) return 'Every stakeholder must have a name and email.'
+  if (missing) return 'Every person must have a name and email.'
   return null
 }

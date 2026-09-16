@@ -38,7 +38,7 @@ import {
   mockResponsesForQuestions,
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
-import { primaryContinueLabel, stepIndex } from './wizard/steps'
+import { primaryContinueLabel, phaseProgressLabel, stepIndex } from './wizard/steps'
 import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
 import { mergeSavedIntegrations } from './wizard/mergeIntegrations'
 import {
@@ -1551,7 +1551,7 @@ export default function App() {
           <header className="top-bar">
             <div className="top-bar-start">
               <span className="step-indicator">
-                Step {stepIndex(step) + 1} of {STEP_ORDER.length}
+                {phaseProgressLabel(step)}
               </span>
               <div className="prep-stack">
               {folderPrep === 'preparing' && (

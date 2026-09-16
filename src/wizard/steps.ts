@@ -80,6 +80,13 @@ export function phaseForStep(step: WizardStep): PhaseDefinition {
   return WIZARD_PHASES.find((phase) => phase.stepIds.includes(step)) || WIZARD_PHASES[0]
 }
 
+/** Single progress line: "Project setup · 2 of 3" — replaces global STEP X OF 14. */
+export function phaseProgressLabel(step: WizardStep): string {
+  const phase = phaseForStep(step)
+  const indexInPhase = phase.stepIds.indexOf(step) + 1
+  return `${phase.label} · ${indexInPhase} of ${phase.stepIds.length}`
+}
+
 export function canNavigateToStep(
   target: WizardStep,
   current: WizardStep,
@@ -142,6 +149,8 @@ export function primaryContinueLabel(
   if (busy.creatingRepos) return 'Creating on GitHub…'
   if (busy.saving) return 'Saving…'
   switch (step) {
+    case 'project-stakeholders':
+      return 'Continue'
     case 'integrations':
       return 'Continue'
     case 'requirements':

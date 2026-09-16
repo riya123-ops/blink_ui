@@ -23,10 +23,10 @@ export function DeveloperWindowHost() {
       type="button"
       className={`dev-window-opener${state.enabled ? ' is-on' : ''}`}
       onClick={() => openDeveloperPopup()}
-      title="Open developer tools in a separate window (Ctrl+Shift+D)"
+      title="Developer tools (Ctrl+Shift+D)"
+      aria-label="Open developer tools"
     >
-      <Code2 size={14} strokeWidth={2.2} />
-      Dev
+      <Code2 size={15} strokeWidth={2} />
     </button>
   )
 }

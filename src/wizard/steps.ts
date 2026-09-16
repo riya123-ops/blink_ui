@@ -15,13 +15,19 @@ import {
   Monitor,
   Users,
 } from 'lucide-react'
-import type { WizardStep } from './types'
+import type { WizardState, WizardStep } from './types'
 
 export interface StepDefinition {
   id: WizardStep
   label: string
   icon: LucideIcon
   iconColor: string
+}
+
+export interface PhaseDefinition {
+  id: string
+  label: string
+  stepIds: WizardStep[]
 }
 
 export const WIZARD_STEPS: StepDefinition[] = [
@@ -41,10 +47,37 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'generation', label: 'Generation / Download', icon: Download, iconColor: '#087a38' },
 ]
 
+export const WIZARD_PHASES: PhaseDefinition[] = [
+  {
+    id: 'setup',
+    label: 'Project setup',
+    stepIds: ['welcome', 'project-stakeholders', 'integrations'],
+  },
+  {
+    id: 'clarify',
+    label: 'Clarify & align',
+    stepIds: ['requirements', 'stakeholder-questions', 'stakeholder-responses'],
+  },
+  {
+    id: 'shape',
+    label: 'Shape delivery',
+    stepIds: ['project-shape', 'repositories', 'technology-per-repo', 'ide-and-tools', 'platform-delivery'],
+  },
+  {
+    id: 'ship',
+    label: 'Ship',
+    stepIds: ['review-resolve', 'project-preview', 'generation'],
+  },
+]
+
 export const STEP_ORDER = WIZARD_STEPS.map((s) => s.id)
 
 export function stepIndex(step: WizardStep): number {
   return WIZARD_STEPS.findIndex((s) => s.id === step)
+}
+
+export function phaseForStep(step: WizardStep): PhaseDefinition {
+  return WIZARD_PHASES.find((phase) => phase.stepIds.includes(step)) || WIZARD_PHASES[0]
 }
 
 export function canNavigateToStep(
@@ -62,4 +95,77 @@ export function canNavigateToStep(
   const reqIdx = stepIndex('requirements')
   if (targetIdx > reqIdx && !groomingUnlocked) return false
   return targetIdx <= Math.max(completedThrough, currentIdx)
+}
+
+export type StepAttention = 'idle' | 'active' | 'done' | 'attention' | 'skipped'
+
+/** High-level step chrome: done / needs attention / active. */
+export function stepAttention(
+  stepId: WizardStep,
+  current: WizardStep,
+  completedThrough: number,
+  generationComplete: boolean,
+  state: Pick<WizardState, 'questions' | 'responses' | 'groomConfirmed'>,
+): StepAttention {
+  const idx = stepIndex(stepId)
+  const generationIdx = stepIndex('generation')
+  const skipped = generationComplete && idx > completedThrough && idx < generationIdx
+  if (skipped) return 'skipped'
+  if (stepId === current) return 'active'
+  if (idx <= completedThrough || (generationComplete && stepId === 'generation')) {
+    if (stepId === 'stakeholder-questions') {
+      const pending = state.questions.filter((q) => {
+        const emailed = q.sent
+        const jiraDone =
+          (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
+        const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
+        return !(emailed || jiraDone || answered)
+      })
+      if (pending.length > 0) return 'attention'
+    }
+    if (stepId === 'stakeholder-responses') {
+      const pending = state.questions
+        .filter((q) => q.mandatory)
+        .filter((q) => state.responses.find((r) => r.questionId === q.id)?.status !== 'answered')
+      if (pending.length > 0) return 'attention'
+    }
+    return 'done'
+  }
+  return 'idle'
+}
+
+export function primaryContinueLabel(
+  step: WizardStep,
+  state: Pick<WizardState, 'questions' | 'groomConfirmed' | 'repositories' | 'responses'>,
+  busy: { saving?: boolean; creatingRepos?: boolean },
+): string {
+  if (busy.creatingRepos) return 'Creating on GitHub…'
+  if (busy.saving) return 'Saving…'
+  switch (step) {
+    case 'integrations':
+      return 'Continue'
+    case 'requirements':
+      return state.groomConfirmed ? 'Continue' : 'Save & Continue'
+    case 'stakeholder-questions':
+      return state.questions.length === 0 ? 'Continue — nothing left' : 'Continue when outbound is done'
+    case 'stakeholder-responses': {
+      const pending = state.questions
+        .filter((q) => q.mandatory)
+        .filter((q) => state.responses.find((r) => r.questionId === q.id)?.status !== 'answered')
+      return pending.length > 0 ? 'Continue when mandatory answered' : 'Continue'
+    }
+    case 'repositories':
+      return state.repositories.some((r) => r.name.trim() && r.createStatus !== 'created' && r.createStatus !== 'exists')
+        ? 'Create repos & Continue'
+        : 'Continue'
+    case 'review-resolve':
+      return 'Continue to preview'
+    case 'project-shape':
+    case 'technology-per-repo':
+    case 'ide-and-tools':
+    case 'platform-delivery':
+      return 'Continue'
+    default:
+      return 'Save & Continue'
+  }
 }

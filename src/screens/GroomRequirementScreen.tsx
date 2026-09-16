@@ -3,7 +3,7 @@ import { Check, ChevronDown, Mail, MessageSquare, Sparkles } from 'lucide-react'
 import { JiraScopePanel } from './JiraScopePanel'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel, STAKEHOLDER_ROLES } from '../wizard/stakeholders'
-import type { GroomQuestion, WizardState } from '../wizard/types'
+import type { GroomQuestion, WizardState, WizardStep } from '../wizard/types'
 import {
   GROOM_BANDS,
   isAnswered,
@@ -25,6 +25,8 @@ interface Props {
   onUseWording: () => void
   onStartOver: () => void
   onUpdate: (patch: Partial<WizardState>) => void
+  onNavigate?: (step: WizardStep) => void
+  showJiraPanel?: boolean
 }
 
 function QuestionCard({
@@ -34,6 +36,7 @@ function QuestionCard({
   onOther,
   onToggleOther,
   onUpdate,
+  onNavigate,
 }: {
   question: GroomQuestion
   state: WizardState
@@ -41,6 +44,7 @@ function QuestionCard({
   onOther: Props['onOther']
   onToggleOther: Props['onToggleOther']
   onUpdate: Props['onUpdate']
+  onNavigate?: Props['onNavigate']
 }) {
   const options = (Array.isArray(question.options) ? question.options : []).filter(
     (option) => option.id !== 'other' && option.label.trim().toLowerCase() !== 'other',
@@ -96,7 +100,21 @@ function QuestionCard({
         </label>
         <div className={`groom-person-chip${assignee.assigned ? '' : ' is-unassigned'}`}>
           <strong>{assignee.name}</strong>
-          <span>{assignee.assigned ? assignee.email : `Assign ${roleLabel(roleId)} on Project & Stakeholders to email or Jira`}</span>
+          {assignee.assigned ? (
+            <span>{assignee.email}</span>
+          ) : (
+            <span>
+              Assign {roleLabel(roleId)} before Email/Jira later
+              {onNavigate ? (
+                <>
+                  {' · '}
+                  <button type="button" className="link-btn" onClick={() => onNavigate('project-stakeholders')}>
+                    Open Project & Stakeholders
+                  </button>
+                </>
+              ) : null}
+            </span>
+          )}
         </div>
       </div>
 
@@ -187,6 +205,7 @@ function Band({
   onOther,
   onToggleOther,
   onUpdate,
+  onNavigate,
 }: {
   band: (typeof GROOM_BANDS)[number]
   questions: GroomQuestion[]
@@ -196,6 +215,7 @@ function Band({
   onOther: Props['onOther']
   onToggleOther: Props['onToggleOther']
   onUpdate: Props['onUpdate']
+  onNavigate?: Props['onNavigate']
 }) {
   const [open, setOpen] = useState(defaultOpen)
   if (!questions.length) return null
@@ -224,6 +244,7 @@ function Band({
               onOther={onOther}
               onToggleOther={onToggleOther}
               onUpdate={onUpdate}
+              onNavigate={onNavigate}
             />
           ))}
         </>
@@ -242,6 +263,8 @@ export function GroomingPanel({
   onUseWording,
   onStartOver,
   onUpdate,
+  onNavigate,
+  showJiraPanel = true,
 }: Props) {
   const questions = state.groomQuestions
   const missingRequired = unansweredRequired(state)
@@ -296,6 +319,7 @@ export function GroomingPanel({
           onOther={onOther}
           onToggleOther={onToggleOther}
           onUpdate={onUpdate}
+          onNavigate={onNavigate}
         />
       ))}
 
@@ -337,7 +361,7 @@ export function GroomingPanel({
         </p>
       )}
 
-      {state.groomConfirmed && (
+      {showJiraPanel && state.groomConfirmed && (
         <JiraScopePanel
           state={state}
           onUpdate={onUpdate}

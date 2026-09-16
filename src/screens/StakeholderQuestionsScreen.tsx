@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react'
-import { ChevronRight, Mail, MessageSquare, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ExternalLink, Mail, MessageSquare, RefreshCw } from 'lucide-react'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
 import {
@@ -9,7 +9,7 @@ import {
   type MatchableIssue,
 } from '../wizard/jiraMatch'
 import { isJiraReady } from '../wizard/jiraTickets'
-import type { StakeholderQuestion, WizardState } from '../wizard/types'
+import type { StakeholderQuestion, WizardState, WizardStep } from '../wizard/types'
 
 interface Props {
   state: WizardState
@@ -19,13 +19,40 @@ interface Props {
   onPostJira: (questionId: string) => Promise<boolean | void>
   onPostAllJira: () => Promise<void>
   onRefreshJira: () => Promise<void>
+  onNavigate?: (step: WizardStep) => void
   sending?: boolean
   posting?: boolean
   refreshing?: boolean
 }
 
+type PersonGroup = {
+  key: string
+  roleId: string
+  name: string
+  email: string
+  assigned: boolean
+  questions: StakeholderQuestion[]
+}
+
 function ensureMatches(state: WizardState): StakeholderQuestion[] {
   return autoMapQuestionsToJira(state.questions, state)
+}
+
+function outboundDone(q: StakeholderQuestion, state: WizardState): boolean {
+  const emailed = q.sent
+  const jiraDone =
+    (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
+  const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
+  return Boolean(emailed || jiraDone || answered)
+}
+
+function statusChip(q: StakeholderQuestion): { label: string; tone: string } {
+  if (q.jiraCommentStatus === 'replied' && q.jiraCommentId) return { label: 'Answered on Jira', tone: 'ok' }
+  if (q.jiraCommentStatus === 'posted' && q.jiraCommentId) return { label: 'Posted · awaiting reply', tone: 'info' }
+  if (q.jiraCommentStatus === 'failed') return { label: 'Jira failed', tone: 'err' }
+  if (q.sent) return { label: 'Emailed', tone: 'ok' }
+  if (q.jiraIssueKey) return { label: `Mapped · ${q.jiraIssueKey}`, tone: 'pending' }
+  return { label: 'Pending', tone: 'pending' }
 }
 
 export function StakeholderQuestionsScreen({
@@ -36,12 +63,14 @@ export function StakeholderQuestionsScreen({
   onPostJira,
   onPostAllJira,
   onRefreshJira,
+  onNavigate,
   sending,
   posting,
   refreshing,
 }: Props) {
   const issues = useMemo(() => matchableJiraIssues(state), [state])
   const jiraReady = isJiraReady(state) && issues.length > 0
+  const [openTickets, setOpenTickets] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!state.questions.length || !issues.length) return
@@ -55,10 +84,32 @@ export function StakeholderQuestionsScreen({
   }, [state.questions, state.jiraCreatedIssues, state.productScope, issues.length, onUpdate, state])
 
   useEffect(() => {
-    if (!jiraReady || !state.questions.some((q) => q.jiraCommentStatus === 'posted')) return
+    if (!jiraReady || !state.questions.some((q) => q.jiraCommentStatus === 'posted' && q.jiraCommentId)) return
     void onRefreshJira()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- poll once on mount when tickets exist
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const groups: PersonGroup[] = useMemo(() => {
+    const map = new Map<string, PersonGroup>()
+    for (const q of state.questions) {
+      const assignee = assigneeForQuestion(state, q.assignedRoleId)
+      const key = `${q.assignedRoleId}|${assignee.email || assignee.name}`
+      const existing = map.get(key)
+      if (existing) {
+        existing.questions.push(q)
+      } else {
+        map.set(key, {
+          key,
+          roleId: q.assignedRoleId,
+          name: assignee.name,
+          email: assignee.email,
+          assigned: assignee.assigned,
+          questions: [q],
+        })
+      }
+    }
+    return [...map.values()]
+  }, [state])
 
   const emailable = state.questions.filter((q) => !q.sent && assigneeForQuestion(state, q.assignedRoleId).assigned)
   const jiraPostable = state.questions.filter(
@@ -70,6 +121,23 @@ export function StakeholderQuestionsScreen({
         Boolean(q.jiraCommentId)
       ),
   )
+  const pendingCount = state.questions.filter((q) => !outboundDone(q, state)).length
+  const activity = useMemo(() => {
+    const lines: string[] = []
+    for (const q of state.questions) {
+      const short = q.question.length > 48 ? `${q.question.slice(0, 48)}…` : q.question
+      if (q.jiraCommentStatus === 'replied' && q.jiraCommentId) {
+        lines.push(`Answered on Jira · ${q.jiraIssueKey || 'ticket'} · ${short}`)
+      } else if (q.jiraCommentStatus === 'posted' && q.jiraCommentId) {
+        lines.push(`Posted → ${q.jiraIssueKey || 'ticket'} · ${short}`)
+      } else if (q.jiraCommentStatus === 'failed') {
+        lines.push(`Jira failed · ${q.jiraIssueKey || 'ticket'} · ${short}`)
+      } else if (q.sent) {
+        lines.push(`Emailed · ${short}`)
+      }
+    }
+    return lines.slice(0, 6)
+  }, [state.questions])
 
   function setIssue(questionId: string, issue: MatchableIssue | null) {
     onUpdate({
@@ -90,131 +158,187 @@ export function StakeholderQuestionsScreen({
       <div className="screen-header">
         <h2>Questions for Stakeholders</h2>
         <p>
-          Leftover clarify items from Requirements. Email one message per person, and/or post a Jira
-          comment on a matched ticket after epics/stories exist.
+          Leftover clarify items, grouped by person. One email per person; Jira comments land on auto-mapped tickets.
         </p>
       </div>
 
+      {!jiraReady && state.questions.some((q) => q.queueJira || !q.sent) ? (
+        <div className="ux-blocker">
+          <strong>Jira tickets needed for comments</strong>
+          <span>Create epics/stories on Requirements → Tickets, or connect Atlassian first.</span>
+          {onNavigate ? (
+            <div className="ux-blocker-actions">
+              <button type="button" className="secondary-btn" onClick={() => onNavigate('requirements')}>
+                Open Requirements
+              </button>
+              <button type="button" className="ghost-btn" onClick={() => onNavigate('integrations')}>
+                Open Integrations
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activity.length > 0 ? (
+        <div className="activity-log" aria-label="Outbound activity">
+          <strong>Recent outbound</strong>
+          <ul>
+            {activity.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <section className="card ref-card">
         {state.questions.length === 0 ? (
-          <p className="empty-state">
-            No leftover clarifications. Continue to Responses, or go back if you need to queue more.
-          </p>
+          <div className="empty-state-block">
+            <h3>Nothing left to ask</h3>
+            <p>All clarify items were resolved on Requirements. Continue to Responses or go back if you need to queue more.</p>
+          </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table ref-table stakeholder-clarify-table">
-              <thead>
-                <tr>
-                  <th className="col-num">#</th>
-                  <th>Question</th>
-                  <th>Person / role</th>
-                  <th>Proposed</th>
-                  <th>Jira ticket</th>
-                  <th className="col-action">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {state.questions.map((q, idx) => {
-                  const assignee = assigneeForQuestion(state, q.assignedRoleId)
-                  const canEmail = assignee.assigned && !q.sent
-                  const alreadyOnJira =
+          <div className="person-groups">
+            {groups.map((group) => {
+              const groupEmailable = group.questions.filter((q) => !q.sent && group.assigned)
+              const groupJiraable = group.questions.filter(
+                (q) =>
+                  group.assigned &&
+                  q.jiraIssueKey &&
+                  !(
                     (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
                     Boolean(q.jiraCommentId)
-                  const canJira = assignee.assigned && jiraReady && Boolean(q.jiraIssueKey) && !alreadyOnJira
-                  return (
-                    <tr key={q.id}>
-                      <td className="col-num">{idx + 1}</td>
-                      <td className="question-cell">
-                        <div>{q.question}</div>
-                        {q.priority ? (
-                          <span className="requester-badge muted-badge">{q.priority.replace('_', ' ')}</span>
-                        ) : null}
-                      </td>
-                      <td>
-                        <strong>{assignee.name}</strong>
-                        <div className="sub">{roleLabel(q.assignedRoleId)}</div>
-                        <div className="sub">{assignee.email || 'No email — assign on Project & Stakeholders'}</div>
-                      </td>
-                      <td className="question-cell">
-                        {q.proposedAnswer?.trim() ? q.proposedAnswer : <span className="muted">—</span>}
-                      </td>
-                      <td>
-                        {issues.length === 0 ? (
-                          <span className="muted">Create Jira tickets first</span>
-                        ) : (
-                          <select
-                            className="jira-match-select"
-                            value={q.jiraIssueKey || ''}
-                            onChange={(event) => {
-                              const key = event.target.value
-                              const issue = issues.find((item) => item.key === key) || null
-                              setIssue(q.id, issue)
-                            }}
-                          >
-                            <option value="">Select ticket…</option>
-                            {issues.map((issue) => (
-                              <option key={issue.key} value={issue.key}>
-                                {issue.key} · {issue.title} ({issue.type})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        {q.jiraCommentStatus && q.jiraCommentStatus !== 'pending' ? (
-                          <div className="sub">
-                            Jira: {q.jiraCommentStatus}
-                            {q.jiraIssueUrl ? (
-                              <>
-                                {' · '}
-                                <a href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
-                                  open ticket
-                                </a>
-                              </>
+                  ),
+              )
+              return (
+                <article key={group.key} className="person-group">
+                  <header className="person-group-head">
+                    <div>
+                      <strong>{group.name}</strong>
+                      <div className="sub">
+                        {roleLabel(group.roleId)}
+                        {group.email ? ` · ${group.email}` : ' · unassigned'}
+                      </div>
+                    </div>
+                    <div className="person-group-actions">
+                      <button
+                        type="button"
+                        className="outlook-btn ref"
+                        disabled={sending || groupEmailable.length === 0}
+                        title={!group.assigned ? 'Assign this role on Project & Stakeholders' : undefined}
+                        onClick={() => void Promise.all(groupEmailable.map((q) => onSendOne(q.id)))}
+                      >
+                        <Mail size={14} />
+                        Email {groupEmailable.length || ''}
+                      </button>
+                      <button
+                        type="button"
+                        className="outlook-btn ref"
+                        disabled={posting || groupJiraable.length === 0 || !jiraReady}
+                        onClick={() => void Promise.all(groupJiraable.map((q) => onPostJira(q.id)))}
+                      >
+                        <MessageSquare size={14} />
+                        Post {groupJiraable.length || ''} to Jira
+                      </button>
+                    </div>
+                  </header>
+
+                  {!group.assigned && onNavigate ? (
+                    <p className="groom-blocker-hint">
+                      Assign this role before email or Jira ·{' '}
+                      <button type="button" className="link-btn" onClick={() => onNavigate('project-stakeholders')}>
+                        Open Project & Stakeholders
+                      </button>
+                    </p>
+                  ) : null}
+
+                  <ul className="person-question-list">
+                    {group.questions.map((q) => {
+                      const chip = statusChip(q)
+                      const alreadyOnJira =
+                        (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
+                        Boolean(q.jiraCommentId)
+                      const showPicker = openTickets[q.id] || !q.jiraIssueKey
+                      return (
+                        <li key={q.id} className="person-question">
+                          <div className="person-question-main">
+                            <p>{q.question}</p>
+                            {q.proposedAnswer ? (
+                              <p className="sub">Proposed: {q.proposedAnswer}</p>
                             ) : null}
-                            {q.jiraCommentId ? ` · comment ${q.jiraCommentId}` : null}
+                            <span className={`status-chip ${chip.tone}`}>{chip.label}</span>
+                            {q.jiraIssueUrl && alreadyOnJira ? (
+                              <a className="ticket-link" href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
+                                Open ticket <ExternalLink size={12} />
+                              </a>
+                            ) : null}
                           </div>
-                        ) : q.jiraIssueKey ? (
-                          <div className="sub">Mapped to {q.jiraIssueKey} (auto)</div>
-                        ) : null}
-                      </td>
-                      <td className="col-action stake-actions">
-                        <button
-                          type="button"
-                          className="outlook-btn ref"
-                          disabled={sending || !canEmail}
-                          title={!assignee.assigned ? 'Assign a person with email first' : undefined}
-                          onClick={() => void onSendOne(q.id)}
-                        >
-                          <Mail size={14} />
-                          {q.sent ? 'Emailed ✓' : 'Send email'}
-                        </button>
-                        <button
-                          type="button"
-                          className="outlook-btn ref"
-                          disabled={posting || !canJira}
-                          title={
-                            !jiraReady
-                              ? 'Create Jira epics/stories first'
-                              : !assignee.assigned
-                                ? 'Assign a person first'
-                                : !q.jiraIssueKey
-                                  ? 'Pick a ticket'
-                                  : undefined
-                          }
-                          onClick={() => void onPostJira(q.id)}
-                        >
-                          <MessageSquare size={14} />
-                          {alreadyOnJira ? 'Posted ✓' : q.jiraCommentStatus === 'failed' ? 'Retry Jira' : 'Post to Jira'}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                          <div className="person-question-side">
+                            {issues.length === 0 ? (
+                              <span className="muted">No tickets yet</span>
+                            ) : showPicker ? (
+                              <select
+                                className="jira-match-select"
+                                value={q.jiraIssueKey || ''}
+                                onChange={(event) => {
+                                  const key = event.target.value
+                                  const issue = issues.find((item) => item.key === key) || null
+                                  setIssue(q.id, issue)
+                                  setOpenTickets((prev) => ({ ...prev, [q.id]: false }))
+                                }}
+                              >
+                                <option value="">Select ticket…</option>
+                                {issues.map((issue) => (
+                                  <option key={issue.key} value={issue.key}>
+                                    {issue.key} · {issue.title} ({issue.type})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <button
+                                type="button"
+                                className="ghost-btn"
+                                onClick={() => setOpenTickets((prev) => ({ ...prev, [q.id]: true }))}
+                              >
+                                Change ticket <ChevronDown size={12} />
+                              </button>
+                            )}
+                            <div className="stake-actions">
+                              <button
+                                type="button"
+                                className="outlook-btn ref"
+                                disabled={sending || !group.assigned || q.sent}
+                                onClick={() => void onSendOne(q.id)}
+                              >
+                                <Mail size={14} />
+                                {q.sent ? 'Emailed ✓' : 'Email'}
+                              </button>
+                              <button
+                                type="button"
+                                className="outlook-btn ref"
+                                disabled={posting || !group.assigned || !jiraReady || !q.jiraIssueKey || alreadyOnJira}
+                                onClick={() => void onPostJira(q.id)}
+                              >
+                                <MessageSquare size={14} />
+                                {alreadyOnJira ? 'Posted ✓' : q.jiraCommentStatus === 'failed' ? 'Retry' : 'Jira'}
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </article>
+              )
+            })}
           </div>
         )}
 
         <div className="card-footer-actions right stake-footer">
+          <span className="sub">
+            {state.questions.length === 0
+              ? 'Queue empty'
+              : `${pendingCount} still need email, Jira, or an answer`}
+          </span>
           <button
             type="button"
             className="ghost-btn"
@@ -235,11 +359,12 @@ export function StakeholderQuestionsScreen({
           </button>
           <button
             type="button"
-            className="primary-btn arrow-btn"
+            className="secondary-btn"
             disabled={sending || emailable.length === 0}
             onClick={() => void onSendAll()}
           >
-            Send all emails <ChevronRight size={16} />
+            <Mail size={14} />
+            Send all emails
           </button>
         </div>
       </section>
@@ -249,20 +374,13 @@ export function StakeholderQuestionsScreen({
 
 export function validateStakeholderQuestions(state: WizardState): string | null {
   if (state.questions.length === 0) return null
-  const pending = state.questions.filter((q) => {
-    const emailed = q.sent
-    const jiraDone =
-      (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
-    const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
-    return !(emailed || jiraDone || answered)
-  })
+  const pending = state.questions.filter((q) => !outboundDone(q, state))
   if (pending.length > 0) {
     return `Email, post to Jira, or record an answer for ${pending.length} leftover question(s).`
   }
   return null
 }
 
-/** Helper for App when composing Jira comment bodies. */
 export function jiraCommentForQuestion(state: WizardState, question: StakeholderQuestion): string {
   const assignee = assigneeForQuestion(state, question.assignedRoleId)
   return buildJiraClarifyComment({

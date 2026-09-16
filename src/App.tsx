@@ -38,7 +38,7 @@ import {
   mockResponsesForQuestions,
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
-import { stepIndex } from './wizard/steps'
+import { primaryContinueLabel, stepIndex } from './wizard/steps'
 import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
 import {
   clearGroomingPatch,
@@ -135,6 +135,13 @@ export default function App() {
   const [step, setStep] = useState<WizardStep>(bootStep)
   const [completedThrough, setCompletedThrough] = useState(boot.completedThrough)
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
+
+  useEffect(() => {
+    if (!status || status.type === 'error') return
+    const timer = window.setTimeout(() => setStatus(null), 6000)
+    return () => window.clearTimeout(timer)
+  }, [status])
+
   const [loading, setLoading] = useState(false)
   const [grooming, setGrooming] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1355,6 +1362,10 @@ export default function App() {
             onToggleOther={handleGroomToggleOther}
             onUseWording={() => void handleGroomLooksGood()}
             onStartOver={handleGroomStartOver}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
           />
         )
       case 'stakeholder-questions':
@@ -1367,6 +1378,10 @@ export default function App() {
             onPostJira={handlePostJiraOne}
             onPostAllJira={handlePostJiraAll}
             onRefreshJira={handleRefreshJira}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
             sending={sending}
             posting={postingJira}
             refreshing={refreshingJira}
@@ -1437,6 +1452,7 @@ export default function App() {
             generationComplete={state.generationComplete}
             groomingUnlocked={groomingComplete(state)}
             unrestrictedNav={unrestrictedNav}
+            state={state}
             onNavigate={(s) => {
               setStatus(null)
               goToStep(s)
@@ -1557,7 +1573,7 @@ export default function App() {
           <div className="action-spacer" />
           {showNext && (
             <button type="button" className="primary-btn" disabled={saving || loading || grooming || creatingRepos} onClick={() => void goNext()}>
-              {creatingRepos ? 'Creating on GitHub…' : saving ? 'Saving…' : 'Save & Continue'} <ChevronRight size={14} />
+              {primaryContinueLabel(step, state, { saving, creatingRepos })} <ChevronRight size={14} />
             </button>
           )}
         </div>

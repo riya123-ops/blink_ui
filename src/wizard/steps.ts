@@ -31,20 +31,20 @@ export interface PhaseDefinition {
 }
 
 export const WIZARD_STEPS: StepDefinition[] = [
-  { id: 'welcome', label: 'Welcome', icon: Home, iconColor: '#0066cc' },
-  { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#4f46e5' },
+  { id: 'welcome', label: 'Welcome', icon: Home, iconColor: '#2563eb' },
+  { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#2563eb' },
   { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
-  { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#0369a1' },
+  { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
   { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
-  { id: 'sdlc-planning', label: 'SDLC Planning', icon: ClipboardList, iconColor: '#0d9488' },
-  { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#7c3aed' },
-  { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#ea580c' },
-  { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#c026d3' },
-  { id: 'ide-and-tools', label: 'IDE and Tools', icon: Monitor, iconColor: '#6366f1' },
-  { id: 'platform-delivery', label: 'Platform & Delivery', icon: Cloud, iconColor: '#0284c7' },
+  { id: 'sdlc-planning', label: 'SDLC Planning', icon: ClipboardList, iconColor: '#0ea5e9' },
+  { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
+  { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
+  { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#2563eb' },
+  { id: 'ide-and-tools', label: 'IDE and Tools', icon: Monitor, iconColor: '#3b82f6' },
+  { id: 'platform-delivery', label: 'Platform & Delivery', icon: Cloud, iconColor: '#0ea5e9' },
   { id: 'review-resolve', label: 'Review & Resolve', icon: CheckSquare, iconColor: '#16a34a' },
-  { id: 'project-preview', label: 'Generated Project Preview', icon: Eye, iconColor: '#7e22ce' },
-  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#087a38' },
+  { id: 'project-preview', label: 'Generated Project Preview', icon: Eye, iconColor: '#2563eb' },
+  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
 ]
 
 export const WIZARD_PHASES: PhaseDefinition[] = [
@@ -177,9 +177,7 @@ export function primaryContinueLabel(
       return 'Continue'
     }
     case 'repositories':
-      return state.repositories.some((r) => r.name.trim() && r.createStatus !== 'created' && r.createStatus !== 'exists')
-        ? 'Create repos & Continue'
-        : 'Continue'
+      return 'Continue'
     case 'review-resolve':
       return 'Continue to preview'
     case 'project-shape':

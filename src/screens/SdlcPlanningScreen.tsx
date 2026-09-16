@@ -9,6 +9,7 @@ import {
   Layers,
   Loader2,
   Map,
+  Play,
   Sparkles,
 } from 'lucide-react'
 import {
@@ -16,6 +17,7 @@ import {
   confirmProductScope,
   createSpec,
   postJiraGateEvidence,
+  sdlcStart,
   technicalPlan,
 } from '../api/blink'
 import type { WizardState } from '../wizard/types'
@@ -25,7 +27,7 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
 }
 
-type StepId = 'confirm' | 'classify' | 'spec' | 'plan'
+type StepId = 'confirm' | 'start' | 'classify' | 'spec' | 'plan'
 type StepStatus = 'pending' | 'current' | 'running' | 'done' | 'blocked' | 'error'
 
 interface PlanStep {
@@ -43,6 +45,13 @@ const PLAN_STEPS: PlanStep[] = [
     command: '/confirm-product-scope',
     plain: 'Lock the proposed epics and stories so planning is based on an agreed scope.',
     icon: Layers,
+  },
+  {
+    id: 'start',
+    title: 'Start SDLC',
+    command: '/sdlc-start',
+    plain: 'Open the delivery story and bind the hosted command chain to this workspace.',
+    icon: Play,
   },
   {
     id: 'classify',
@@ -73,10 +82,16 @@ function primaryIssueKey(state: WizardState): string | undefined {
   return state.workClassification?.issueId || state.specification?.issueId || state.productScope?.storyIds?.[0]
 }
 
+function scopeConfirmed(state: WizardState): boolean {
+  return Boolean(state.productScope?.status === 'confirmed' || state.productScope?.confirmationDigest)
+}
+
 function stepDone(id: StepId, state: WizardState): boolean {
   switch (id) {
     case 'confirm':
-      return Boolean(state.productScope?.status === 'confirmed' || state.productScope?.confirmationDigest)
+      return scopeConfirmed(state)
+    case 'start':
+      return Boolean(state.sdlcStartIssueId)
     case 'classify':
       return Boolean(state.workClassification?.tier)
     case 'spec':
@@ -103,6 +118,14 @@ function blockReason(id: StepId, state: WizardState): string | null {
     if (!digest) return 'Missing proposal digest — re-run product scope planning.'
     if (!hasOverlays) return 'Scope overlays missing — re-run product scope planning.'
   }
+  if (id === 'start') {
+    if (!scopeConfirmed(state)) return 'Confirm product scope before starting the SDLC chain.'
+  }
+  if (id === 'classify') {
+    if (!state.groomAcknowledged) {
+      return 'Acknowledge G-GROOM on Stakeholder Q&A before classify.'
+    }
+  }
   return null
 }
 
@@ -114,6 +137,8 @@ function outcomeFor(id: StepId, state: WizardState): string {
       const dig = state.productScope?.confirmationDigest
       return `Locked ${epics} epic(s), ${stories} story(ies)${dig ? ` · digest ${dig.slice(0, 10)}…` : ''}`
     }
+    case 'start':
+      return `SDLC started · issue ${state.sdlcStartIssueId}`
     case 'classify': {
       const w = state.workClassification
       return `Tier ${w?.tier} · ${w?.workType || 'work'}${w?.riskSummary ? ` — ${w.riskSummary.slice(0, 120)}` : ''}`
@@ -150,10 +175,13 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
   const complete = nextId === null
   const blockedMsg = nextId ? blockReason(nextId, state) : null
   const canContinue = Boolean(nextId && !blockedMsg && !busy && state.projectId)
+  const hasPlan = Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
+  const needsPlanAck = hasPlan && !state.planAcknowledged && !state.shipPlanAcknowledged
 
   const statuses = useMemo(() => {
     const map: Record<StepId, StepStatus> = {
       confirm: 'pending',
+      start: 'pending',
       classify: 'pending',
       spec: 'pending',
       plan: 'pending',
@@ -185,6 +213,23 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
     return `Continue · ${step.title}`
   }, [blockedMsg, busy, complete, nextId])
 
+  const acknowledgePlan = useCallback(() => {
+    onUpdate({
+      planAcknowledged: true,
+      shipPlanAcknowledged: true,
+    })
+    const issueKey = primaryIssueKey(state)
+    if (issueKey && state.projectId) {
+      void postJiraGateEvidence(state.projectId, {
+        issueKey,
+        gate: 'G-PLAN',
+        message:
+          'Human acknowledgement of G-PLAN (not an approve-gate). Plan reviewed; continuing to Shape/Ship.',
+      }).catch(() => undefined)
+    }
+    setLastChange('G-PLAN acknowledged by human (evidence posted; not an approve-gate).')
+  }, [onUpdate, state])
+
   const runNext = useCallback(async () => {
     const id = nextStepId(state)
     if (!id || !state.projectId) return
@@ -214,10 +259,33 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           workClassification: null,
           specification: null,
           technicalPlan: null,
+          sdlcStartIssueId: null,
+          planAcknowledged: false,
           shipPlanAcknowledged: false,
-          nextSdlcCommand: res.nextCommand || '/classify-work',
+          bootstrapAcknowledged: false,
+          implementationAuthorized: false,
+          impactAnalysisSkipped: false,
+          nextSdlcCommand: res.nextCommand || '/sdlc-start',
         })
         setLastChange(`Confirmed scope via ${PLAN_STEPS[0].command}. Downstream planning cleared for a fresh chain.`)
+        return
+      }
+
+      if (id === 'start') {
+        const res = await sdlcStart(state.projectId, {
+          requirementText,
+          productScope: state.productScope,
+          overlayFiles: state.scopeOverlays || [],
+          issueId: state.productScope?.storyIds?.[0],
+        })
+        if (res.status !== 'ok') throw new Error(res.message || res.errors?.join('; ') || 'SDLC start failed')
+        const issueId = res.issueId || state.productScope?.storyIds?.[0] || null
+        onUpdate({
+          sdlcStartIssueId: issueId,
+          scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+          nextSdlcCommand: res.nextCommand || '/sdlc-next',
+        })
+        setLastChange(`SDLC started via ${PLAN_STEPS[1].command}${issueId ? ` · ${issueId}` : ''}.`)
         return
       }
 
@@ -226,20 +294,23 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           requirementText,
           productScope: state.productScope,
           overlayFiles: state.scopeOverlays || [],
-          issueId: state.workClassification?.issueId || state.productScope?.storyIds?.[0],
+          issueId: state.sdlcStartIssueId || state.workClassification?.issueId || state.productScope?.storyIds?.[0],
         })
         if (res.status !== 'ok') throw new Error(res.message || res.errors?.join('; ') || 'Classify failed')
         const work = res.workClassification || res.classification || null
+        const tier = work?.tier
         onUpdate({
           workClassification: work,
           specification: null,
           technicalPlan: null,
+          planAcknowledged: false,
           shipPlanAcknowledged: false,
+          impactAnalysisSkipped: typeof tier === 'number' && tier >= 2,
           scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
           nextSdlcCommand: res.nextCommand || '/create-spec',
         })
         setLastChange(
-          `Classified as tier ${work?.tier ?? '?'} (${work?.workType || 'work'}) via ${PLAN_STEPS[1].command}.`,
+          `Classified as tier ${work?.tier ?? '?'} (${work?.workType || 'work'}) via ${PLAN_STEPS[2].command}.`,
         )
         return
       }
@@ -250,18 +321,19 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           productScope: state.productScope,
           workClassification: state.workClassification,
           overlayFiles: state.scopeOverlays || [],
-          issueId: state.workClassification?.issueId || state.specification?.issueId,
+          issueId: state.sdlcStartIssueId || state.workClassification?.issueId || state.specification?.issueId,
         })
         if (res.status !== 'ok') throw new Error(res.message || res.errors?.join('; ') || 'Create spec failed')
         onUpdate({
           specification: res.specification || null,
           technicalPlan: null,
+          planAcknowledged: false,
           shipPlanAcknowledged: false,
           scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
           nextSdlcCommand: res.nextCommand || '/technical-plan',
         })
         setLastChange(
-          `Specification drafted via ${PLAN_STEPS[2].command}: ${res.specification?.title || 'untitled'}.`,
+          `Specification drafted via ${PLAN_STEPS[3].command}: ${res.specification?.title || 'untitled'}.`,
         )
         return
       }
@@ -272,25 +344,26 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         workClassification: state.workClassification,
         specification: state.specification,
         overlayFiles: state.scopeOverlays || [],
-        issueId: state.specification?.issueId || state.workClassification?.issueId,
+        issueId: state.sdlcStartIssueId || state.specification?.issueId || state.workClassification?.issueId,
       })
       if (res.status !== 'ok') throw new Error(res.message || res.errors?.join('; ') || 'Technical plan failed')
       onUpdate({
         technicalPlan: res.technicalPlan || null,
+        planAcknowledged: false,
         shipPlanAcknowledged: false,
         scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
-        nextSdlcCommand: res.nextCommand || '/implement-step',
+        nextSdlcCommand: res.nextCommand || '/sdlc-next',
       })
       const issueKey = primaryIssueKey(state)
       if (issueKey) {
         void postJiraGateEvidence(state.projectId, {
           issueKey,
           gate: 'G-PLAN',
-          message: `Technical plan drafted (${(res.technicalPlan?.steps || []).length} step(s)).`,
+          message: `Technical plan drafted — await human acknowledgement (${(res.technicalPlan?.steps || []).length} step(s)).`,
         }).catch(() => undefined)
       }
       setLastChange(
-        `Technical plan ready via ${PLAN_STEPS[3].command}: ${(res.technicalPlan?.steps || []).length} step(s). Next: Shape → Ship.`,
+        `Technical plan ready via ${PLAN_STEPS[4].command}: ${(res.technicalPlan?.steps || []).length} step(s). Acknowledge G-PLAN before continuing.`,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Planning step failed.')
@@ -334,8 +407,9 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
       {lastChange && !error ? <p className="status-banner success">{lastChange}</p> : null}
       {complete ? (
         <p className="status-banner success">
-          Planning complete. Continue to <strong>Project Shape</strong> → Repositories → <strong>Ship</strong>{' '}
-          for <code>/implement-step</code> and <code>/qa-validation</code>.
+          Planning complete. Continue to <strong>Project Shape</strong>, then <strong>Ship</strong>. Remote
+          repositories are created on Ship after <code>G-BOOTSTRAP</code> acknowledgement — not on
+          Repositories Continue.
         </p>
       ) : null}
 
@@ -391,6 +465,38 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         })}
       </ol>
 
+      {complete && needsPlanAck ? (
+        <section className="card shape-section" style={{ marginTop: '1rem' }}>
+          <div className="sdlc-panel__head">
+            <CheckCircle2 size={18} />
+            <div>
+              <h3>Acknowledge G-PLAN (human)</h3>
+              <p className="muted">
+                Human acknowledgement that the technical plan was reviewed — not an approve-gate. Required
+                before continuing past planning.
+              </p>
+            </div>
+          </div>
+          <label className="muted small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(state.planAcknowledged || state.shipPlanAcknowledged)}
+              onChange={(e) => {
+                if (e.target.checked) acknowledgePlan()
+              }}
+            />
+            I have reviewed the technical plan (G-PLAN)
+          </label>
+          <button type="button" className="primary-btn" onClick={acknowledgePlan}>
+            Acknowledge G-PLAN (human)
+          </button>
+        </section>
+      ) : null}
+
+      {complete && (state.planAcknowledged || state.shipPlanAcknowledged) ? (
+        <p className="status-banner success">G-PLAN acknowledged. You can continue to Shape &amp; Ship.</p>
+      ) : null}
+
       <div className="sdlc-plan__cta">
         <button
           type="button"
@@ -412,6 +518,12 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
   )
 }
 
-export function validateSdlcPlanning(_state: WizardState): string | null {
+export function validateSdlcPlanning(state: WizardState): string | null {
+  if (!state.technicalPlan?.markdown && !(state.technicalPlan?.steps?.length)) {
+    return 'Complete the technical plan before continuing.'
+  }
+  if (!(state.planAcknowledged || state.shipPlanAcknowledged)) {
+    return 'Acknowledge G-PLAN before continuing.'
+  }
   return null
 }

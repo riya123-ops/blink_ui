@@ -40,7 +40,7 @@ export function WelcomeScreen({ state, resume, onContinue, onResume, onStartNew 
           <h1>
             Welcome to <span className="gradient-text">Blink</span>
           </h1>
-          <p className="welcome-tagline">Project Initializer</p>
+          <p className="welcome-tagline">Project initializer</p>
           <p className="welcome-desc">
             Kickstart your projects in seconds with the right stack, structure and best practices.
           </p>

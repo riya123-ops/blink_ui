@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -235,13 +235,31 @@ export default function App() {
     const saved = await saveProject(withWizard, state.projectId)
     lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
-    const governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
+    let governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
+    let nextCommand = saved.nextCommand || state.nextSdlcCommand
+    let sodWarnings = saved.sodWarnings || []
+
+    // Official handoff: persist people, then hosted /configure-stakeholders (non-blocking on failure).
+    if (payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
+      try {
+        setGovernancePrep('preparing')
+        const configured = await configureStakeholders(id)
+        sodWarnings = configured.sodWarnings?.length ? configured.sodWarnings.map(String) : sodWarnings
+        nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
+        governanceStatus = 'ready'
+        setGovernancePrep('ready')
+      } catch {
+        governanceStatus = 'failed'
+        setGovernancePrep('failed')
+      }
+    }
+
     patch({
       projectId: id,
       projectName: payload.projectName,
       description: payload.description,
-      sodWarnings: saved.sodWarnings || [],
-      nextSdlcCommand: saved.nextCommand || state.nextSdlcCommand,
+      sodWarnings,
+      nextSdlcCommand: nextCommand,
       governanceStatus,
     })
     setFolderQuery({ name: saved.projectName || payload.projectName, id })
@@ -254,8 +272,8 @@ export default function App() {
     return {
       id,
       workspaceStatus: saved.workspaceStatus,
-      sodWarnings: saved.sodWarnings,
-      nextCommand: saved.nextCommand,
+      sodWarnings,
+      nextCommand: nextCommand || undefined,
       governanceStatus,
     }
   }, [projectPayload, state, folderPrep, governancePrep, patch])
@@ -701,13 +719,8 @@ export default function App() {
         setStatus({ type: 'error', message: 'Keep at least one repository, or add one.' })
         return
       }
-      const github = state.integrations?.find((item) => item.id === 'github')
-      if (github?.connected && state.projectId) {
-        const created = await handleCreateGithubRepos()
-        if (!created) return
-      } else {
-        setStatus(null)
-      }
+      // Physical GitHub create is deferred until Ship after G-PLAN / G-BOOTSTRAP.
+      setStatus(null)
     } else if (step === 'requirements') {
       setStatus(null)
       const wording = (state.groomDraft || state.requirementsText).trim() || state.requirementsText
@@ -2025,7 +2038,8 @@ export default function App() {
     !isWelcome &&
     step !== 'project-preview' &&
     step !== 'generation' &&
-    stepIndex(step) >= stepIndex('requirements')
+    stepIndex(step) >= stepIndex('sdlc-planning') &&
+    Boolean(state.productScope?.status === 'confirmed' || state.productScope?.confirmationDigest)
 
   return (
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}${chatOpen && !isWelcome ? ' chat-open' : ''}`}>
@@ -2049,8 +2063,8 @@ export default function App() {
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
         {(!isSuccessScreen || folderPrep === 'preparing' || governancePrep === 'preparing') && !isWelcome && (
-          <header className="top-bar">
-            <div className="top-bar-start">
+          <header className="top-float">
+            <div className="top-float-start">
               <span className="step-indicator">
                 {phaseProgressLabel(step)}
               </span>
@@ -2130,7 +2144,7 @@ export default function App() {
               )}
               </div>
             </div>
-            <div className="top-bar-end">
+            <div className="top-float-end">
               <button
                 type="button"
                 className={`header-chat-btn${chatOpen ? ' is-active' : ''}`}
@@ -2161,19 +2175,27 @@ export default function App() {
         </div>
 
         {!isSuccessScreen && !isWelcome && (
-          <div className="action-bar">
-          {showBack && (
-            <button type="button" className="secondary-btn back-btn" onClick={goBack}>
-              <ChevronLeft size={14} /> Back
-            </button>
-          )}
-          <div className="action-spacer" />
-          {showNext && (
-            <button type="button" className="primary-btn" disabled={saving || loading || grooming || creatingRepos} onClick={() => void goNext()}>
-              {primaryContinueLabel(step, state, { saving, creatingRepos })} <ChevronRight size={14} />
-            </button>
-          )}
-        </div>
+          <div className="action-float" aria-label="Wizard navigation">
+            {showBack ? (
+              <button type="button" className="secondary-btn action-float-btn action-float-back" onClick={goBack}>
+                <ChevronLeft size={14} /> Back
+              </button>
+            ) : (
+              <span className="action-float-slot" aria-hidden="true" />
+            )}
+            {showNext ? (
+              <button
+                type="button"
+                className="primary-btn action-float-btn action-float-next"
+                disabled={saving || loading || grooming || creatingRepos}
+                onClick={() => void goNext()}
+              >
+                {primaryContinueLabel(step, state, { saving, creatingRepos })} <ChevronRight size={14} />
+              </button>
+            ) : (
+              <span className="action-float-slot" aria-hidden="true" />
+            )}
+          </div>
         )}
       </div>
 

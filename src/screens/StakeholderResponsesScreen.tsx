@@ -278,7 +278,7 @@ export function StakeholderResponsesScreen({
       onUpdate({
         groomingSignOff: res.groomingSignOff || null,
         scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
-        nextSdlcCommand: res.nextCommand || '/plan-product-scope',
+        nextSdlcCommand: res.nextCommand || '/sdlc-next',
       })
       const issueKey =
         state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
@@ -360,6 +360,44 @@ export function StakeholderResponsesScreen({
         ) : null}
         {state.groomingSignOff?.readyForHumanSignOff ? (
           <p className="muted small">Sign-off summary captured — ready for human G-GROOM review</p>
+        ) : null}
+        {state.groomingSignOff ? (
+          <div style={{ marginTop: '0.75rem' }}>
+            {state.groomAcknowledged ? (
+              <p className="muted small">
+                <CheckCircle2 size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                G-GROOM acknowledged (human) — not an approve-gate; classify can proceed.
+              </p>
+            ) : (
+              <>
+                <p className="muted small" style={{ marginBottom: '0.5rem' }}>
+                  Human acknowledgement required before <code>/classify-work</code>. This is not an
+                  approve-gate — it records that grooming was reviewed.
+                </p>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  disabled={!onUpdate}
+                  onClick={() => {
+                    onUpdate?.({ groomAcknowledged: true })
+                    const issueKey =
+                      state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
+                      || state.questions.find((q) => q.jiraIssueKey)?.jiraIssueKey
+                    if (issueKey && state.projectId) {
+                      void postJiraGateEvidence(state.projectId, {
+                        issueKey,
+                        gate: 'G-GROOM',
+                        message:
+                          'Human acknowledgement of G-GROOM (not an approve-gate). Required before classify.',
+                      }).catch(() => undefined)
+                    }
+                  }}
+                >
+                  Acknowledge G-GROOM
+                </button>
+              </>
+            )}
+          </div>
         ) : null}
         {groomError ? <p className="error-text">{groomError}</p> : null}
       </section>

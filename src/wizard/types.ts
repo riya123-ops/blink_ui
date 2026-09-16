@@ -306,6 +306,18 @@ export interface WizardState extends SetupForm {
   qaValidation?: { issueId?: string; verdict?: string; summary?: string; markdown?: string; draftPrUrl?: string | null } | null
   /** True after user Continues or Refresh-plan on Ship (plan may predate stack). */
   shipPlanAcknowledged?: boolean
+  /** Human G-GROOM acknowledgement (not approve-gate). */
+  groomAcknowledged?: boolean
+  /** Human G-PLAN acknowledgement (alias kept in sync with shipPlanAcknowledged). */
+  planAcknowledged?: boolean
+  /** Human G-BOOTSTRAP acknowledgement before physical remotes / implement. */
+  bootstrapAcknowledged?: boolean
+  /** Explicit IMPLEMENTATION_AUTHORIZED before /implement-step. */
+  implementationAuthorized?: boolean
+  /** Hosted sdlc-start issue id / story key. */
+  sdlcStartIssueId?: string | null
+  /** Tier≥2 impact-analysis deferred/skipped in Blink MVP. */
+  impactAnalysisSkipped?: boolean
   jiraCreatedIssues?: JiraCreatedIssue[]
 }
 
@@ -424,6 +436,12 @@ export const defaultWizardState: WizardState = {
   draftPullRequests: [],
   qaValidation: null,
   shipPlanAcknowledged: false,
+  groomAcknowledged: false,
+  planAcknowledged: false,
+  bootstrapAcknowledged: false,
+  implementationAuthorized: false,
+  sdlcStartIssueId: null,
+  impactAnalysisSkipped: false,
   jiraCreatedIssues: [],
 }
 
@@ -552,6 +570,12 @@ export function clearGroomingPatch(): Partial<WizardState> {
     draftPullRequests: [],
     qaValidation: null,
     shipPlanAcknowledged: false,
+    groomAcknowledged: false,
+    planAcknowledged: false,
+    bootstrapAcknowledged: false,
+    implementationAuthorized: false,
+    sdlcStartIssueId: null,
+    impactAnalysisSkipped: false,
     jiraCreatedIssues: [],
   }
 }

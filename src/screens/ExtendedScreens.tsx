@@ -319,9 +319,7 @@ export function RepositoriesScreen({
           <h2>Repositories</h2>
           <p>
             Names follow <strong>{state.projectName || 'your project'}</strong> and your Project Shape.
-            {githubReady
-              ? ' Continue creates missing repos on GitHub.'
-              : ' Connect GitHub on Integrations to create them remotely.'}
+            Remotes are created on <strong>Ship</strong> after G-PLAN and G-BOOTSTRAP — not on Continue.
           </p>
         </div>
         <div className="screen-header-actions">

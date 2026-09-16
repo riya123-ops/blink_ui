@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { DeveloperModeProvider, DeveloperWindowHost } from './developer'
 import { LoginScreen } from './screens/LoginScreen'
 import './index.css'
+import './ai-sdlc-theme.css'
 
 function Root() {
   const { session } = useAuth()

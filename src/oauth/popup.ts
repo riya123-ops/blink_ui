@@ -23,7 +23,7 @@ export function openOauthPlaceholder(name: string, label: string): Window | null
   try {
     popup.document.write(`<!doctype html>
 <html><head><meta charset="utf-8"><title>Connecting…</title></head>
-<body style="margin:0;font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh">
+<body style="margin:0;font-family:Manrope,system-ui,sans-serif;background:#f8fafc;color:#334155;display:flex;align-items:center;justify-content:center;height:100vh">
   <p style="font-size:0.95rem">Connecting to ${label}…</p>
 </body></html>`)
     popup.document.close()

@@ -31,8 +31,7 @@ export type WizardStep =
   | 'project-stakeholders'
   | 'integrations'
   | 'requirements'
-  | 'stakeholder-questions'
-  | 'stakeholder-responses'
+  | 'stakeholder-qa'
   | 'sdlc-planning'
   | 'project-shape'
   | 'repositories'
@@ -42,6 +41,9 @@ export type WizardStep =
   | 'review-resolve'
   | 'project-preview'
   | 'generation'
+
+/** Legacy step ids persisted in drafts / URLs before Q&A merge. */
+export type LegacyWizardStep = 'stakeholder-questions' | 'stakeholder-responses'
 
 export interface StakeholderAssignment {
   id: string

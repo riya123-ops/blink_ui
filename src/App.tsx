@@ -24,14 +24,10 @@ import {
 import { RequirementsScreen, validateRequirements } from './screens/RequirementsScreen'
 import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import {
-  StakeholderQuestionsScreen,
+  StakeholderQaScreen,
   jiraCommentForQuestion,
-  validateStakeholderQuestions,
-} from './screens/StakeholderQuestionsScreen'
-import {
-  StakeholderResponsesScreen,
-  validateStakeholderResponses,
-} from './screens/StakeholderResponsesScreen'
+  validateStakeholderQa,
+} from './screens/StakeholderQaScreen'
 import {
   SdlcPlanningScreen,
   validateSdlcPlanning,
@@ -186,10 +182,8 @@ export default function App() {
         return validateProjectStakeholders(state)
       case 'requirements':
         return validateRequirements(state)
-      case 'stakeholder-questions':
-        return validateStakeholderQuestions(state)
-      case 'stakeholder-responses':
-        return validateStakeholderResponses(state)
+      case 'stakeholder-qa':
+        return validateStakeholderQa(state)
       case 'sdlc-planning':
         return validateSdlcPlanning(state)
       default:
@@ -1928,9 +1922,9 @@ export default function App() {
             }}
           />
         )
-      case 'stakeholder-questions':
+      case 'stakeholder-qa':
         return (
-          <StakeholderQuestionsScreen
+          <StakeholderQaScreen
             state={state}
             onUpdate={patch}
             onSendOne={handleSendOne}
@@ -1938,23 +1932,8 @@ export default function App() {
             onPostJira={handlePostJiraOne}
             onPostAllJira={handlePostJiraAll}
             onRefreshJira={handleRefreshJira}
-            onNavigate={(s) => {
-              setStatus(null)
-              goToStep(s)
-            }}
-            sending={sending}
-            posting={postingJira}
-            refreshing={refreshingJira}
-          />
-        )
-      case 'stakeholder-responses':
-        return (
-          <StakeholderResponsesScreen
-            state={state}
-            onUpdate={patch}
             onSimulateResponses={handleSimulateResponses}
             onResetSimulatedReplies={handleResetSimulatedReplies}
-            onRefreshJira={() => void handleRefreshJira()}
             onUpdateResponse={handleUpdateResponse}
             onResolveAllLatest={handleResolveAllLatest}
             onPatchQuestion={(questionId, questionPatch) => {
@@ -1963,6 +1942,12 @@ export default function App() {
                 questions: prev.questions.map((q) => (q.id === questionId ? { ...q, ...questionPatch } : q)),
               }))
             }}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
+            sending={sending}
+            posting={postingJira}
             refreshing={refreshingJira}
             simulating={simulatingJira}
             resetting={resettingSimJira}

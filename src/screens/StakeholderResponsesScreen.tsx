@@ -27,6 +27,8 @@ interface Props {
   refreshing?: boolean
   simulating?: boolean
   resetting?: boolean
+  /** When true, omit outer page header (used inside Stakeholder Q&A). */
+  embedded?: boolean
 }
 
 type Filter = 'all' | 'responded' | 'discussion' | 'pending'
@@ -72,6 +74,7 @@ export function StakeholderResponsesScreen({
   refreshing,
   simulating,
   resetting,
+  embedded,
 }: Props) {
   const [filter, setFilter] = useState<Filter>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -295,14 +298,16 @@ export function StakeholderResponsesScreen({
   }
 
   return (
-    <div className="screen">
-      <div className="screen-header">
-        <h2>Stakeholder Responses</h2>
-        <p>
-          Each clarification is a parent thread. Child replies stay nested for context. Summarize the discussion, then
-          resolve one answer Blink can continue with. After responses, run the grooming loop.
-        </p>
-      </div>
+    <div className={embedded ? 'stakeholder-qa-pane' : 'screen'}>
+      {!embedded ? (
+        <div className="screen-header">
+          <h2>Stakeholder Responses</h2>
+          <p>
+            Each clarification is a parent thread. Child replies stay nested for context. Summarize the discussion, then
+            resolve one answer Blink can continue with. After responses, run the grooming loop.
+          </p>
+        </div>
+      ) : null}
 
       <section className="sdlc-panel" style={{ marginBottom: '1.5rem' }}>
         <div className="sdlc-panel__head">

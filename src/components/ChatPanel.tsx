@@ -37,10 +37,13 @@ function suggestionsForStep(step: string): string[] {
       return ['Which integrations do I need next?', 'How do I connect Jira?', 'Is GitHub required for repos?']
     case 'requirements':
       return ['What should I paste for clarify?', 'When can I mark Jira later?', 'Summarize what clarify will ask']
-    case 'stakeholder-questions':
-      return ['Which questions are still pending?', 'How do Jira comments get posted?', 'Who gets emailed?']
-    case 'stakeholder-responses':
-      return ['What is still waiting on Jira?', 'How do I record an answer here?']
+    case 'stakeholder-qa':
+      return [
+        'Which questions are still pending?',
+        'How do Jira comments get posted?',
+        'What is still waiting on replies?',
+        'How do I record an answer here?',
+      ]
     default:
       return ['What should I do on this step?', 'Summarize my project so far', 'What is blocking me from continuing?']
   }

@@ -27,7 +27,14 @@ export interface WizardDraft {
 }
 
 export function isWizardStep(value: unknown): value is WizardStep {
-  return typeof value === 'string' && STEP_ORDER.includes(value as WizardStep)
+  if (typeof value !== 'string') return false
+  if (value === 'stakeholder-questions' || value === 'stakeholder-responses') return true
+  return STEP_ORDER.includes(value as WizardStep)
+}
+
+export function normalizeWizardStep(step: string): WizardStep {
+  if (step === 'stakeholder-questions' || step === 'stakeholder-responses') return 'stakeholder-qa'
+  return step as WizardStep
 }
 
 export function serializeWizardState(state: WizardState): WizardState {
@@ -84,7 +91,7 @@ export function loadWizardDraft(email: string): WizardDraft | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<WizardDraft>
     if (!parsed?.email || parsed.email.toLowerCase() !== email.trim().toLowerCase()) return null
-    const step = isWizardStep(parsed.step) ? parsed.step : 'welcome'
+    const step = isWizardStep(parsed.step) ? normalizeWizardStep(parsed.step) : 'welcome'
     return {
       email: parsed.email,
       step,
@@ -115,7 +122,7 @@ export function loadSessionStep(): WizardStep | null {
   if (typeof sessionStorage === 'undefined') return null
   try {
     const value = sessionStorage.getItem(WIZARD_SESSION_STEP_KEY)
-    return isWizardStep(value) ? value : null
+    return isWizardStep(value) ? normalizeWizardStep(value) : null
   } catch {
     return null
   }
@@ -189,7 +196,7 @@ export function draftFromRemote(email: string, remote: RemoteProject): WizardDra
     })
   }
   const step = isWizardStep(remote.wizardStep)
-    ? remote.wizardStep
+    ? normalizeWizardStep(remote.wizardStep)
     : state.projectId
       ? 'project-stakeholders'
       : 'welcome'
@@ -210,7 +217,7 @@ export function canOfferResume(draft: Pick<WizardDraft, 'step' | 'state' | 'comp
 }
 
 export function resumeTarget(draft: Pick<WizardDraft, 'step' | 'completedThrough' | 'state'>): WizardStep {
-  if (draft.step !== 'welcome') return draft.step
+  if (draft.step !== 'welcome') return normalizeWizardStep(draft.step)
   if (draft.completedThrough > 0) {
     return STEP_ORDER[Math.min(draft.completedThrough, STEP_ORDER.length - 1)]
   }

@@ -1601,6 +1601,43 @@ textarea::placeholder {
   border: 1px solid #bfdbfe;
 }
 
+.sdlc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--primary-soft, #eff6ff));
+}
+
+.sdlc-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.sdlc-panel__head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.sdlc-panel__head .ok {
+  color: var(--ts-green-deep, #166534);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sdlc-panel .error-text {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.8rem;
+}
+
+.sdlc-panel .small {
+  font-size: 0.8rem;
+}
+
 .email-input-wrap {
   position: relative;
 }

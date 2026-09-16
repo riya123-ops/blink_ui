@@ -55,6 +55,10 @@ export async function planScopeFromWording(
     return {
       productScope: scopeRes.productScope,
       scopeDigest: scopeRes.proposalDigest,
+      scopeOverlays: scopeRes.overlayFiles || [],
+      workClassification: null,
+      specification: null,
+      technicalPlan: null,
       nextSdlcCommand: scopeRes.nextCommand || '/confirm-product-scope',
     }
   }

@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   CheckSquare,
+  ClipboardList,
   Cloud,
   Cpu,
   Download,
@@ -37,6 +38,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#0369a1' },
   { id: 'stakeholder-questions', label: 'Stakeholder Questions', icon: HelpCircle, iconColor: '#d97706' },
   { id: 'stakeholder-responses', label: 'Stakeholder Responses', icon: MessageSquare, iconColor: '#0f9d4a' },
+  { id: 'sdlc-planning', label: 'SDLC Planning', icon: ClipboardList, iconColor: '#0d9488' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#7c3aed' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#ea580c' },
   { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#c026d3' },
@@ -56,7 +58,7 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
   {
     id: 'clarify',
     label: 'Clarify & align',
-    stepIds: ['requirements', 'stakeholder-questions', 'stakeholder-responses'],
+    stepIds: ['requirements', 'stakeholder-questions', 'stakeholder-responses', 'sdlc-planning'],
   },
   {
     id: 'shape',

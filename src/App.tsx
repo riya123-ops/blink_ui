@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -8,12 +8,8 @@ import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
-  IdeAndToolsScreen,
-  PlatformDeliveryScreen,
-  ProjectPreviewScreen,
   ProjectShapeScreen,
   RepositoriesScreen,
-  ReviewResolveScreen,
   TechnologyPerRepoScreen,
 } from './screens/ExtendedScreens'
 import { ShipScreen } from './screens/ShipScreen'
@@ -30,7 +26,8 @@ import {
 } from './screens/StakeholderQaScreen'
 import {
   SdlcPlanningScreen,
-  validateSdlcPlanning,
+  validateSdlcPlan,
+  validateSdlcScope,
 } from './screens/SdlcPlanningScreen'
 import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
@@ -66,6 +63,7 @@ import {
   initialDraft,
   loadWizardDraft,
   loadSessionStep,
+  normalizeWizardStep,
   resumeTarget,
   resolveBootStep,
   saveWizardDraft,
@@ -126,7 +124,7 @@ export default function App() {
   const boot = initialDraft(session?.email ?? null)
   const sessionStep = loadSessionStep()
   const urlStep = stepFromLocation()
-  const preferredBoot = resolveBootStep(boot, sessionStep, urlStep)
+  const preferredBoot = normalizeWizardStep(resolveBootStep(boot, sessionStep, urlStep), boot.state)
   const bootStep = allowedStep(
     preferredBoot,
     preferredBoot,
@@ -161,10 +159,12 @@ export default function App() {
   const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
   const stepRef = useRef(step)
+  const stateRef = useRef(state)
   const completedRef = useRef(completedThrough)
   const skipRemoteResumeRef = useRef(false)
   const freshStartRef = useRef(Boolean(boot.freshStart))
   stepRef.current = step
+  stateRef.current = state
   completedRef.current = completedThrough
   const skipStepValidation = useDeveloperCapability('skipStepValidation')
   const autoEnsureProject = useDeveloperCapability('autoEnsureProject')
@@ -183,10 +183,12 @@ export default function App() {
         return validateProjectStakeholders(state)
       case 'requirements':
         return validateRequirements(state)
+      case 'sdlc-scope':
+        return validateSdlcScope(state)
       case 'stakeholder-qa':
         return validateStakeholderQa(state)
-      case 'sdlc-planning':
-        return validateSdlcPlanning(state)
+      case 'sdlc-plan':
+        return validateSdlcPlan(state)
       default:
         return null
     }
@@ -224,6 +226,20 @@ export default function App() {
       } catch {
         // Local draft is still stored; server can catch up on the next save.
       }
+      if (!opts?.draft && !state.stakeholdersConfirmed) {
+        try {
+          const confirmed = await confirmStakeholders(state.projectId)
+          if (confirmed.status === 'ok') {
+            patch({
+              stakeholdersConfirmed: true,
+              stakeholdersConfirmationDigest: confirmed.confirmationDigest || null,
+              nextSdlcCommand: confirmed.nextCommand || state.nextSdlcCommand,
+            })
+          }
+        } catch {
+          /* confirm retries on the next Continue */
+        }
+      }
       return {
         id: state.projectId,
         workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
@@ -238,6 +254,8 @@ export default function App() {
     let governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
     let nextCommand = saved.nextCommand || state.nextSdlcCommand
     let sodWarnings = saved.sodWarnings || []
+    let stakeholdersConfirmed = Boolean(state.stakeholdersConfirmed)
+    let stakeholdersConfirmationDigest = state.stakeholdersConfirmationDigest || null
 
     // Official handoff: persist people, then hosted /configure-stakeholders (non-blocking on failure).
     if (payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
@@ -248,6 +266,18 @@ export default function App() {
         nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
         governanceStatus = 'ready'
         setGovernancePrep('ready')
+        if (!opts?.draft) {
+          try {
+            const confirmed = await confirmStakeholders(id)
+            if (confirmed.status === 'ok') {
+              stakeholdersConfirmed = true
+              stakeholdersConfirmationDigest = confirmed.confirmationDigest || stakeholdersConfirmationDigest
+              nextCommand = confirmed.nextCommand || nextCommand
+            }
+          } catch {
+            /* configure succeeded; confirm can retry on the next Continue */
+          }
+        }
       } catch {
         governanceStatus = 'failed'
         setGovernancePrep('failed')
@@ -261,6 +291,8 @@ export default function App() {
       sodWarnings,
       nextSdlcCommand: nextCommand,
       governanceStatus,
+      stakeholdersConfirmed,
+      stakeholdersConfirmationDigest,
     })
     setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
@@ -287,14 +319,15 @@ export default function App() {
   }, [state.projectId, persistProject])
 
   const goToStep = useCallback((next: WizardStep, historyMode: 'push' | 'replace' | 'silent' = 'push') => {
-    if (next === stepRef.current && historyMode === 'push') {
+    const mapped = normalizeWizardStep(next, stateRef.current)
+    if (mapped === stepRef.current && historyMode === 'push') {
       return
     }
-    setStep(next)
+    setStep(mapped)
     if (historyMode === 'silent') {
       return
     }
-    writeStepUrl(next, historyMode)
+    writeStepUrl(mapped, historyMode)
   }, [])
 
   const startFresh = useCallback((type: 'new' | 'existing') => {
@@ -332,12 +365,12 @@ export default function App() {
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       if (isWizardHistoryState(event.state)) {
-        setStep(event.state.step)
+        setStep(normalizeWizardStep(event.state.step, stateRef.current))
         return
       }
       const fromUrl = stepFromLocation()
       if (fromUrl) {
-        setStep(fromUrl)
+        setStep(normalizeWizardStep(fromUrl, stateRef.current))
         return
       }
       const idx = stepIndex(stepRef.current)
@@ -654,6 +687,22 @@ export default function App() {
         })
         return false
       }
+      if (state.bootstrapAcknowledged && (created > 0 || exists > 0)) {
+        const issueKey =
+          state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
+          || state.sdlcStartIssueId
+          || state.workClassification?.issueId
+          || state.specification?.issueId
+          || state.productScope?.storyIds?.[0]
+        if (issueKey && state.projectId) {
+          void postJiraGateEvidence(state.projectId, {
+            issueKey,
+            gate: 'G-BOOTSTRAP',
+            message:
+              'Human G-BOOTSTRAP acknowledgement plus remotes created (not an approve-gate; not overlay-only).',
+          }).catch(() => undefined)
+        }
+      }
       setStatus({
         type: failed ? 'info' : 'success',
         message: `GitHub: ${created} created, ${exists} already existed, ${failed} failed.`,
@@ -666,7 +715,7 @@ export default function App() {
       creatingReposRef.current = false
       setCreatingRepos(false)
     }
-  }, [state.integrations, state.repositories, state.projectId, patch])
+  }, [state.integrations, state.repositories, state.projectId, state.bootstrapAcknowledged, state.jiraCreatedIssues, state.sdlcStartIssueId, state.workClassification, state.specification, state.productScope, patch])
 
   const goNext = useCallback(async () => {
     const err = skipStepValidation ? null : validateCurrentStep()
@@ -770,7 +819,7 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) goToStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state, handleCreateGithubRepos, patch, skipStepValidation, goToStep])
+  }, [step, validateCurrentStep, persistProject, state, patch, skipStepValidation, goToStep])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -1982,37 +2031,14 @@ export default function App() {
             resetting={resettingSimJira}
           />
         )
-      case 'sdlc-planning':
-        return <SdlcPlanningScreen state={state} onUpdate={patch} />
+      case 'sdlc-scope':
+        return <SdlcPlanningScreen state={state} onUpdate={patch} phase="scope" />
+      case 'sdlc-plan':
+        return <SdlcPlanningScreen state={state} onUpdate={patch} phase="plan" />
       case 'project-shape':
         return <ProjectShapeScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':
         return <TechnologyPerRepoScreen state={state} onUpdate={patch} />
-      case 'ide-and-tools':
-        return <IdeAndToolsScreen state={state} onUpdate={patch} />
-      case 'platform-delivery':
-        return <PlatformDeliveryScreen state={state} onUpdate={patch} />
-      case 'review-resolve':
-        return (
-          <ReviewResolveScreen
-            state={state}
-            onNavigate={(s) => {
-              setStatus(null)
-              goToStep(s)
-            }}
-          />
-        )
-      case 'project-preview':
-        return (
-          <ProjectPreviewScreen
-            state={state}
-            onGenerate={() => {
-              setCompletedThrough((prev) => Math.max(prev, stepIndex('project-preview')))
-              goToStep('generation')
-            }}
-            loading={loading}
-          />
-        )
       case 'generation':
         return (
           <ShipScreen
@@ -2023,22 +2049,25 @@ export default function App() {
             onExportGithub={() => void handleCreateGithubRepos()}
             onGenerateKit={() => void runGeneration()}
             onBack={() => goToStep('welcome')}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
           />
         )
     }
   }
 
   const showBack = step !== 'welcome'
-  const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
+  const showNext = step !== 'welcome' && step !== 'generation'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = false
   const generationIdx = stepIndex('generation')
   const currentSkipped = state.generationComplete && stepIndex(step) > completedThrough && stepIndex(step) < generationIdx
   const showQuickDownload =
     !isWelcome &&
-    step !== 'project-preview' &&
     step !== 'generation' &&
-    stepIndex(step) >= stepIndex('sdlc-planning') &&
+    stepIndex(step) >= stepIndex('sdlc-plan') &&
     Boolean(state.productScope?.status === 'confirmed' || state.productScope?.confirmationDigest)
 
   return (

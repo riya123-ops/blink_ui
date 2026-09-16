@@ -361,44 +361,73 @@ export function StakeholderResponsesScreen({
         {state.groomingSignOff?.readyForHumanSignOff ? (
           <p className="muted small">Sign-off summary captured — ready for human G-GROOM review</p>
         ) : null}
-        {state.groomingSignOff ? (
-          <div style={{ marginTop: '0.75rem' }}>
-            {state.groomAcknowledged ? (
-              <p className="muted small">
-                <CheckCircle2 size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                G-GROOM acknowledged (human) — not an approve-gate; classify can proceed.
-              </p>
-            ) : (
-              <>
-                <p className="muted small" style={{ marginBottom: '0.5rem' }}>
-                  Human acknowledgement required before <code>/classify-work</code>. This is not an
-                  approve-gate — it records that grooming was reviewed.
+        {(() => {
+          const emptyQa = state.questions.length === 0
+          const rejectBlocks = Boolean(state.groomRejectPending && !state.groomingRevision)
+          const canAck = Boolean(onUpdate) && !rejectBlocks && (emptyQa || Boolean(state.groomingSignOff))
+          if (!canAck && !state.groomAcknowledged && !state.groomRejectPending) return null
+          const issueKey =
+            state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
+            || state.questions.find((q) => q.jiraIssueKey)?.jiraIssueKey
+            || state.sdlcStartIssueId
+            || undefined
+          return (
+            <div style={{ marginTop: '0.75rem' }}>
+              {state.groomAcknowledged ? (
+                <>
+                  <p className="muted small">
+                    <CheckCircle2 size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                    G-GROOM acknowledged (human) — not an approve-gate; classify can proceed.
+                  </p>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    disabled={!onUpdate}
+                    onClick={() => {
+                      onUpdate?.({
+                        groomAcknowledged: false,
+                        groomRejectPending: true,
+                        groomingSignOff: null,
+                      })
+                    }}
+                  >
+                    Reject G-GROOM
+                  </button>
+                </>
+              ) : rejectBlocks ? (
+                <p className="muted small">
+                  G-GROOM was rejected. Run <code>/grooming-revision</code> above, then acknowledge again.
                 </p>
-                <button
-                  type="button"
-                  className="primary-btn"
-                  disabled={!onUpdate}
-                  onClick={() => {
-                    onUpdate?.({ groomAcknowledged: true })
-                    const issueKey =
-                      state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
-                      || state.questions.find((q) => q.jiraIssueKey)?.jiraIssueKey
-                    if (issueKey && state.projectId) {
-                      void postJiraGateEvidence(state.projectId, {
-                        issueKey,
-                        gate: 'G-GROOM',
-                        message:
-                          'Human acknowledgement of G-GROOM (not an approve-gate). Required before classify.',
-                      }).catch(() => undefined)
-                    }
-                  }}
-                >
-                  Acknowledge G-GROOM
-                </button>
-              </>
-            )}
-          </div>
-        ) : null}
+              ) : (
+                <>
+                  <p className="muted small" style={{ marginBottom: '0.5rem' }}>
+                    {emptyQa
+                      ? 'No leftover clarifications. Acknowledge G-GROOM so classify is not a dead end. This is not an approve-gate.'
+                      : 'Human acknowledgement required before /classify-work. This is not an approve-gate — it records that grooming was reviewed.'}
+                  </p>
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    disabled={!onUpdate}
+                    onClick={() => {
+                      onUpdate?.({ groomAcknowledged: true, groomRejectPending: false })
+                      if (issueKey && state.projectId) {
+                        void postJiraGateEvidence(state.projectId, {
+                          issueKey,
+                          gate: 'G-GROOM',
+                          message:
+                            'Human acknowledgement of G-GROOM (not an approve-gate). Required before classify.',
+                        }).catch(() => undefined)
+                      }
+                    }}
+                  >
+                    Acknowledge G-GROOM
+                  </button>
+                </>
+              )}
+            </div>
+          )
+        })()}
         {groomError ? <p className="error-text">{groomError}</p> : null}
       </section>
 
@@ -406,7 +435,7 @@ export function StakeholderResponsesScreen({
         <section className="card">
           <div className="empty-state-block">
             <h3>No responses to track</h3>
-            <p>There were no leftover clarifications. You can continue to Project Shape.</p>
+            <p>There were no leftover clarifications. Acknowledge G-GROOM above, then continue to Work plan.</p>
           </div>
         </section>
       ) : (

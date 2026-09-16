@@ -385,6 +385,28 @@ export async function configureStakeholders(
   return response.json() as Promise<ConfigureStakeholdersResponse>
 }
 
+export interface ConfirmStakeholdersResponse {
+  status: string
+  message: string
+  nextCommand?: string
+  confirmationDigest?: string
+  overlayFiles?: OverlayFilePayload[]
+  errors?: string[]
+}
+
+export async function confirmStakeholders(
+  projectId: string,
+): Promise<ConfirmStakeholdersResponse> {
+  const url = apiUrl(`/projects/${projectId}/confirm-stakeholders`)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({}),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ConfirmStakeholdersResponse>
+}
+
 export interface IntegrationConnectPayload {
   provider: string
   projectId?: string | null

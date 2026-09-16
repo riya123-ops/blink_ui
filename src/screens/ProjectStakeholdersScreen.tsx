@@ -151,9 +151,24 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
     <div className="screen screen-project">
       <div className="screen-header">
         <h2>Project</h2>
-        <p>Name it and who should be in the loop. We use this roster for Jira, email, and clarify.</p>
+        <p>Name it and who should be in the loop. Continue runs /configure-stakeholders then /confirm-stakeholders (freshness attestation — not an approve-gate).</p>
       </div>
 
+      {state.stakeholdersConfirmed ? (
+        <div className="sod-banner is-note" role="status">
+          <ShieldAlert size={18} aria-hidden />
+          <div>
+            <strong>Stakeholders confirmed</strong>
+            <p className="muted small" style={{ margin: 0 }}>
+              Freshness attestation recorded
+              {state.stakeholdersConfirmationDigest
+                ? ` · digest ${state.stakeholdersConfirmationDigest}`
+                : ''}
+              . This is not an approve-gate.
+            </p>
+          </div>
+        </div>
+      ) : null}
       {state.governanceStatus === 'preparing' && (
         <div className="sod-banner is-checking" role="status">
           Checking separation of duties for this roster. You can continue — this finishes in the background.

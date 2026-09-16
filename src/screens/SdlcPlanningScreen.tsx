@@ -25,6 +25,7 @@ import type { WizardState } from '../wizard/types'
 interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
+  phase: 'scope' | 'plan'
 }
 
 type StepId = 'confirm' | 'start' | 'classify' | 'spec' | 'plan'
@@ -38,7 +39,7 @@ interface PlanStep {
   icon: typeof Layers
 }
 
-const PLAN_STEPS: PlanStep[] = [
+const SCOPE_STEPS: PlanStep[] = [
   {
     id: 'confirm',
     title: 'Confirm product scope',
@@ -53,6 +54,9 @@ const PLAN_STEPS: PlanStep[] = [
     plain: 'Open the delivery story and bind the hosted command chain to this workspace.',
     icon: Play,
   },
+]
+
+const WORK_PLAN_STEPS: PlanStep[] = [
   {
     id: 'classify',
     title: 'Classify work',
@@ -76,14 +80,31 @@ const PLAN_STEPS: PlanStep[] = [
   },
 ]
 
+function stepsFor(phase: 'scope' | 'plan'): PlanStep[] {
+  return phase === 'scope' ? SCOPE_STEPS : WORK_PLAN_STEPS
+}
+
 function primaryIssueKey(state: WizardState): string | undefined {
   const fromJira = state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
   if (fromJira) return fromJira
-  return state.workClassification?.issueId || state.specification?.issueId || state.productScope?.storyIds?.[0]
+  return (
+    state.sdlcStartIssueId
+    || state.workClassification?.issueId
+    || state.specification?.issueId
+    || state.productScope?.storyIds?.[0]
+  )
 }
 
 function scopeConfirmed(state: WizardState): boolean {
   return Boolean(state.productScope?.status === 'confirmed' || state.productScope?.confirmationDigest)
+}
+
+function specReady(state: WizardState): boolean {
+  return Boolean(state.specification?.markdown || state.specification?.title)
+}
+
+function planReady(state: WizardState): boolean {
+  return Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
 }
 
 function stepDone(id: StepId, state: WizardState): boolean {
@@ -95,14 +116,14 @@ function stepDone(id: StepId, state: WizardState): boolean {
     case 'classify':
       return Boolean(state.workClassification?.tier)
     case 'spec':
-      return Boolean(state.specification?.markdown || state.specification?.title)
+      return specReady(state)
     case 'plan':
-      return Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
+      return planReady(state)
   }
 }
 
-function nextStepId(state: WizardState): StepId | null {
-  for (const step of PLAN_STEPS) {
+function nextStepId(phase: 'scope' | 'plan', state: WizardState): StepId | null {
+  for (const step of stepsFor(phase)) {
     if (!stepDone(step.id, state)) return step.id
   }
   return null
@@ -124,6 +145,12 @@ function blockReason(id: StepId, state: WizardState): string | null {
   if (id === 'classify') {
     if (!state.groomAcknowledged) {
       return 'Acknowledge G-GROOM on Stakeholder Q&A before classify.'
+    }
+  }
+  if (id === 'plan') {
+    if (!specReady(state)) return 'Create the specification before /technical-plan.'
+    if (!state.acceptanceCriteriaAcknowledged) {
+      return 'Confirm acceptance criteria before /technical-plan.'
     }
   }
   return null
@@ -155,8 +182,9 @@ function outcomeFor(id: StepId, state: WizardState): string {
   }
 }
 
-/** Single Continue planning CTA — hosted commands only, no per-step advanced mode. */
-export function SdlcPlanningScreen({ state, onUpdate }: Props) {
+/** Hosted command chain for Scope & start or Work plan. */
+export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
+  const planSteps = stepsFor(phase)
   const [busy, setBusy] = useState<StepId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastChange, setLastChange] = useState<string | null>(null)
@@ -169,69 +197,73 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
     || state.description?.trim()
     || ''
 
-  const nextId = nextStepId(state)
-  const doneCount = PLAN_STEPS.filter((s) => stepDone(s.id, state)).length
-  const progressPct = Math.round((doneCount / PLAN_STEPS.length) * 100)
+  const nextId = nextStepId(phase, state)
+  const doneCount = planSteps.filter((s) => stepDone(s.id, state)).length
+  const progressPct = Math.round((doneCount / planSteps.length) * 100)
   const complete = nextId === null
   const blockedMsg = nextId ? blockReason(nextId, state) : null
-  const canContinue = Boolean(nextId && !blockedMsg && !busy && state.projectId)
-  const hasPlan = Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
-  const needsPlanAck = hasPlan && !state.planAcknowledged && !state.shipPlanAcknowledged
+  const canRunNext = Boolean(nextId && !blockedMsg && !busy && state.projectId)
+  const hasPlan = planReady(state)
+  const needsPlanAck = phase === 'plan' && hasPlan && !state.planAcknowledged && !state.shipPlanAcknowledged
+  const needsAcAck = phase === 'plan' && specReady(state) && !planReady(state) && !state.acceptanceCriteriaAcknowledged
 
   const statuses = useMemo(() => {
-    const map: Record<StepId, StepStatus> = {
-      confirm: 'pending',
-      start: 'pending',
-      classify: 'pending',
-      spec: 'pending',
-      plan: 'pending',
-    }
-    for (const step of PLAN_STEPS) {
+    const map = {} as Record<StepId, StepStatus>
+    let foundCurrent = false
+    for (const step of planSteps) {
       if (busy === step.id) {
-        map[step.id] = 'running'
+        map[step.id] = error ? 'error' : 'running'
+        foundCurrent = true
         continue
       }
       if (stepDone(step.id, state)) {
         map[step.id] = 'done'
         continue
       }
-      if (nextId === step.id) {
-        map[step.id] = blockedMsg ? 'blocked' : error && !busy ? 'error' : 'current'
+      if (!foundCurrent) {
+        const block = blockReason(step.id, state)
+        map[step.id] = block ? 'blocked' : 'current'
+        foundCurrent = true
         continue
       }
       map[step.id] = 'pending'
     }
     return map
-  }, [blockedMsg, busy, error, nextId, state])
+  }, [busy, error, planSteps, state])
 
-  const continueLabel = useMemo(() => {
-    if (complete) return 'Planning complete'
-    if (!nextId) return 'Continue planning'
-    const step = PLAN_STEPS.find((s) => s.id === nextId)!
-    if (busy) return `Running ${step.command}…`
-    if (blockedMsg) return 'Fix blockers to continue'
-    return `Continue · ${step.title}`
-  }, [blockedMsg, busy, complete, nextId])
+  const continueLabel = busy
+    ? 'Working…'
+    : complete
+      ? phase === 'scope'
+        ? 'Scope started'
+        : 'Work plan ready'
+      : `Continue · ${planSteps.find((s) => s.id === nextId)?.command || 'next'}`
 
   const acknowledgePlan = useCallback(() => {
-    onUpdate({
-      planAcknowledged: true,
-      shipPlanAcknowledged: true,
-    })
+    onUpdate({ planAcknowledged: true, shipPlanAcknowledged: true })
     const issueKey = primaryIssueKey(state)
     if (issueKey && state.projectId) {
       void postJiraGateEvidence(state.projectId, {
         issueKey,
         gate: 'G-PLAN',
-        message:
-          'Human acknowledgement of G-PLAN (not an approve-gate). Plan reviewed; continuing to Shape/Ship.',
+        message: 'Human acknowledgement of G-PLAN (not an approve-gate). Required before Shape & Ship.',
       }).catch(() => undefined)
     }
     setLastChange('G-PLAN acknowledged by human (evidence posted; not an approve-gate).')
   }, [onUpdate, state])
 
+  const rejectPlan = useCallback(() => {
+    onUpdate({
+      technicalPlan: null,
+      planAcknowledged: false,
+      shipPlanAcknowledged: false,
+    })
+    setLastChange('G-PLAN rejected. Continue re-runs /technical-plan.')
+    setError(null)
+  }, [onUpdate])
+
   const runNext = useCallback(async () => {
-    const id = nextStepId(state)
+    const id = nextStepId(phase, state)
     if (!id || !state.projectId) return
     const block = blockReason(id, state)
     if (block) {
@@ -262,12 +294,13 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           sdlcStartIssueId: null,
           planAcknowledged: false,
           shipPlanAcknowledged: false,
+          acceptanceCriteriaAcknowledged: false,
           bootstrapAcknowledged: false,
           implementationAuthorized: false,
           impactAnalysisSkipped: false,
           nextSdlcCommand: res.nextCommand || '/sdlc-start',
         })
-        setLastChange(`Confirmed scope via ${PLAN_STEPS[0].command}. Downstream planning cleared for a fresh chain.`)
+        setLastChange(`Confirmed scope via ${SCOPE_STEPS[0].command}. Downstream planning cleared for a fresh chain.`)
         return
       }
 
@@ -285,7 +318,7 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
           nextSdlcCommand: res.nextCommand || '/sdlc-next',
         })
-        setLastChange(`SDLC started via ${PLAN_STEPS[1].command}${issueId ? ` · ${issueId}` : ''}.`)
+        setLastChange(`SDLC started via ${SCOPE_STEPS[1].command}${issueId ? ` · ${issueId}` : ''}.`)
         return
       }
 
@@ -305,12 +338,13 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           technicalPlan: null,
           planAcknowledged: false,
           shipPlanAcknowledged: false,
+          acceptanceCriteriaAcknowledged: false,
           impactAnalysisSkipped: typeof tier === 'number' && tier >= 2,
           scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
           nextSdlcCommand: res.nextCommand || '/create-spec',
         })
         setLastChange(
-          `Classified as tier ${work?.tier ?? '?'} (${work?.workType || 'work'}) via ${PLAN_STEPS[2].command}.`,
+          `Classified as tier ${work?.tier ?? '?'} (${work?.workType || 'work'}) via ${WORK_PLAN_STEPS[0].command}.`,
         )
         return
       }
@@ -329,11 +363,12 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
           technicalPlan: null,
           planAcknowledged: false,
           shipPlanAcknowledged: false,
+          acceptanceCriteriaAcknowledged: false,
           scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
           nextSdlcCommand: res.nextCommand || '/technical-plan',
         })
         setLastChange(
-          `Specification drafted via ${PLAN_STEPS[3].command}: ${res.specification?.title || 'untitled'}.`,
+          `Specification drafted via ${WORK_PLAN_STEPS[1].command}: ${res.specification?.title || 'untitled'}. Confirm acceptance criteria next.`,
         )
         return
       }
@@ -363,36 +398,45 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         }).catch(() => undefined)
       }
       setLastChange(
-        `Technical plan ready via ${PLAN_STEPS[4].command}: ${(res.technicalPlan?.steps || []).length} step(s). Acknowledge G-PLAN before continuing.`,
+        `Technical plan ready via ${WORK_PLAN_STEPS[2].command}: ${(res.technicalPlan?.steps || []).length} step(s). Acknowledge G-PLAN before continuing.`,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Planning step failed.')
     } finally {
       setBusy(null)
     }
-  }, [digest, onUpdate, requirementText, state])
+  }, [digest, onUpdate, phase, requirementText, state])
 
   return (
     <div className="sdlc-plan">
       <header className="sdlc-plan__hero">
         <div className="sdlc-plan__hero-copy">
-          <p className="sdlc-plan__eyebrow">Clarify &amp; align</p>
-          <h2>SDLC planning</h2>
+          <p className="sdlc-plan__eyebrow">{phase === 'scope' ? 'Scope' : 'Plan'}</p>
+          <h2>{phase === 'scope' ? 'Scope & start' : 'Work plan'}</h2>
           <p className="muted">
-            One action walks the official command chain. When the plan is ready, shape the project and
-            ship draft PRs later — not here.
+            {phase === 'scope'
+              ? 'Confirm product scope, then /sdlc-start. Stakeholder Q&A comes next — classify waits on G-GROOM.'
+              : 'Classify, specify, confirm acceptance criteria, then /technical-plan. G-PLAN is a human acknowledgement, not an approve-gate.'}
           </p>
         </div>
         <div className="sdlc-plan__meter" aria-label={`Planning progress ${progressPct} percent`}>
           <div className="sdlc-plan__meter-ring">
             <strong>{doneCount}</strong>
-            <span>of {PLAN_STEPS.length}</span>
+            <span>of {planSteps.length}</span>
           </div>
           <div className="sdlc-plan__meter-bar">
             <span style={{ width: `${progressPct}%` }} />
           </div>
           <p className="sdlc-plan__meter-label">
-            {complete ? 'Ready for Shape & Ship' : busy ? 'Working…' : nextId ? `Next: ${PLAN_STEPS.find((s) => s.id === nextId)?.command}` : 'Waiting'}
+            {complete
+              ? phase === 'scope'
+                ? 'Ready for Stakeholder Q&A'
+                : 'Ready for Shape & Ship'
+              : busy
+                ? 'Working…'
+                : nextId
+                  ? `Next: ${planSteps.find((s) => s.id === nextId)?.command}`
+                  : 'Waiting'}
           </p>
         </div>
       </header>
@@ -405,16 +449,20 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
       ) : null}
       {error ? <p className="status-banner error">{error}</p> : null}
       {lastChange && !error ? <p className="status-banner success">{lastChange}</p> : null}
-      {complete ? (
+      {complete && phase === 'scope' ? (
         <p className="status-banner success">
-          Planning complete. Continue to <strong>Project Shape</strong>, then <strong>Ship</strong>. Remote
-          repositories are created on Ship after <code>G-BOOTSTRAP</code> acknowledgement — not on
-          Repositories Continue.
+          SDLC started. Continue to <strong>Stakeholder Q&A</strong>, then Work plan.
+        </p>
+      ) : null}
+      {complete && phase === 'plan' ? (
+        <p className="status-banner success">
+          Work plan drafted. Acknowledge G-PLAN, then continue to <strong>Project Shape</strong>. Remotes are
+          created on Ship after <code>G-BOOTSTRAP</code>.
         </p>
       ) : null}
 
       <ol className="sdlc-timeline">
-        {PLAN_STEPS.map((step, index) => {
+        {planSteps.map((step, index) => {
           const status = statuses[step.id]
           const Icon = step.icon
           const done = status === 'done'
@@ -435,7 +483,7 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
                     <Circle size={16} />
                   )}
                 </span>
-                {index < PLAN_STEPS.length - 1 ? <span className="sdlc-timeline__line" /> : null}
+                {index < planSteps.length - 1 ? <span className="sdlc-timeline__line" /> : null}
               </div>
               <div className="sdlc-timeline__card">
                 <div className="sdlc-timeline__head">
@@ -465,6 +513,29 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         })}
       </ol>
 
+      {needsAcAck ? (
+        <section className="card shape-section" style={{ marginTop: '1rem' }}>
+          <div className="sdlc-panel__head">
+            <CheckCircle2 size={18} />
+            <div>
+              <h3>Confirm acceptance criteria (human)</h3>
+              <p className="muted">
+                Human confirmation that the spec&apos;s acceptance criteria were reviewed — not an LLM step and
+                not an approve-gate. Required before <code>/technical-plan</code>.
+              </p>
+            </div>
+          </div>
+          <label className="muted small" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(state.acceptanceCriteriaAcknowledged)}
+              onChange={(e) => onUpdate({ acceptanceCriteriaAcknowledged: e.target.checked })}
+            />
+            I have reviewed the acceptance criteria
+          </label>
+        </section>
+      ) : null}
+
       {complete && needsPlanAck ? (
         <section className="card shape-section" style={{ marginTop: '1rem' }}>
           <div className="sdlc-panel__head">
@@ -473,7 +544,7 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
               <h3>Acknowledge G-PLAN (human)</h3>
               <p className="muted">
                 Human acknowledgement that the technical plan was reviewed — not an approve-gate. Required
-                before continuing past planning.
+                before continuing past Work plan.
               </p>
             </div>
           </div>
@@ -487,13 +558,18 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
             />
             I have reviewed the technical plan (G-PLAN)
           </label>
-          <button type="button" className="primary-btn" onClick={acknowledgePlan}>
-            Acknowledge G-PLAN (human)
-          </button>
+          <div className="ship-actions">
+            <button type="button" className="primary-btn" onClick={acknowledgePlan}>
+              Acknowledge G-PLAN (human)
+            </button>
+            <button type="button" className="secondary-btn" onClick={rejectPlan}>
+              Reject G-PLAN
+            </button>
+          </div>
         </section>
       ) : null}
 
-      {complete && (state.planAcknowledged || state.shipPlanAcknowledged) ? (
+      {complete && phase === 'plan' && (state.planAcknowledged || state.shipPlanAcknowledged) ? (
         <p className="status-banner success">G-PLAN acknowledged. You can continue to Shape &amp; Ship.</p>
       ) : null}
 
@@ -501,7 +577,7 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         <button
           type="button"
           className="primary-btn large sdlc-plan__continue"
-          disabled={!canContinue}
+          disabled={!canRunNext}
           onClick={() => void runNext()}
         >
           {busy ? <Loader2 className="spin" size={18} /> : complete ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
@@ -509,7 +585,7 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
         </button>
         {!complete && nextId && !blockedMsg ? (
           <p className="muted small">
-            Runs <code>{PLAN_STEPS.find((s) => s.id === nextId)?.command}</code> only — then stops so you can
+            Runs <code>{planSteps.find((s) => s.id === nextId)?.command}</code> only — then stops so you can
             review what changed.
           </p>
         ) : null}
@@ -518,12 +594,24 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
   )
 }
 
-export function validateSdlcPlanning(state: WizardState): string | null {
-  if (!state.technicalPlan?.markdown && !(state.technicalPlan?.steps?.length)) {
-    return 'Complete the technical plan before continuing.'
-  }
+export function validateSdlcScope(state: WizardState): string | null {
+  if (!scopeConfirmed(state)) return 'Confirm product scope before continuing.'
+  if (!state.sdlcStartIssueId) return 'Start the SDLC chain (/sdlc-start) before Stakeholder Q&A.'
+  return null
+}
+
+export function validateSdlcPlan(state: WizardState): string | null {
+  if (!state.groomAcknowledged) return 'Acknowledge G-GROOM on Stakeholder Q&A before the work plan.'
+  if (!specReady(state)) return 'Create the specification before continuing.'
+  if (!state.acceptanceCriteriaAcknowledged) return 'Confirm acceptance criteria before the technical plan.'
+  if (!planReady(state)) return 'Complete the technical plan before continuing.'
   if (!(state.planAcknowledged || state.shipPlanAcknowledged)) {
     return 'Acknowledge G-PLAN before continuing.'
   }
   return null
+}
+
+/** @deprecated Use validateSdlcPlan — kept for older imports. */
+export function validateSdlcPlanning(state: WizardState): string | null {
+  return validateSdlcPlan(state)
 }

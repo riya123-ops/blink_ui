@@ -205,6 +205,55 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
               </div>
             </section>
           </div>
+
+          <section className="card shape-section">
+            <div className="shape-section-head">
+              <h3 className="card-title">IDE &amp; platform defaults</h3>
+              <span className="shape-section-meta">Not a tour — change later if needed</span>
+            </div>
+            <div className="platform-row">
+              <div className="field-group">
+                <label>Primary IDE</label>
+                <select value={state.ideTool} onChange={(e) => onUpdate({ ideTool: e.target.value })}>
+                  {IDE_TOOL_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id} disabled={!opt.enabled}>
+                      {opt.label}{opt.enabled ? '' : ' (soon)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-group">
+                <label>Cloud</label>
+                <select
+                  value={state.cloudProvider}
+                  onChange={(e) => {
+                    const cloudProvider = e.target.value
+                    onUpdate({
+                      cloudProvider,
+                      ...ensurePlatformDefaults(cloudProvider, {
+                        deploymentModel: state.deploymentModel,
+                        iac: state.iac,
+                        secretsManagement: state.secretsManagement,
+                        cicd: state.cicd,
+                      }),
+                    })
+                  }}
+                >
+                  {CLOUD_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-group">
+                <label>CI/CD</label>
+                <select value={state.cicd} onChange={(e) => onUpdate({ cicd: e.target.value })}>
+                  {platformOptionsForCloud(state.cloudProvider).cicd.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
         </div>
 
         <aside className="card shape-blueprint" aria-live="polite">
@@ -235,7 +284,7 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
               Repositories were edited later — changing shape here no longer rewrites that list.
             </p>
           ) : (
-            <p className="shape-lock-note soft">Continue to edit names, owners, and GitHub creation.</p>
+            <p className="shape-lock-note soft">Continue to edit planned names. Remotes are created on Ship after G-BOOTSTRAP.</p>
           )}
         </aside>
       </div>
@@ -319,7 +368,7 @@ export function RepositoriesScreen({
           <h2>Repositories</h2>
           <p>
             Names follow <strong>{state.projectName || 'your project'}</strong> and your Project Shape.
-            Remotes are created on <strong>Ship</strong> after G-PLAN and G-BOOTSTRAP — not on Continue.
+            Remotes are created on <strong>Ship</strong> after G-BOOTSTRAP — not on Continue.
           </p>
         </div>
         <div className="screen-header-actions">

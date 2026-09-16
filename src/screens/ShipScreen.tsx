@@ -13,10 +13,10 @@ import {
   ShieldCheck,
   Workflow,
 } from 'lucide-react'
+import { ReviewResolveScreen } from './ExtendedScreens'
 import {
   gitApply,
   implementStep,
-  postJiraGateEvidence,
   qaValidation,
   technicalPlan,
 } from '../api/blink'
@@ -28,7 +28,7 @@ import {
   sanitizeDownloadStructure,
   workspaceRootName,
 } from '../wizard/defaults'
-import type { WizardState } from '../wizard/types'
+import type { WizardState, WizardStep } from '../wizard/types'
 
 const GENERATION_CHECKLIST = [
   'Project structure created',
@@ -61,6 +61,7 @@ interface Props {
   exporting?: boolean
   onExportGithub?: () => void
   onGenerateKit?: () => void
+  onNavigate?: (step: WizardStep) => void
 }
 
 /**
@@ -75,11 +76,13 @@ export function ShipScreen({
   exporting,
   onExportGithub,
   onGenerateKit,
+  onNavigate,
 }: Props) {
   const [busy, setBusy] = useState<ShipAction | null>(null)
   const [errors, setErrors] = useState<Partial<Record<ShipAction, string>>>({})
   const [copied, setCopied] = useState(false)
   const [kitOpen, setKitOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   const hasPlan = Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
   const reposCreated = state.repositories.some(
@@ -88,8 +91,8 @@ export function ShipScreen({
   const planAck = Boolean(state.planAcknowledged || state.shipPlanAcknowledged)
   const needsPlanAck = hasPlan && !planAck
   const needsBootstrapAck = planAck && !state.bootstrapAcknowledged
-  const needsImplAuth = Boolean(state.bootstrapAcknowledged && !state.implementationAuthorized)
   const gitWritten = Boolean(state.gitWritten)
+  const needsImplAuth = Boolean(state.bootstrapAcknowledged && gitWritten && !state.implementationAuthorized)
   const hasDraftPr = (state.draftPullRequests || []).length > 0
   const hasQa = Boolean(state.qaValidation?.verdict || state.qaValidation?.markdown)
 
@@ -102,7 +105,7 @@ export function ShipScreen({
 
   const shipUnlocked = hasPlan && planAck && Boolean(state.bootstrapAcknowledged) && Boolean(state.projectId)
   const canGit = Boolean(
-    shipUnlocked && planAck && state.bootstrapAcknowledged && hasPlan && (state.scopeOverlays || []).length && !busy,
+    shipUnlocked && planAck && state.bootstrapAcknowledged && hasPlan && reposCreated && (state.scopeOverlays || []).length && !busy,
   )
   const canImplement = Boolean(
     state.implementationAuthorized && gitWritten && planAck && state.bootstrapAcknowledged && hasPlan && !busy,
@@ -141,15 +144,6 @@ export function ShipScreen({
 
   const acknowledgeBootstrap = () => {
     onUpdate({ bootstrapAcknowledged: true })
-    const issueKey = primaryIssueKey(state)
-    if (issueKey && state.projectId) {
-      void postJiraGateEvidence(state.projectId, {
-        issueKey,
-        gate: 'G-BOOTSTRAP',
-        message:
-          'Human acknowledgement of G-BOOTSTRAP (not an approve-gate). Remote repository create/export enabled.',
-      }).catch(() => undefined)
-    }
   }
 
   const authorizeImplementation = () => {
@@ -359,8 +353,8 @@ export function ShipScreen({
           Ship
         </h2>
         <p>
-          Commit overlays, open draft PRs with <code>/implement-step</code>, then run advisory{' '}
-          <code>/qa-validation</code>. Nothing merges automatically.
+          After G-PLAN, acknowledge G-BOOTSTRAP, create remotes, commit overlays, authorize, then{' '}
+          <code>/implement-step</code> and advisory <code>/qa-validation</code>. Nothing merges automatically.
         </p>
       </div>
 
@@ -375,7 +369,7 @@ export function ShipScreen({
 
       {!hasPlan && (
         <p className="status-banner info">
-          Finish SDLC Planning (<code>/technical-plan</code>) before shipping.
+          Finish Work plan (<code>/technical-plan</code> + G-PLAN) before shipping.
         </p>
       )}
       {hasPlan && planAck && state.bootstrapAcknowledged && !reposCreated && (
@@ -392,8 +386,8 @@ export function ShipScreen({
             <div>
               <h3>Acknowledge G-PLAN</h3>
               <p className="muted">
-                Human acknowledgement that the technical plan was reviewed — not an approve-gate. Required
-                before bootstrap and ship actions.
+                Normally completed on Work plan. Human acknowledgement that the technical plan was
+                reviewed — not an approve-gate.
               </p>
             </div>
           </div>
@@ -605,6 +599,9 @@ export function ShipScreen({
           >
             <Download size={14} /> {state.generationComplete ? 'Show kit summary' : 'Generate kit ZIP'}
           </button>
+          <button type="button" className="ghost-btn" onClick={() => setReviewOpen((open) => !open)}>
+            {reviewOpen ? 'Hide review checklist' : 'Review checklist'}
+          </button>
         </div>
         {!state.bootstrapAcknowledged && (
           <p className="muted small">Acknowledge G-BOOTSTRAP above before creating remotes.</p>
@@ -655,6 +652,10 @@ export function ShipScreen({
           </ul>
         </section>
       )}
+
+      {reviewOpen && onNavigate ? (
+        <ReviewResolveScreen state={state} onNavigate={onNavigate} />
+      ) : null}
 
       {onBack && (
         <button type="button" className="back-dashboard" onClick={onBack}>

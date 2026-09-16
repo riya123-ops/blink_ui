@@ -8,8 +8,8 @@ import {
   WIZARD_STEPS,
   canNavigateToStep,
   phaseForStep,
+  phaseProgressLabel,
   stepAttention,
-  stepIndex,
   type StepAttention,
 } from '../wizard/steps'
 import type { WizardState, WizardStep } from '../wizard/types'
@@ -56,10 +56,7 @@ export function WizardSidebar({
     setOpenPhases((prev) => ({ ...prev, [currentPhase.id]: true }))
   }, [currentPhase.id])
 
-  const progressLabel = useMemo(() => {
-    const idx = stepIndex(currentStep) + 1
-    return `Step ${idx} of ${WIZARD_STEPS.length} · ${currentPhase.label}`
-  }, [currentStep, currentPhase.label])
+  const progressLabel = useMemo(() => phaseProgressLabel(currentStep), [currentStep])
 
   function togglePhase(phaseId: string) {
     setOpenPhases((prev) => ({ ...prev, [phaseId]: !prev[phaseId] }))

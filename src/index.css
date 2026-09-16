@@ -3116,10 +3116,10 @@ textarea::placeholder {
 
 .step-indicator {
   font-weight: 600;
-  color: var(--blue);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 0.78rem;
 }
 
 .folder-prep {
@@ -3207,6 +3207,16 @@ textarea::placeholder {
   background: rgba(180, 83, 9, 0.08);
   border-color: rgba(180, 83, 9, 0.25);
   color: #b45309;
+}
+
+.sod-banner.is-note ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+}
+
+.sod-banner.is-note strong {
+  display: block;
+  margin-bottom: 0.15rem;
 }
 
 .header-download-btn,
@@ -3506,10 +3516,10 @@ textarea::placeholder {
 
 .card-header h3,
 .card-title {
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
   color: var(--text-navy);
 }
 
@@ -5303,5 +5313,158 @@ textarea::placeholder {
     max-height: min(60vh, 420px);
     overflow: auto;
     margin-bottom: 0.25rem;
+  }
+}
+
+/* ── Project & Stakeholders (person-first) ── */
+.screen-project .screen-header h2 {
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.screen-project .screen-header p {
+  max-width: 34rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.project-setup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.35rem 1.4rem 1.5rem;
+}
+
+.project-name-input {
+  font-size: 1.05rem !important;
+  font-weight: 600;
+  padding: 0.7rem 0.85rem !important;
+}
+
+.project-people-block {
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(18, 38, 58, 0.08);
+}
+
+.project-people-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.project-people-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.project-people-head .sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.project-add-person {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.quiet-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.empty-state-block.compact {
+  padding: 0.85rem 0.15rem;
+}
+
+.person-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.person-roster-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(18, 38, 58, 0.08);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.person-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ts-blue-deep);
+  background: rgba(0, 102, 204, 0.1);
+  flex-shrink: 0;
+}
+
+.person-roster-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(140px, 0.9fr);
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.person-roster-fields input,
+.person-roster-fields select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem;
+  background: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  color: var(--text-navy);
+}
+
+.person-name-input {
+  font-weight: 600;
+}
+
+.person-role-select {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.person-remove {
+  opacity: 0.55;
+}
+
+.person-remove:hover {
+  opacity: 1;
+  color: #b91c1c;
+}
+
+@media (max-width: 900px) {
+  .person-roster-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .person-roster-item {
+    align-items: flex-start;
+  }
+
+  .project-people-head {
+    flex-direction: column;
   }
 }

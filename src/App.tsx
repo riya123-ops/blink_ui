@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -39,7 +39,7 @@ import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
   assigneeForQuestion,
   carryClarifyQuestionsForward,
-  mockResponsesForQuestions,
+  simulatedStakeholderReply,
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
 import { primaryContinueLabel, phaseProgressLabel, stepIndex } from './wizard/steps'
@@ -154,6 +154,8 @@ export default function App() {
   const [sending, setSending] = useState(false)
   const [postingJira, setPostingJira] = useState(false)
   const [refreshingJira, setRefreshingJira] = useState(false)
+  const [simulatingJira, setSimulatingJira] = useState(false)
+  const [resettingSimJira, setResettingSimJira] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
@@ -1060,28 +1062,99 @@ export default function App() {
     }
   }, [state, applySendResults])
 
-  const applyJiraPollReplies = useCallback(
-    (replies: { blinkQuestionId: string; body: string; created?: string | null }[]) => {
-      if (!replies.length) return
+  const applyJiraPollThreads = useCallback(
+    (
+      threads: {
+        blinkQuestionId: string
+        issueKey: string
+        parentCommentId?: string | null
+        parentBody?: string | null
+        replies: {
+          commentId: string
+          body: string
+          author?: string | null
+          created?: string | null
+          parentId?: string | null
+        }[]
+      }[],
+    ) => {
+      if (!threads.length) return
       const now = new Date().toISOString()
+      const cleanBody = (raw: string) =>
+        raw
+          .replace(/\[blink-sim-reply\]/gi, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim()
+
       setState((prev) => {
-        const questionIds = new Set(replies.map((r) => r.blinkQuestionId))
-        const questions = prev.questions.map((q) =>
-          questionIds.has(q.id)
-            ? { ...q, jiraCommentStatus: 'replied' as const, jiraCommentMessage: 'Reply received from Jira' }
-            : q,
-        )
-        const responses = prev.questions.map((q) => {
-          const reply = replies.find((r) => r.blinkQuestionId === q.id)
+        const byId = new Map(threads.map((t) => [t.blinkQuestionId, t]))
+        const questions = prev.questions.map((q) => {
+          const thread = byId.get(q.id)
+          if (!thread?.replies?.length) return q
+          const cleaned = thread.replies
+            .map((r) => ({
+              commentId: r.commentId,
+              body: cleanBody(r.body || ''),
+              author: r.author || null,
+              created: r.created || null,
+              parentId: r.parentId || thread.parentCommentId || null,
+            }))
+            .filter((r) => r.body && r.commentId)
+          if (!cleaned.length) return q
+          const last = cleaned[cleaned.length - 1]
           const existing = prev.responses.find((r) => r.questionId === q.id)
-          if (!reply) {
-            return existing ?? { questionId: q.id, status: 'pending' as const, response: q.proposedAnswer || '', receivedAt: null }
+          const alreadyResolved = existing?.status === 'answered' && Boolean(existing.response?.trim())
+          const priorIds = new Set((q.jiraThread || []).map((r) => r.commentId))
+          const hasNew = cleaned.some((r) => !priorIds.has(r.commentId))
+          return {
+            ...q,
+            jiraCommentStatus: alreadyResolved ? ('resolved' as const) : ('discussion' as const),
+            jiraCommentMessage: alreadyResolved
+              ? hasNew
+                ? 'New discussion activity since resolve'
+                : 'Resolved from Jira thread'
+              : `${cleaned.length} reply(ies) in discussion`,
+            jiraThread: cleaned,
+            jiraParentBody: cleanBody(thread.parentBody || '') || q.jiraParentBody || null,
+            jiraParentCommentId: thread.parentCommentId || q.jiraParentCommentId || q.jiraCommentId || null,
+            jiraThreadStale: alreadyResolved && hasNew,
+            jiraReplyBody: last.body,
+            jiraReplyAuthor: last.author,
+            jiraReplyAt: last.created || now,
+            jiraReplyCommentId: last.commentId,
+            jiraIssueKey: thread.issueKey || q.jiraIssueKey,
           }
+        })
+        const responses = prev.questions.map((q) => {
+          const thread = byId.get(q.id)
+          const existing = prev.responses.find((r) => r.questionId === q.id)
+          if (!thread?.replies?.length) {
+            return (
+              existing ?? {
+                questionId: q.id,
+                status: 'pending' as const,
+                response: q.proposedAnswer || '',
+                receivedAt: null,
+              }
+            )
+          }
+          // Keep an existing resolved answer; otherwise mark as open discussion.
+          if (existing?.status === 'answered' && existing.response?.trim()) {
+            return {
+              ...existing,
+              jiraIssueKey: thread.issueKey || existing.jiraIssueKey || q.jiraIssueKey || null,
+            }
+          }
+          const last = thread.replies[thread.replies.length - 1]
           return {
             questionId: q.id,
-            status: 'answered' as const,
-            response: reply.body,
-            receivedAt: reply.created || now,
+            status: 'discussion' as const,
+            response: '',
+            receivedAt: last.created || now,
+            source: 'thread' as const,
+            author: last.author || null,
+            jiraIssueKey: thread.issueKey || q.jiraIssueKey || null,
+            jiraCommentId: last.commentId || null,
           }
         })
         return { ...prev, questions, responses }
@@ -1092,7 +1165,14 @@ export default function App() {
 
   const handleRefreshJira = useCallback(async () => {
     const items = state.questions
-      .filter((q) => q.jiraIssueKey && (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied'))
+      .filter(
+        (q) =>
+          q.jiraIssueKey &&
+          (q.jiraCommentStatus === 'posted' ||
+            q.jiraCommentStatus === 'replied' ||
+            q.jiraCommentStatus === 'discussion' ||
+            q.jiraCommentStatus === 'resolved'),
+      )
       .map((q) => ({ issueKey: q.jiraIssueKey!, blinkQuestionId: q.id }))
     if (!items.length || !state.projectId) {
       setStatus({ type: 'info', message: 'No posted Jira comments to refresh yet.' })
@@ -1102,11 +1182,28 @@ export default function App() {
     setStatus(null)
     try {
       const res = await pollJiraComments({ projectId: state.projectId, items })
-      applyJiraPollReplies(res.replies || [])
+      const threads = res.threads?.length
+        ? res.threads
+        : (res.replies || []).map((r) => ({
+            blinkQuestionId: r.blinkQuestionId,
+            issueKey: r.issueKey,
+            parentCommentId: null,
+            replies: [
+              {
+                commentId: r.commentId || `legacy-${r.blinkQuestionId}`,
+                body: r.body,
+                author: r.author,
+                created: r.created,
+                parentId: null,
+              },
+            ],
+          }))
+      applyJiraPollThreads(threads)
+      const replyCount = threads.reduce((n, t) => n + (t.replies?.length || 0), 0)
       setStatus({
         type: 'success',
-        message: res.replies?.length
-          ? `Loaded ${res.replies.length} Jira reply(ies).`
+        message: replyCount
+          ? `Loaded ${replyCount} reply(ies) across ${threads.length} discussion thread(s). Resolve each to continue.`
           : res.message || 'No new Jira replies.',
       })
     } catch (e) {
@@ -1114,7 +1211,7 @@ export default function App() {
     } finally {
       setRefreshingJira(false)
     }
-  }, [state.questions, state.projectId, applyJiraPollReplies])
+  }, [state.questions, state.projectId, applyJiraPollThreads])
 
   const handlePostJiraOne = useCallback(
     async (questionId: string): Promise<boolean> => {
@@ -1155,6 +1252,8 @@ export default function App() {
                   jiraCommentId: res.commentId || null,
                   jiraCommentStatus: 'posted' as const,
                   jiraCommentMessage: res.message,
+                  jiraParentCommentId: res.commentId || null,
+                  jiraParentBody: body,
                 }
               : q,
           ),
@@ -1224,19 +1323,387 @@ export default function App() {
     })
   }, [state, handlePostJiraOne, patch])
 
-  const handleSimulateResponses = useCallback(() => {
-    const answers = mockResponsesForQuestions(state.questions)
-    const now = new Date().toISOString()
-    patch({
-      responses: state.questions.map((q) => ({
-        questionId: q.id,
-        status: 'answered' as const,
-        response: answers[q.id] ?? 'Confirmed.',
-        receivedAt: now,
-      })),
+  const handleSimulateResponses = useCallback(async () => {
+    if (!state.projectId) {
+      setStatus({ type: 'error', message: 'Save the project first so Blink can write to Jira.' })
+      return
+    }
+
+    const targets = state.questions.filter(
+      (q) =>
+        q.jiraIssueKey &&
+        q.jiraCommentId &&
+        (q.jiraCommentStatus === 'posted' ||
+          q.jiraCommentStatus === 'replied' ||
+          q.jiraCommentStatus === 'discussion' ||
+          q.jiraCommentStatus === 'resolved'),
+    )
+
+    if (!targets.length) {
+      setStatus({
+        type: 'error',
+        message:
+          'Proper simulation posts a real reply on each Jira ticket. Post clarifications to Jira first, then simulate.',
+      })
+      return
+    }
+
+    setSimulatingJira(true)
+    setStatus({
+      type: 'info',
+      message: `Posting ${targets.length} simulated stakeholder reply(ies) to Jira…`,
     })
-    setStatus({ type: 'success', message: 'Stakeholder responses recorded.' })
-  }, [state.questions, patch])
+
+    let posted = 0
+    let failed = 0
+    const failures: string[] = []
+
+    try {
+      for (const q of targets) {
+        const person = assigneeForQuestion(state, q.assignedRoleId).name
+        const body = simulatedStakeholderReply(q, person)
+        try {
+          if (!q.jiraCommentId) {
+            throw new Error('Missing parent clarification comment id — re-post to Jira first.')
+          }
+          // Reply as a threaded child under the clarification comment (not a sibling).
+          await createJiraComment({
+            projectId: state.projectId,
+            issueKey: q.jiraIssueKey!,
+            body,
+            parentCommentId: q.jiraCommentId,
+          })
+          posted += 1
+        } catch (e) {
+          failed += 1
+          failures.push(
+            `${q.jiraIssueKey}: ${e instanceof Error ? e.message : 'failed to post reply'}`,
+          )
+        }
+      }
+
+      if (posted === 0) {
+        setStatus({
+          type: 'error',
+          message: failures[0] || 'Could not post any simulated replies to Jira.',
+        })
+        return
+      }
+
+      setStatus({
+        type: 'info',
+        message: `Posted ${posted} reply(ies) on Jira. Pulling them back…`,
+      })
+
+      const items = targets.map((q) => ({
+        issueKey: q.jiraIssueKey!,
+        blinkQuestionId: q.id,
+      }))
+      const res = await pollJiraComments({ projectId: state.projectId, items })
+      const threads = res.threads?.length
+        ? res.threads
+        : (res.replies || []).map((r) => ({
+            blinkQuestionId: r.blinkQuestionId,
+            issueKey: r.issueKey,
+            parentCommentId: null as string | null,
+            replies: [
+              {
+                commentId: r.commentId || `legacy-${r.blinkQuestionId}`,
+                body: r.body,
+                author: r.author,
+                created: r.created,
+                parentId: null as string | null,
+              },
+            ],
+          }))
+      applyJiraPollThreads(threads)
+
+      const pulled = threads.reduce((n, t) => n + (t.replies?.length || 0), 0)
+      setStatus({
+        type: failed || pulled === 0 ? 'error' : 'success',
+        message:
+          pulled > 0
+            ? `Simulation complete: posted ${posted} Jira reply(ies). Review the discussion and resolve each answer.`
+            : `Posted ${posted} reply(ies), but poll did not find them yet. Open the ticket to verify, then Refresh Jira replies.${
+                failures.length ? ` Issues: ${failures.join('; ')}` : ''
+              }`,
+      })
+    } catch (e) {
+      setStatus({
+        type: 'error',
+        message: e instanceof Error ? e.message : 'Jira simulation failed.',
+      })
+    } finally {
+      setSimulatingJira(false)
+    }
+  }, [state, applyJiraPollThreads])
+
+  const handleResetSimulatedReplies = useCallback(async () => {
+    const targets = state.questions.filter((q) => {
+      const response = state.responses.find((r) => r.questionId === q.id)
+      const text = (response?.response || q.jiraReplyBody || '').trim()
+      return Boolean(
+        (response?.status === 'answered' && text) ||
+          q.jiraReplyBody?.trim() ||
+          q.jiraReplyCommentId ||
+          q.jiraCommentStatus === 'replied',
+      )
+    })
+
+    if (!targets.length) {
+      setStatus({ type: 'info', message: 'No loaded replies to reset.' })
+      return
+    }
+
+    setResettingSimJira(true)
+    setStatus({ type: 'info', message: `Resetting ${targets.length} reply(ies)…` })
+
+    const jiraTargets = targets.filter((q) => q.jiraIssueKey)
+    let deleted = 0
+    let jiraMessage = ''
+    try {
+      if (state.projectId && jiraTargets.length) {
+        const res = await resetSimulatedJiraReplies({
+          projectId: state.projectId,
+          items: jiraTargets.map((q) => ({
+            issueKey: q.jiraIssueKey!,
+            blinkQuestionId: q.id,
+            replyCommentId:
+              q.jiraReplyCommentId ||
+              state.responses.find((r) => r.questionId === q.id)?.jiraCommentId ||
+              null,
+          })),
+        })
+        deleted = res.deleted || 0
+        jiraMessage = res.message || ''
+      }
+
+      setState((prev) => {
+        const targetIds = new Set(targets.map((q) => q.id))
+        const questions = prev.questions.map((q) => {
+          if (!targetIds.has(q.id)) return q
+          const keepPosted =
+            Boolean(q.jiraCommentId) &&
+            (q.jiraCommentStatus === 'posted' ||
+              q.jiraCommentStatus === 'replied' ||
+              q.jiraCommentStatus === 'discussion' ||
+              q.jiraCommentStatus === 'resolved')
+          return {
+            ...q,
+            jiraCommentStatus: keepPosted ? ('posted' as const) : q.jiraCommentStatus,
+            jiraCommentMessage: keepPosted
+              ? `Awaiting reply on ${q.jiraIssueKey}`
+              : q.jiraCommentMessage,
+            jiraThread: [],
+            jiraThreadStale: false,
+            jiraThreadSummary: null,
+            jiraParentBody: keepPosted ? q.jiraParentBody : null,
+            jiraParentCommentId: keepPosted ? q.jiraParentCommentId || q.jiraCommentId : null,
+            jiraReplyBody: null,
+            jiraReplyAuthor: null,
+            jiraReplyAt: null,
+            jiraReplyCommentId: null,
+          }
+        })
+        const responses = prev.questions.map((q) => {
+          const existing = prev.responses.find((r) => r.questionId === q.id)
+          if (!targetIds.has(q.id)) {
+            return (
+              existing ?? {
+                questionId: q.id,
+                status: 'pending' as const,
+                response: q.proposedAnswer || '',
+                receivedAt: null,
+              }
+            )
+          }
+          return {
+            questionId: q.id,
+            status: 'pending' as const,
+            response: '',
+            receivedAt: null,
+            jiraIssueKey: q.jiraIssueKey || null,
+          }
+        })
+        return { ...prev, questions, responses }
+      })
+
+      setStatus({
+        type: 'success',
+        message:
+          deleted > 0
+            ? `Reset complete: cleared ${targets.length} answer(s) and deleted ${deleted} simulated Jira comment(s).`
+            : `Cleared ${targets.length} loaded answer(s).${
+                jiraTargets.length
+                  ? ' No matching simulated comments were found on Jira (they may have been local-only).'
+                  : ''
+              }${jiraMessage ? ` ${jiraMessage}` : ''} You can simulate again.`,
+      })
+    } catch (e) {
+      // Still clear local demo answers even if Jira delete fails.
+      setState((prev) => {
+        const targetIds = new Set(targets.map((q) => q.id))
+        return {
+          ...prev,
+          questions: prev.questions.map((q) =>
+            targetIds.has(q.id)
+              ? {
+                  ...q,
+                  jiraCommentStatus:
+                    q.jiraCommentId &&
+                    (q.jiraCommentStatus === 'posted' ||
+                      q.jiraCommentStatus === 'replied' ||
+                      q.jiraCommentStatus === 'discussion' ||
+                      q.jiraCommentStatus === 'resolved')
+                      ? ('posted' as const)
+                      : q.jiraCommentStatus,
+                  jiraThread: [],
+                  jiraThreadStale: false,
+                  jiraThreadSummary: null,
+                  jiraReplyBody: null,
+                  jiraReplyAuthor: null,
+                  jiraReplyAt: null,
+                  jiraReplyCommentId: null,
+                }
+              : q,
+          ),
+          responses: prev.questions.map((q) =>
+            targetIds.has(q.id)
+              ? {
+                  questionId: q.id,
+                  status: 'pending' as const,
+                  response: '',
+                  receivedAt: null,
+                  jiraIssueKey: q.jiraIssueKey || null,
+                }
+              : prev.responses.find((r) => r.questionId === q.id) ?? {
+                  questionId: q.id,
+                  status: 'pending' as const,
+                  response: q.proposedAnswer || '',
+                  receivedAt: null,
+                },
+          ),
+        }
+      })
+      setStatus({
+        type: 'error',
+        message: `${e instanceof Error ? e.message : 'Jira reset failed.'} Local answers were still cleared.`,
+      })
+    } finally {
+      setResettingSimJira(false)
+    }
+  }, [state])
+
+  const handleUpdateResponse = useCallback(
+    (questionId: string, patchResponse: Partial<import('./wizard/types').QuestionResponse>) => {
+      setState((prev) => {
+        const body = (patchResponse.response || '').trim()
+        const answered = (patchResponse.status || 'answered') === 'answered' && Boolean(body)
+        const responses = prev.questions.map((q) => {
+          const existing = prev.responses.find((r) => r.questionId === q.id)
+          if (q.id !== questionId) {
+            return (
+              existing ?? {
+                questionId: q.id,
+                status: 'pending' as const,
+                response: q.proposedAnswer || '',
+                receivedAt: null,
+              }
+            )
+          }
+          return {
+            questionId: q.id,
+            status: answered ? ('answered' as const) : patchResponse.status || 'pending',
+            response: body || existing?.response || '',
+            receivedAt: patchResponse.receivedAt || new Date().toISOString(),
+            source: patchResponse.source || existing?.source || 'manual',
+            author: patchResponse.author ?? existing?.author ?? null,
+            jiraIssueKey: patchResponse.jiraIssueKey ?? existing?.jiraIssueKey ?? q.jiraIssueKey ?? null,
+            jiraCommentId: patchResponse.jiraCommentId ?? existing?.jiraCommentId ?? null,
+            resolvedFromCommentId: patchResponse.resolvedFromCommentId ?? existing?.resolvedFromCommentId ?? null,
+          }
+        })
+        const questions = prev.questions.map((q) => {
+          if (q.id !== questionId) return q
+          if (!answered) {
+            return {
+              ...q,
+              jiraCommentStatus:
+                (q.jiraThread?.length || 0) > 0 ? ('discussion' as const) : q.jiraCommentStatus,
+              jiraThreadStale: false,
+            }
+          }
+          return {
+            ...q,
+            jiraCommentStatus: 'resolved' as const,
+            jiraCommentMessage: body.length > 140 ? `${body.slice(0, 140)}…` : body,
+            jiraReplyBody: body,
+            jiraReplyAuthor: patchResponse.author ?? q.jiraReplyAuthor ?? null,
+            jiraReplyAt: patchResponse.receivedAt || new Date().toISOString(),
+            jiraReplyCommentId: patchResponse.resolvedFromCommentId || q.jiraReplyCommentId || null,
+            jiraThreadStale: false,
+          }
+        })
+        return { ...prev, responses, questions }
+      })
+      setStatus({ type: 'success', message: 'Answer resolved.' })
+    },
+    [],
+  )
+
+  const handleResolveAllLatest = useCallback(() => {
+    setState((prev) => {
+      const now = new Date().toISOString()
+      const questions = prev.questions.map((q) => {
+        const thread = q.jiraThread || []
+        if (!thread.length) return q
+        const existing = prev.responses.find((r) => r.questionId === q.id)
+        if (existing?.status === 'answered' && existing.response?.trim()) return q
+        const last = thread[thread.length - 1]
+        return {
+          ...q,
+          jiraCommentStatus: 'resolved' as const,
+          jiraCommentMessage: last.body.length > 140 ? `${last.body.slice(0, 140)}…` : last.body,
+          jiraReplyBody: last.body,
+          jiraReplyAuthor: last.author || null,
+          jiraReplyAt: last.created || now,
+          jiraReplyCommentId: last.commentId,
+          jiraThreadStale: false,
+        }
+      })
+      const responses = prev.questions.map((q) => {
+        const existing = prev.responses.find((r) => r.questionId === q.id)
+        const thread = q.jiraThread || []
+        if (existing?.status === 'answered' && existing.response?.trim()) {
+          return existing
+        }
+        if (!thread.length) {
+          return (
+            existing ?? {
+              questionId: q.id,
+              status: 'pending' as const,
+              response: q.proposedAnswer || '',
+              receivedAt: null,
+            }
+          )
+        }
+        const last = thread[thread.length - 1]
+        return {
+          questionId: q.id,
+          status: 'answered' as const,
+          response: last.body,
+          receivedAt: last.created || now,
+          source: 'thread' as const,
+          author: last.author || null,
+          jiraIssueKey: q.jiraIssueKey || null,
+          jiraCommentId: last.commentId,
+          resolvedFromCommentId: last.commentId,
+        }
+      })
+      return { ...prev, questions, responses }
+    })
+    setStatus({ type: 'success', message: 'Resolved open discussions using the latest reply in each thread.' })
+  }, [])
 
   const runGeneration = useCallback(async () => {
     setLoading(true)
@@ -1483,8 +1950,19 @@ export default function App() {
           <StakeholderResponsesScreen
             state={state}
             onSimulateResponses={handleSimulateResponses}
+            onResetSimulatedReplies={handleResetSimulatedReplies}
             onRefreshJira={() => void handleRefreshJira()}
+            onUpdateResponse={handleUpdateResponse}
+            onResolveAllLatest={handleResolveAllLatest}
+            onPatchQuestion={(questionId, questionPatch) => {
+              setState((prev) => ({
+                ...prev,
+                questions: prev.questions.map((q) => (q.id === questionId ? { ...q, ...questionPatch } : q)),
+              }))
+            }}
             refreshing={refreshingJira}
+            simulating={simulatingJira}
+            resetting={resettingSimJira}
           />
         )
       case 'sdlc-planning':

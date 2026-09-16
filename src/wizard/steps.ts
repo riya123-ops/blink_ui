@@ -135,7 +135,11 @@ export function stepAttention(
     if (stepId === 'stakeholder-responses') {
       const pending = state.questions
         .filter((q) => q.mandatory)
-        .filter((q) => state.responses.find((r) => r.questionId === q.id)?.status !== 'answered')
+        .filter((q) => {
+          const response = state.responses.find((r) => r.questionId === q.id)
+          const text = response?.response?.trim() || q.jiraReplyBody?.trim()
+          return !(response?.status === 'answered' && text)
+        })
       if (pending.length > 0) return 'attention'
     }
     return 'done'
@@ -162,7 +166,11 @@ export function primaryContinueLabel(
     case 'stakeholder-responses': {
       const pending = state.questions
         .filter((q) => q.mandatory)
-        .filter((q) => state.responses.find((r) => r.questionId === q.id)?.status !== 'answered')
+        .filter((q) => {
+          const response = state.responses.find((r) => r.questionId === q.id)
+          const text = response?.response?.trim() || q.jiraReplyBody?.trim()
+          return !(response?.status === 'answered' && text)
+        })
       return pending.length > 0 ? 'Continue when mandatory answered' : 'Continue'
     }
     case 'repositories':

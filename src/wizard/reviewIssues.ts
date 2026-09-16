@@ -16,7 +16,11 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
   )
   const unsentQuestions = state.questions.filter((q) => !q.sent)
   const pendingMandatory = state.questions.filter(
-    (q) => q.mandatory && state.responses.find((r) => r.questionId === q.id)?.status !== 'answered',
+    (q) => {
+      const response = state.responses.find((r) => r.questionId === q.id)
+      const text = response?.response?.trim() || q.jiraReplyBody?.trim()
+      return q.mandatory && !(response?.status === 'answered' && text)
+    },
   )
   const disconnectedIntegrations = state.integrations.filter((i) => !i.connected)
 

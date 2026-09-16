@@ -67,17 +67,48 @@ export interface StakeholderQuestion {
   jiraIssueKey?: string | null
   jiraIssueUrl?: string | null
   jiraCommentId?: string | null
-  jiraCommentStatus?: 'pending' | 'posted' | 'failed' | 'replied'
+  jiraCommentStatus?: 'pending' | 'posted' | 'failed' | 'replied' | 'discussion' | 'resolved'
   jiraCommentMessage?: string
+  /** Full discussion thread pulled from Jira (child replies under the clarification) */
+  jiraThread?: JiraThreadReply[]
+  /** Parent clarification comment body (Blink question posted to Jira) */
+  jiraParentBody?: string | null
+  jiraParentCommentId?: string | null
+  /** Optional AI/local digest of the thread */
+  jiraThreadSummary?: string | null
+  /** Latest reply body pulled from Jira (mirrors last thread item) */
+  jiraReplyBody?: string | null
+  jiraReplyAuthor?: string | null
+  jiraReplyAt?: string | null
+  /** Jira comment id of the stakeholder reply (used to delete simulated replies) */
+  jiraReplyCommentId?: string | null
+  /** True when new thread activity arrived after a resolution */
+  jiraThreadStale?: boolean
   queueEmail?: boolean
   queueJira?: boolean
 }
 
+export interface JiraThreadReply {
+  commentId: string
+  body: string
+  author?: string | null
+  created?: string | null
+  parentId?: string | null
+}
+
 export interface QuestionResponse {
   questionId: string
-  status: 'pending' | 'answered' | 'failed' | 'cancelled'
+  status: 'pending' | 'discussion' | 'answered' | 'failed' | 'cancelled'
   response: string
   receivedAt: string | null
+  /** Where the answer came from */
+  source?: 'jira' | 'email' | 'proxy' | 'demo' | 'manual' | 'thread'
+  /** Display name of the Jira comment author when sourced from Jira */
+  author?: string | null
+  jiraIssueKey?: string | null
+  jiraCommentId?: string | null
+  /** Comment id chosen when resolving from a thread */
+  resolvedFromCommentId?: string | null
 }
 
 export interface GenerationStep {
@@ -270,6 +301,7 @@ export interface JiraCreatedIssue {
   sourceId?: string
   jiraKey?: string | null
   jiraUrl?: string | null
+  url?: string | null
   type?: string
   status?: string
   message?: string
@@ -443,7 +475,11 @@ export function computeReadiness(state: WizardState): number {
   if (state.questionsSent) score += 15
   const mandatoryAnswered = state.questions
     .filter((q) => q.mandatory)
-    .every((q) => state.responses.find((r) => r.questionId === q.id)?.status === 'answered')
+    .every((q) => {
+      const response = state.responses.find((r) => r.questionId === q.id)
+      const text = response?.response?.trim() || q.jiraReplyBody?.trim()
+      return response?.status === 'answered' && Boolean(text)
+    })
   if (mandatoryAnswered && state.questions.length > 0) score += 15
   if (state.repositories.length >= 2) score += 10
   if (state.repoTechnologies.every((t) => t.status === 'confirmed')) score += 10

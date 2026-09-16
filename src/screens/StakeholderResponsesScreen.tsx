@@ -1,48 +1,192 @@
-import { useState } from 'react'
-import { Bell, Clock, ExternalLink, RefreshCw, User } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Bell,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Loader2,
+  MessageSquareText,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react'
+import { summarizeDiscussion } from '../api/blink'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
-import type { WizardState } from '../wizard/types'
+import type { JiraThreadReply, QuestionResponse, StakeholderQuestion, WizardState } from '../wizard/types'
 
 interface Props {
   state: WizardState
-  onSimulateResponses: () => void
+  onSimulateResponses: () => void | Promise<void>
+  onResetSimulatedReplies?: () => void | Promise<void>
   onRefreshJira?: () => void
+  onUpdateResponse?: (questionId: string, patch: Partial<QuestionResponse>) => void
+  onResolveAllLatest?: () => void
+  onPatchQuestion?: (questionId: string, patch: Partial<StakeholderQuestion>) => void
   refreshing?: boolean
+  simulating?: boolean
+  resetting?: boolean
 }
 
-type Filter = 'all' | 'responded' | 'pending'
+type Filter = 'all' | 'responded' | 'discussion' | 'pending'
+
+function isResolved(response?: QuestionResponse, q?: { jiraReplyBody?: string | null }): boolean {
+  const text = response?.response?.trim() || q?.jiraReplyBody?.trim() || ''
+  return response?.status === 'answered' && Boolean(text)
+}
+
+function statusLabel(
+  response?: QuestionResponse,
+  q?: { jiraCommentStatus?: string; jiraThread?: JiraThreadReply[]; jiraThreadStale?: boolean },
+): { label: string; tone: string } {
+  if (isResolved(response)) {
+    return {
+      label: q?.jiraThreadStale ? 'Resolved · new activity' : 'Resolved',
+      tone: q?.jiraThreadStale ? 'info' : 'answered',
+    }
+  }
+  if ((q?.jiraThread?.length || 0) > 0 || response?.status === 'discussion') {
+    return { label: `Discussion · ${q?.jiraThread?.length || 0}`, tone: 'info' }
+  }
+  if (q?.jiraCommentStatus === 'posted') return { label: 'Awaiting replies', tone: 'pending' }
+  return { label: 'Pending', tone: 'pending' }
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
 
 export function StakeholderResponsesScreen({
   state,
   onSimulateResponses,
+  onResetSimulatedReplies,
   onRefreshJira,
+  onUpdateResponse,
+  onResolveAllLatest,
+  onPatchQuestion,
   refreshing,
+  simulating,
+  resetting,
 }: Props) {
   const [filter, setFilter] = useState<Filter>('all')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const [summaryDraft, setSummaryDraft] = useState<Record<string, string>>({})
+  const [summarizingId, setSummarizingId] = useState<string | null>(null)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
 
-  const rows = state.questions.map((q) => {
-    const assignee = assigneeForQuestion(state, q.assignedRoleId)
-    const response = state.responses.find((r) => r.questionId === q.id)
-    return { q, assignee, response }
-  })
+  useEffect(() => {
+    if (!onRefreshJira) return
+    const hasPosted = state.questions.some(
+      (q) =>
+        q.jiraIssueKey &&
+        (q.jiraCommentStatus === 'posted' ||
+          q.jiraCommentStatus === 'replied' ||
+          q.jiraCommentStatus === 'discussion' ||
+          q.jiraCommentStatus === 'resolved') &&
+        Boolean(q.jiraCommentId),
+    )
+    if (hasPosted) onRefreshJira()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const filtered = rows.filter(({ response }) => {
+  const rows = useMemo(
+    () =>
+      state.questions.map((q) => {
+        const assignee = assigneeForQuestion(state, q.assignedRoleId)
+        const response = state.responses.find((r) => r.questionId === q.id)
+        const thread = q.jiraThread || []
+        const resolved = isResolved(response, q)
+        return { q, assignee, response, thread, resolved }
+      }),
+    [state],
+  )
+
+  const filtered = rows.filter(({ response, thread, resolved }) => {
     if (filter === 'all') return true
-    if (filter === 'responded') return response?.status === 'answered'
-    return response?.status !== 'answered'
+    if (filter === 'responded') return resolved
+    if (filter === 'discussion') return !resolved && (thread.length > 0 || response?.status === 'discussion')
+    return !resolved && thread.length === 0 && response?.status !== 'discussion'
   })
 
   const mandatory = state.questions.filter((q) => q.mandatory)
-  const answeredMandatory = mandatory.filter(
-    (q) => state.responses.find((r) => r.questionId === q.id)?.status === 'answered',
-  )
+  const answeredMandatory = mandatory.filter((q) => {
+    const response = state.responses.find((r) => r.questionId === q.id)
+    return isResolved(response, q)
+  })
+  const openDiscussions = rows.filter((r) => !r.resolved && r.thread.length > 0).length
+
+  const startEdit = (questionId: string, current: string) => {
+    setEditingId(questionId)
+    setDraft(current)
+  }
+
+  const saveEdit = (questionId: string) => {
+    const text = draft.trim()
+    if (!text || !onUpdateResponse) return
+    onUpdateResponse(questionId, {
+      status: 'answered',
+      response: text,
+      receivedAt: new Date().toISOString(),
+      source: 'manual',
+    })
+    setEditingId(null)
+    setDraft('')
+  }
+
+  const useReply = (questionId: string, reply: JiraThreadReply) => {
+    onUpdateResponse?.(questionId, {
+      status: 'answered',
+      response: reply.body,
+      receivedAt: reply.created || new Date().toISOString(),
+      source: 'thread',
+      author: reply.author || null,
+      jiraCommentId: reply.commentId,
+      resolvedFromCommentId: reply.commentId,
+    })
+  }
+
+  const handleSummarize = async (q: StakeholderQuestion) => {
+    const thread = q.jiraThread || []
+    if (!thread.length) return
+    setSummarizingId(q.id)
+    setSummaryError(null)
+    try {
+      const res = await summarizeDiscussion({
+        question: q.question,
+        parentBody: q.jiraParentBody || null,
+        issueKey: q.jiraIssueKey || null,
+        replies: thread.map((r) => ({
+          commentId: r.commentId,
+          author: r.author,
+          body: r.body,
+          created: r.created,
+          parentId: r.parentId || q.jiraParentCommentId || q.jiraCommentId || null,
+        })),
+      })
+      const summary = res.summary || ''
+      const resolved = res.resolvedAnswer || ''
+      setSummaryDraft((prev) => ({ ...prev, [q.id]: summary }))
+      onPatchQuestion?.(q.id, { jiraThreadSummary: summary })
+      startEdit(q.id, resolved || summary)
+    } catch (e) {
+      setSummaryError(e instanceof Error ? e.message : 'Could not summarize discussion.')
+    } finally {
+      setSummarizingId(null)
+    }
+  }
 
   return (
     <div className="screen">
       <div className="screen-header">
         <h2>Stakeholder Responses</h2>
-        <p>Track answers from Jira poll, email, or operator proxy. Mandatory items must be answered to continue.</p>
+        <p>
+          Each clarification is a parent thread. Child replies stay nested for context. Summarize the discussion, then
+          resolve one answer Blink can continue with.
+        </p>
       </div>
 
       {state.questions.length === 0 ? (
@@ -54,24 +198,25 @@ export function StakeholderResponsesScreen({
         </section>
       ) : (
         <>
-          <div className="response-summary">
-            <span>
-              {answeredMandatory.length}/{mandatory.length || 0} mandatory answered
-            </span>
-            <span>
-              {
-                state.questions.filter(
-                  (q) =>
-                    (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId),
-                ).length
-              }{' '}
-              on Jira
-            </span>
-            <span>{state.questions.filter((q) => q.sent).length} emailed</span>
+          <div className="response-hero-stats">
+            <div>
+              <strong>
+                {answeredMandatory.length}/{mandatory.length || 0}
+              </strong>
+              <span>Mandatory resolved</span>
+            </div>
+            <div>
+              <strong>{openDiscussions}</strong>
+              <span>Open discussions</span>
+            </div>
+            <div>
+              <strong>{rows.filter((r) => r.resolved).length}</strong>
+              <span>Resolved answers</span>
+            </div>
           </div>
 
           <div className="tab-row">
-            {(['all', 'responded', 'pending'] as Filter[]).map((f) => (
+            {(['all', 'discussion', 'responded', 'pending'] as Filter[]).map((f) => (
               <button
                 key={f}
                 type="button"
@@ -83,113 +228,292 @@ export function StakeholderResponsesScreen({
             ))}
           </div>
 
-          <section className="card">
-            <div className="progress-block">
-              <div className="progress-label">
-                <span>Mandatory answered</span>
-                <strong>
-                  {answeredMandatory.length} / {mandatory.length || 0}
-                </strong>
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${mandatory.length ? (answeredMandatory.length / mandatory.length) * 100 : 100}%`,
-                  }}
-                />
-              </div>
-            </div>
+          <div className="response-toolbar">
+            <button
+              type="button"
+              className="secondary-btn"
+              disabled={refreshing || simulating || resetting || !onRefreshJira}
+              onClick={() => onRefreshJira?.()}
+            >
+              <RefreshCw size={14} className={refreshing ? 'spin' : undefined} />{' '}
+              {refreshing ? 'Fetching threads…' : 'Refresh threads'}
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              disabled={refreshing || simulating || resetting || openDiscussions === 0 || !onResolveAllLatest}
+              onClick={() => onResolveAllLatest?.()}
+            >
+              <CheckCircle2 size={14} /> Resolve all with latest
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              disabled={refreshing || simulating || resetting}
+              onClick={() => void onSimulateResponses()}
+            >
+              <Clock size={14} className={simulating ? 'spin' : undefined} />{' '}
+              {simulating ? 'Simulating…' : 'Simulate Jira replies'}
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              disabled={refreshing || simulating || resetting || !onResetSimulatedReplies}
+              onClick={() => void onResetSimulatedReplies?.()}
+            >
+              <RotateCcw size={14} className={resetting ? 'spin' : undefined} />{' '}
+              {resetting ? 'Resetting…' : 'Reset simulated'}
+            </button>
+            <button type="button" className="secondary-btn" disabled title="Outlook reminders — future">
+              <Bell size={14} /> Send Reminder
+            </button>
+          </div>
 
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Stakeholder</th>
-                    <th>Response</th>
-                    <th>Received</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        No rows in this filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map(({ q, assignee, response }) => (
-                      <tr key={q.id}>
-                        <td>
-                          <div className="avatar-row">
-                            <span className="avatar">
-                              <User size={14} />
-                            </span>
-                            <div>
-                              <strong>{assignee.name}</strong>
-                              <span className="sub">
-                                {roleLabel(q.assignedRoleId)} · {assignee.email || 'unassigned'}
-                              </span>
-                            </div>
+          {summaryError ? <p className="connect-error">{summaryError}</p> : null}
+
+          <div className="discussion-board">
+            {filtered.length === 0 ? (
+              <section className="card">
+                <p className="muted">No rows in this filter.</p>
+              </section>
+            ) : (
+              filtered.map(({ q, assignee, response, thread, resolved }) => {
+                const chip = statusLabel(response, q)
+                const isEditing = editingId === q.id
+                const digest = summaryDraft[q.id] || q.jiraThreadSummary || ''
+                return (
+                  <article
+                    key={q.id}
+                    className={`discussion-card ${resolved ? 'is-resolved' : thread.length ? 'is-live' : 'is-waiting'}`}
+                  >
+                    <header className="discussion-card-head">
+                      <div className="discussion-owner">
+                        <span className="discussion-avatar" aria-hidden>
+                          {initials(assignee.name)}
+                        </span>
+                        <div>
+                          <strong>{assignee.name}</strong>
+                          <span className="sub">
+                            {roleLabel(q.assignedRoleId)}
+                            {assignee.email ? ` · ${assignee.email}` : ''}
+                            {q.mandatory ? ' · mandatory' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="response-card-badges">
+                        <span className={`status-pill ${chip.tone}`}>{chip.label}</span>
+                        {q.jiraIssueKey ? (
+                          q.jiraIssueUrl ? (
+                            <a className="jira-ticket-badge" href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
+                              {q.jiraIssueKey} <ExternalLink size={11} />
+                            </a>
+                          ) : (
+                            <span className="jira-ticket-badge jira-ticket-badge--plain">{q.jiraIssueKey}</span>
+                          )
+                        ) : null}
+                      </div>
+                    </header>
+
+                    <h3 className="discussion-question">{q.question}</h3>
+
+                    <div className="thread-tree">
+                      <div className="thread-node is-parent">
+                        <div className="thread-rail" aria-hidden />
+                        <div className="thread-bubble parent">
+                          <div className="thread-bubble-meta">
+                            <span className="thread-role">Parent · Blink clarification</span>
+                            {q.jiraParentCommentId ? <code>{q.jiraParentCommentId}</code> : null}
                           </div>
-                        </td>
-                        <td>
-                          {response?.status === 'answered'
-                            ? response.response
-                            : q.proposedAnswer
-                              ? `Proposed: ${q.proposedAnswer}`
-                              : q.question.slice(0, 80) + (q.question.length > 80 ? '…' : '')}
-                          {q.jiraIssueKey ? (
-                            <div className="sub">
-                              Jira {q.jiraIssueKey}
-                              {q.jiraIssueUrl ? (
-                                <>
-                                  {' · '}
-                                  <a href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
-                                    open <ExternalLink size={11} />
-                                  </a>
-                                </>
+                          <p>
+                            {q.jiraParentBody?.trim() ||
+                              q.proposedAnswer ||
+                              'Clarification posted to Jira. Child replies appear below.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {thread.length === 0 ? (
+                        <div className="thread-node is-child">
+                          <div className="thread-rail" aria-hidden />
+                          <div className="thread-empty">No child replies yet. Refresh after stakeholders comment.</div>
+                        </div>
+                      ) : (
+                        thread.map((reply, index) => (
+                          <div key={reply.commentId || `${q.id}-${index}`} className="thread-node is-child">
+                            <div className="thread-rail" aria-hidden />
+                            <div className={`thread-bubble child${index === thread.length - 1 ? ' is-latest' : ''}`}>
+                              <div className="thread-bubble-meta">
+                                <span className="thread-role">
+                                  Child · {reply.author || 'Someone'}
+                                  {index === thread.length - 1 ? ' · latest' : ''}
+                                </span>
+                                <span>
+                                  {reply.created ? new Date(reply.created).toLocaleString() : ''}
+                                  {reply.parentId ? ` · parent ${reply.parentId}` : ''}
+                                </span>
+                              </div>
+                              <p>{reply.body}</p>
+                              {onUpdateResponse && !isEditing ? (
+                                <button type="button" className="ghost-btn" onClick={() => useReply(q.id, reply)}>
+                                  Use this reply as resolution
+                                </button>
                               ) : null}
                             </div>
-                          ) : null}
-                        </td>
-                        <td>{response?.receivedAt ? new Date(response.receivedAt).toLocaleString() : '—'}</td>
-                        <td>
-                          <span
-                            className={`status-pill ${response?.status === 'answered' ? 'answered' : 'pending'}`}
-                          >
-                            {response?.status === 'answered'
-                              ? 'Responded'
-                              : q.jiraCommentStatus === 'posted' && q.jiraCommentId
-                                ? 'Awaiting Jira'
-                                : 'Pending'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
 
-            <div className="row-actions">
-              <button type="button" className="secondary-btn" onClick={onSimulateResponses}>
-                <Clock size={14} /> Simulate Responses (Demo)
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                disabled={refreshing || !onRefreshJira}
-                onClick={() => onRefreshJira?.()}
-              >
-                <RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh Jira replies'}
-              </button>
-              <button type="button" className="secondary-btn" disabled title="Outlook reminders — future">
-                <Bell size={14} /> Send Reminder
-              </button>
+                    {thread.length > 0 ? (
+                      <div className="discussion-actions">
+                        <button
+                          type="button"
+                          className="secondary-btn summarize-btn"
+                          disabled={summarizingId === q.id}
+                          onClick={() => void handleSummarize(q)}
+                        >
+                          {summarizingId === q.id ? (
+                            <Loader2 size={14} className="spin" />
+                          ) : (
+                            <Sparkles size={14} />
+                          )}
+                          {summarizingId === q.id ? 'Summarizing…' : 'Summarize discussion'}
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => startEdit(q.id, thread[thread.length - 1]?.body || '')}
+                        >
+                          Compose resolution
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {digest ? (
+                      <div className="discussion-digest">
+                        <div className="discussion-digest-label">
+                          <MessageSquareText size={14} /> Thread digest
+                        </div>
+                        <pre>{digest}</pre>
+                      </div>
+                    ) : null}
+
+                    {resolved || isEditing ? (
+                      <div className="discussion-resolution">
+                        <div className="response-card-answer-meta">
+                          <CheckCircle2 size={14} />
+                          <span>
+                            Resolution
+                            {response?.author ? ` · ${response.author}` : ''}
+                            {response?.receivedAt
+                              ? ` · ${new Date(response.receivedAt).toLocaleString()}`
+                              : ''}
+                          </span>
+                        </div>
+                        {isEditing ? (
+                          <>
+                            <textarea
+                              className="response-card-editor"
+                              rows={5}
+                              value={draft}
+                              onChange={(e) => setDraft(e.target.value)}
+                              placeholder="Resolved answer Blink should use going forward…"
+                            />
+                            <div className="response-card-actions">
+                              <button
+                                type="button"
+                                className="mini-btn"
+                                onClick={() => saveEdit(q.id)}
+                                disabled={!draft.trim()}
+                              >
+                                <CheckCircle2 size={13} /> Save resolution
+                              </button>
+                              <button
+                                type="button"
+                                className="ghost-btn"
+                                onClick={() => {
+                                  setEditingId(null)
+                                  setDraft('')
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <p className="response-card-answer-body">
+                              {response?.response?.trim() || q.jiraReplyBody || ''}
+                            </p>
+                            {q.jiraThreadStale ? (
+                              <p className="response-card-stale">
+                                New child replies arrived after resolve. Re-open or summarize again if the decision
+                                changed.
+                              </p>
+                            ) : null}
+                            {onUpdateResponse ? (
+                              <div className="response-card-actions">
+                                <button
+                                  type="button"
+                                  className="ghost-btn"
+                                  onClick={() =>
+                                    startEdit(q.id, response?.response?.trim() || q.jiraReplyBody || '')
+                                  }
+                                >
+                                  Edit resolution
+                                </button>
+                                {thread.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="ghost-btn"
+                                    onClick={() =>
+                                      onUpdateResponse(q.id, {
+                                        status: 'discussion',
+                                        response: '',
+                                        receivedAt: null,
+                                        source: 'thread',
+                                      })
+                                    }
+                                  >
+                                    Re-open discussion
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    ) : thread.length === 0 ? (
+                      <div className="response-card-waiting">
+                        <p>
+                          {q.jiraCommentStatus === 'posted'
+                            ? 'Parent clarification is on Jira. Waiting for child replies in the thread.'
+                            : 'No discussion yet. Post to Jira first, then refresh.'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })
+            )}
+          </div>
+
+          <div className="progress-block response-progress">
+            <div className="progress-label">
+              <span>Mandatory resolved</span>
+              <strong>
+                {answeredMandatory.length} / {mandatory.length || 0}
+              </strong>
             </div>
-          </section>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${mandatory.length ? (answeredMandatory.length / mandatory.length) * 100 : 100}%`,
+                }}
+              />
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -200,8 +524,19 @@ export function validateStakeholderResponses(state: WizardState): string | null 
   if (state.questions.length === 0) return null
   const pending = state.questions
     .filter((q) => q.mandatory)
-    .filter((q) => state.responses.find((r) => r.questionId === q.id)?.status !== 'answered')
+    .filter((q) => {
+      const response = state.responses.find((r) => r.questionId === q.id)
+      return !isResolved(response, q)
+    })
   if (pending.length > 0) {
+    const discussing = pending.filter(
+      (q) =>
+        (q.jiraThread?.length || 0) > 0 ||
+        state.responses.find((r) => r.questionId === q.id)?.status === 'discussion',
+    ).length
+    if (discussing > 0) {
+      return `${pending.length} mandatory question(s) still need a resolved answer (${discussing} in discussion).`
+    }
     return `${pending.length} mandatory question(s) still pending.`
   }
   return null

@@ -51,7 +51,7 @@ export function matchableJiraIssues(state: WizardState): MatchableIssue[] {
     if (issues.some((item) => item.key === row.jiraKey)) continue
     issues.push({
       key: row.jiraKey,
-      url: row.jiraUrl,
+      url: row.jiraUrl || row.url,
       title: row.jiraKey,
       type: row.type === 'Epic' ? 'Epic' : 'Story',
       sourceId: row.sourceId || undefined,

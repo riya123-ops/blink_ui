@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { CheckCircle2, ExternalLink, Layers, Loader2, RefreshCw, Ticket } from 'lucide-react'
-import type { WizardState } from '../wizard/types'
+import type { JiraCreatedIssue, WizardState } from '../wizard/types'
 import {
   createJiraIssuesFromState,
   isJiraReady,
@@ -12,6 +12,58 @@ interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
   sourceText: string
+}
+
+function jiraBrowseUrl(
+  item: { jiraUrl?: string | null; url?: string | null; jiraKey?: string | null },
+  baseUrl?: string | null,
+): string | null {
+  const direct = item.jiraUrl || item.url
+  if (direct) return direct
+  if (item.jiraKey && baseUrl) {
+    return `${baseUrl.replace(/\/$/, '')}/browse/${item.jiraKey}`
+  }
+  return null
+}
+
+function TicketBadge({
+  created,
+  baseUrl,
+}: {
+  created?: JiraCreatedIssue
+  baseUrl?: string | null
+}) {
+  if (!created) return null
+
+  if (created.status === 'created' && created.jiraKey) {
+    const href = jiraBrowseUrl(created, baseUrl)
+    if (!href) {
+      return <span className="jira-ticket-badge jira-ticket-badge--plain">{created.jiraKey}</span>
+    }
+    return (
+      <a
+        className="jira-ticket-badge"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={`Open ${created.jiraKey} in Jira`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span>{created.jiraKey}</span>
+        <ExternalLink size={11} aria-hidden />
+      </a>
+    )
+  }
+
+  if (created.status === 'failed') {
+    return (
+      <span className="jira-ticket-badge jira-ticket-badge--failed" title={created.message || 'Create failed'}>
+        Failed
+      </span>
+    )
+  }
+
+  return null
 }
 
 export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
@@ -28,7 +80,7 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
   const wording = sourceText.trim()
 
   const createdBySource = useMemo(() => {
-    const map = new Map<string, NonNullable<WizardState['jiraCreatedIssues']>[number]>()
+    const map = new Map<string, JiraCreatedIssue>()
     for (const item of state.jiraCreatedIssues || []) {
       if (item.sourceId) map.set(item.sourceId, item)
     }
@@ -78,6 +130,7 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
 
   const canCreate = jiraReady && (epics.length > 0 || stories.length > 0) && !creatingIssues && !planningScope
   const itemCount = epics.length + stories.length
+  const alreadyCreated = createdOk > 0
 
   return (
     <section className="card ref-card jira-scope-panel">
@@ -140,17 +193,14 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
             const childStories = stories.filter((story) => story.epicId === epic.id || epic.storyIds?.includes(story.id))
             const epicCreated = createdBySource.get(epic.id)
             return (
-              <article key={epic.id} className="jira-epic-card">
-                <header>
+              <article
+                key={epic.id}
+                className={`jira-epic-card${epicCreated?.status === 'created' ? ' is-linked' : ''}`}
+              >
+                <header className="jira-row">
                   <span className="jira-type epic">Epic</span>
-                  <strong>{epic.title}</strong>
-                  {epicCreated?.jiraKey ? (
-                    <a className="jira-key-link" href={epicCreated.jiraUrl || '#'} target="_blank" rel="noreferrer">
-                      {epicCreated.jiraKey} <ExternalLink size={11} />
-                    </a>
-                  ) : (
-                    <code>{epic.id}</code>
-                  )}
+                  <strong className="jira-row-title">{epic.title}</strong>
+                  <TicketBadge created={epicCreated} baseUrl={jira?.baseUrl} />
                 </header>
                 {epic.objective && <p>{epic.objective}</p>}
                 {childStories.length > 0 && (
@@ -158,16 +208,13 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
                     {childStories.map((story) => {
                       const storyCreated = createdBySource.get(story.id)
                       return (
-                        <li key={story.id}>
+                        <li
+                          key={story.id}
+                          className={`jira-row${storyCreated?.status === 'created' ? ' is-linked' : ''}`}
+                        >
                           <span className="jira-type story">Story</span>
-                          <span className="jira-story-title">{story.title}</span>
-                          {storyCreated?.jiraKey ? (
-                            <a className="jira-key-link" href={storyCreated.jiraUrl || '#'} target="_blank" rel="noreferrer">
-                              {storyCreated.jiraKey}
-                            </a>
-                          ) : (
-                            <code>{story.id}</code>
-                          )}
+                          <span className="jira-row-title">{story.title}</span>
+                          <TicketBadge created={storyCreated} baseUrl={jira?.baseUrl} />
                         </li>
                       )
                     })}
@@ -189,11 +236,13 @@ export function JiraScopePanel({ state, onUpdate, sourceText }: Props) {
           {creatingIssues ? <Loader2 size={16} className="spin" /> : <Ticket size={16} />}
           {creatingIssues
             ? 'Creating in Jira…'
-            : `Create ${itemCount || ''} item${itemCount === 1 ? '' : 's'} in Jira`}
+            : alreadyCreated
+              ? `Recreate / sync ${itemCount || ''} item${itemCount === 1 ? '' : 's'}`
+              : `Create ${itemCount || ''} item${itemCount === 1 ? '' : 's'} in Jira`}
         </button>
         {createdOk > 0 && (
           <span className="jira-created-note">
-            <CheckCircle2 size={14} /> {createdOk} created in {jira?.projectKey}
+            <CheckCircle2 size={14} /> {createdOk} linked in {jira?.projectKey}
           </span>
         )}
       </div>

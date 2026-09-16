@@ -294,6 +294,14 @@ export interface WizardState extends SetupForm {
   workClassification?: WorkClassificationState | null
   specification?: SpecificationState | null
   technicalPlan?: TechnicalPlanState | null
+  stakeholderPack?: { issueId?: string; markdown?: string; rolesCovered?: string[]; openQuestions?: string[]; generatedAt?: string } | null
+  groomingRevision?: { issueId?: string; revisionNumber?: number; requirementMarkdown?: string; revisionSummaryMarkdown?: string; changesApplied?: string[] } | null
+  groomingSignOff?: { issueId?: string; markdown?: string; readyForHumanSignOff?: boolean; blockers?: string[]; openQuestions?: string[]; capturedAt?: string } | null
+  gitWritten?: boolean
+  gitApplyCommit?: { sha?: string; url?: string; branch?: string; owner?: string; repo?: string } | null
+  implementStep?: { issueId?: string; commitMessage?: string; summary?: string; files?: { path: string; content: string; repoHint?: string }[]; notes?: string[] } | null
+  draftPullRequests?: { url?: string; number?: number; branch?: string; owner?: string; repo?: string; sha?: string; kind?: string }[]
+  qaValidation?: { issueId?: string; verdict?: string; summary?: string; markdown?: string; draftPrUrl?: string | null } | null
   jiraCreatedIssues?: JiraCreatedIssue[]
 }
 
@@ -403,6 +411,14 @@ export const defaultWizardState: WizardState = {
   workClassification: null,
   specification: null,
   technicalPlan: null,
+  stakeholderPack: null,
+  groomingRevision: null,
+  groomingSignOff: null,
+  gitWritten: false,
+  gitApplyCommit: null,
+  implementStep: null,
+  draftPullRequests: [],
+  qaValidation: null,
   jiraCreatedIssues: [],
 }
 
@@ -508,6 +524,14 @@ export function clearGroomingPatch(): Partial<WizardState> {
     workClassification: null,
     specification: null,
     technicalPlan: null,
+    stakeholderPack: null,
+    groomingRevision: null,
+    groomingSignOff: null,
+    gitWritten: false,
+    gitApplyCommit: null,
+    implementStep: null,
+    draftPullRequests: [],
+    qaValidation: null,
     jiraCreatedIssues: [],
   }
 }

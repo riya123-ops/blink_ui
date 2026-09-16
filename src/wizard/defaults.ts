@@ -184,6 +184,12 @@ export function githubRepoSlug(projectName: string): string {
 
 const REPO_VARIANTS = [
   {
+    id: 'repo-workspace',
+    suffix: 'workspace',
+    purpose: 'Workspace',
+    description: 'AI-SDLC overlay and planning artifacts',
+  },
+  {
     id: 'repo-backend',
     suffix: 'backend',
     purpose: 'Backend',
@@ -225,6 +231,16 @@ export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology
   return repos.map((repo) => {
     const name = repo.name.toLowerCase()
     const purpose = repo.purpose.toLowerCase()
+    if (purpose === 'workspace' || name.endsWith('-workspace') || name.includes('workspace')) {
+      return {
+        repoId: repo.id,
+        language: 'Markdown / YAML',
+        framework: 'AI-SDLC workspace',
+        database: '—',
+        buildTool: '—',
+        status: 'confirmed' as const,
+      }
+    }
     if (purpose === 'frontend' || name.endsWith('-frontend') || name.includes('web')) {
       return {
         repoId: repo.id,

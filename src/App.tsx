@@ -1951,6 +1951,7 @@ export default function App() {
         return (
           <StakeholderResponsesScreen
             state={state}
+            onUpdate={patch}
             onSimulateResponses={handleSimulateResponses}
             onResetSimulatedReplies={handleResetSimulatedReplies}
             onRefreshJira={() => void handleRefreshJira()}

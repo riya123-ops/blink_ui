@@ -49,10 +49,30 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1rem 0.45rem 0.75rem 0.7rem;
   background: rgba(255, 255, 255, 0.72);
   border-right: 1px solid rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(22px) saturate(1.15);
   -webkit-backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.sidebar-nav-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.sidebar-nav-wrap .nav-card {
+  scroll-padding-bottom: 0.5rem;
+  padding-right: 0.2rem;
+  padding-bottom: 0.45rem;
+}
+
+.nav-phase-label {
+  line-height: 1.35;
+  overflow: visible;
 }
 
 .nav-item {
@@ -162,7 +182,7 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
   flex-direction: column;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.25rem 0 6.25rem;
+  padding: 0.25rem 0;
   scrollbar-width: thin;
 }
 
@@ -234,52 +254,43 @@ body.is-resizing-sidebar .sidebar {
   }
 }
 
-.sidebar-nav-wrap.has-account-chip {
-  padding-bottom: 4.75rem;
-}
-
+.sidebar-nav-wrap.has-account-chip,
 .sidebar-nav-wrap.has-account-panel {
-  padding-bottom: calc(var(--account-panel-h, 148px) + 1.1rem);
+  padding-bottom: 0;
 }
 
 .account-float {
-  position: absolute;
-  left: 0.65rem;
-  right: 0.65rem;
-  bottom: 0.55rem;
-  z-index: 12;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 2;
   display: flex;
   justify-content: flex-start;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  margin-top: 0.45rem;
   pointer-events: none;
 }
 
+.account-float.is-open {
+  align-self: stretch;
+}
+
 .sidebar.is-collapsed .account-float {
-  left: 0;
-  right: 0;
+  align-self: center;
   justify-content: center;
+  margin-top: 0.4rem;
 }
 
 .account-float > * {
   pointer-events: auto;
 }
 
-.account-float.is-collapsed {
-  justify-content: flex-start;
-}
-
-.sidebar.is-collapsed .account-float.is-collapsed {
-  justify-content: center;
-}
-
 .account-float-collapsed {
   display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.sidebar.is-collapsed .account-float-collapsed {
   flex-direction: column;
+  align-items: center;
   gap: 0.4rem;
 }
 
@@ -544,8 +555,8 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 1.1rem calc(var(--action-dock-h) + 0.85rem) 1.5rem;
-  scrollbar-gutter: unset;
+  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  scrollbar-gutter: auto;
   width: 100%;
   max-width: none;
 }
@@ -555,7 +566,7 @@ body.is-resizing-sidebar .sidebar {
   position: absolute;
   top: 0.75rem;
   left: 0.85rem;
-  right: 0.85rem;
+  right: 0.35rem;
   z-index: 28;
   display: flex;
   align-items: flex-start;
@@ -636,13 +647,17 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 1.1rem calc(var(--action-dock-h) + 0.85rem) 1.5rem;
-  scrollbar-gutter: unset;
+  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  scrollbar-gutter: auto;
 }
 
 .content-fill,
 .content-welcome {
   padding-top: 0;
+}
+
+.content-fill {
+  padding-right: 0;
 }
 
 .content-welcome {
@@ -664,7 +679,7 @@ body.is-resizing-sidebar .sidebar {
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding: 0 1rem;
+  padding: 0 0.35rem 0 1rem;
   pointer-events: none;
   background: none !important;
   border: none !important;
@@ -1181,7 +1196,7 @@ body.is-resizing-sidebar .sidebar {
 
   .content {
     padding-left: 1rem;
-    padding-right: 1rem;
+    padding-right: 0;
   }
 
   .dev-window-opener {

@@ -1047,7 +1047,7 @@ export default function App() {
   }, [patch])
 
   const applySendResults = useCallback(
-    (results: { question_id: string; status: string; message: string }[], deliveryMode: string, outboxDir: string | null) => {
+    (results: { question_id: string; status: string; message: string }[], deliveryMode: string, _outboxDir: string | null) => {
       const now = new Date().toISOString()
       setState((prev) => {
         const questions = prev.questions.map((q) => {
@@ -1075,7 +1075,7 @@ export default function App() {
       } else if (deliveryMode === 'outbox') {
         setStatus({
           type: 'success',
-          message: `Emails saved to outbox folder${outboxDir ? `: ${outboxDir}` : ''}. Configure BLINK_SMTP_* env vars for live SMTP.`,
+          message: 'Demo mode: marked sent without SMTP. Live email comes later.',
         })
       } else {
         setStatus({ type: 'success', message: 'Emails sent successfully via SMTP.' })

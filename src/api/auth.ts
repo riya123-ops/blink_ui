@@ -1,4 +1,4 @@
-import { apiUrl } from './blink'
+import { apiUrl, timedFetch } from './blink'
 
 export interface OtpRequestResponse {
   message: string
@@ -31,7 +31,7 @@ export interface AuthLoginConfig {
 }
 
 export async function fetchLoginConfig(): Promise<AuthLoginConfig> {
-  const response = await fetch(apiUrl('/auth/config'))
+  const response = await timedFetch(apiUrl('/auth/config'))
   if (!response.ok) {
     throw new Error(await readError(response))
   }
@@ -39,7 +39,7 @@ export async function fetchLoginConfig(): Promise<AuthLoginConfig> {
 }
 
 export async function requestLoginOtp(email: string, accessCode?: string): Promise<OtpRequestResponse> {
-  const response = await fetch(apiUrl('/auth/otp/request'), {
+  const response = await timedFetch(apiUrl('/auth/otp/request'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, accessCode: accessCode || undefined }),
@@ -51,7 +51,7 @@ export async function requestLoginOtp(email: string, accessCode?: string): Promi
 }
 
 export async function verifyLoginOtp(email: string, otp: string, accessCode?: string): Promise<AuthSessionResponse> {
-  const response = await fetch(apiUrl('/auth/otp/verify'), {
+  const response = await timedFetch(apiUrl('/auth/otp/verify'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, otp, accessCode: accessCode || undefined }),

@@ -31,6 +31,10 @@ import {
   StakeholderResponsesScreen,
   validateStakeholderResponses,
 } from './screens/StakeholderResponsesScreen'
+import {
+  SdlcPlanningScreen,
+  validateSdlcPlanning,
+} from './screens/SdlcPlanningScreen'
 import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
   assigneeForQuestion,
@@ -182,6 +186,8 @@ export default function App() {
         return validateStakeholderQuestions(state)
       case 'stakeholder-responses':
         return validateStakeholderResponses(state)
+      case 'sdlc-planning':
+        return validateSdlcPlanning(state)
       default:
         return null
     }
@@ -1481,6 +1487,8 @@ export default function App() {
             refreshing={refreshingJira}
           />
         )
+      case 'sdlc-planning':
+        return <SdlcPlanningScreen state={state} onUpdate={patch} />
       case 'project-shape':
         return <ProjectShapeScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':

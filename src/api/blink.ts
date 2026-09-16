@@ -1022,6 +1022,11 @@ export async function clarifyRequirement(options: {
   }
 }
 
+export interface OverlayFilePayload {
+  path: string
+  content: string
+}
+
 export interface PlanProductScopeResponse {
   status: string
   message: string
@@ -1030,6 +1035,7 @@ export interface PlanProductScopeResponse {
   epicIds?: string[]
   storyIds?: string[]
   productScope?: ProductScopeData
+  overlayFiles?: OverlayFilePayload[]
   errors?: string[]
 }
 
@@ -1055,4 +1061,123 @@ export async function planProductScope(
   })
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<PlanProductScopeResponse>
+}
+
+export interface AdvisoryAgentResponse {
+  status: string
+  message: string
+  nextCommand?: string
+  errors?: string[]
+  overlayFiles?: OverlayFilePayload[]
+  productScope?: ProductScopeData
+  proposalDigest?: string
+  confirmationDigest?: string
+  productScopeRevision?: number
+  workClassification?: WorkClassificationData
+  classification?: WorkClassificationData
+  specification?: SpecificationData
+  technicalPlan?: TechnicalPlanData
+  issueId?: string
+}
+
+export interface WorkClassificationData {
+  tier?: number
+  workType?: string
+  workSubtype?: string | null
+  modernizationEnabled?: boolean
+  modernizationType?: string | null
+  riskSummary?: string
+  evidence?: string[]
+  requiredRigor?: string[]
+  openQuestions?: string[]
+  defaultIfAmbiguous?: string
+  markdown?: string
+  issueId?: string
+}
+
+export interface SpecificationData {
+  title?: string
+  summary?: string
+  acceptanceCriteria?: string[]
+  openQuestions?: string[]
+  markdown?: string
+  issueId?: string
+}
+
+export interface TechnicalPlanData {
+  summary?: string
+  steps?: { id?: string; title?: string; detail?: string }[]
+  rollback?: string
+  testStrategy?: string
+  openQuestions?: string[]
+  markdown?: string
+  issueId?: string
+}
+
+async function postAdvisory(
+  projectId: string,
+  pathSuffix: string,
+  body: Record<string, unknown>,
+): Promise<AdvisoryAgentResponse> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/${pathSuffix}`), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<AdvisoryAgentResponse>
+}
+
+export function confirmProductScope(
+  projectId: string,
+  payload: {
+    expectedDigest: string
+    expectedRevision?: number
+    overlayFiles: OverlayFilePayload[]
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'confirm-product-scope', payload)
+}
+
+export function classifyWork(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'classify-work', payload)
+}
+
+export function createSpec(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    workClassification?: WorkClassificationData | null
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'create-spec', payload)
+}
+
+export function technicalPlan(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    workClassification?: WorkClassificationData | null
+    specification?: SpecificationData | null
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'technical-plan', payload)
 }

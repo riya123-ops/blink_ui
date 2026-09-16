@@ -33,6 +33,7 @@ export type WizardStep =
   | 'requirements'
   | 'stakeholder-questions'
   | 'stakeholder-responses'
+  | 'sdlc-planning'
   | 'project-shape'
   | 'repositories'
   | 'technology-per-repo'
@@ -145,12 +146,54 @@ export interface ScopeClassification {
 export interface ProductScopeData {
   productId?: string
   proposalDigest?: string
+  confirmationDigest?: string
+  productScopeRevision?: number
+  status?: string
   classification?: ScopeClassification | Record<string, unknown>
   epicIds?: string[]
   storyIds?: string[]
   epics?: EpicSummary[]
   stories?: StorySummary[]
   markdown?: string
+}
+
+export interface ScopeOverlayFile {
+  path: string
+  content: string
+}
+
+export interface WorkClassificationState {
+  tier?: number
+  workType?: string
+  workSubtype?: string | null
+  modernizationEnabled?: boolean
+  modernizationType?: string | null
+  riskSummary?: string
+  evidence?: string[]
+  requiredRigor?: string[]
+  openQuestions?: string[]
+  defaultIfAmbiguous?: string
+  markdown?: string
+  issueId?: string
+}
+
+export interface SpecificationState {
+  title?: string
+  summary?: string
+  acceptanceCriteria?: string[]
+  openQuestions?: string[]
+  markdown?: string
+  issueId?: string
+}
+
+export interface TechnicalPlanState {
+  summary?: string
+  steps?: { id?: string; title?: string; detail?: string }[]
+  rollback?: string
+  testStrategy?: string
+  openQuestions?: string[]
+  markdown?: string
+  issueId?: string
 }
 
 export interface WizardState extends SetupForm {
@@ -216,6 +259,10 @@ export interface WizardState extends SetupForm {
   setupDeliveryReady: boolean
   productScope?: ProductScopeData | null
   scopeDigest?: string | null
+  scopeOverlays?: ScopeOverlayFile[]
+  workClassification?: WorkClassificationState | null
+  specification?: SpecificationState | null
+  technicalPlan?: TechnicalPlanState | null
   jiraCreatedIssues?: JiraCreatedIssue[]
 }
 
@@ -320,6 +367,10 @@ export const defaultWizardState: WizardState = {
   setupDeliveryReady: false,
   productScope: null,
   scopeDigest: null,
+  scopeOverlays: [],
+  workClassification: null,
+  specification: null,
+  technicalPlan: null,
   jiraCreatedIssues: [],
 }
 
@@ -417,6 +468,10 @@ export function clearGroomingPatch(): Partial<WizardState> {
     questionsSent: false,
     productScope: null,
     scopeDigest: null,
+    scopeOverlays: [],
+    workClassification: null,
+    specification: null,
+    technicalPlan: null,
     jiraCreatedIssues: [],
   }
 }

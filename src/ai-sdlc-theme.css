@@ -65,9 +65,9 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 }
 
 .sidebar-nav-wrap .nav-card {
-  scroll-padding-bottom: 0.5rem;
   padding-right: 0.2rem;
-  padding-bottom: 0.45rem;
+  padding-bottom: 6.25rem;
+  scroll-padding-bottom: 6.25rem;
 }
 
 .nav-phase-label {
@@ -254,33 +254,35 @@ body.is-resizing-sidebar .sidebar {
   }
 }
 
-.sidebar-nav-wrap.has-account-chip,
-.sidebar-nav-wrap.has-account-panel {
-  padding-bottom: 0;
+.sidebar-nav-wrap.has-account-chip .nav-card {
+  padding-bottom: 6.25rem;
+  scroll-padding-bottom: 6.25rem;
+}
+
+.sidebar-nav-wrap.has-account-panel .nav-card {
+  padding-bottom: calc(var(--account-panel-h, 148px) + 1.25rem);
+  scroll-padding-bottom: calc(var(--account-panel-h, 148px) + 1.25rem);
 }
 
 .account-float {
-  position: relative;
-  left: auto;
-  right: auto;
-  bottom: auto;
-  z-index: 2;
+  position: absolute;
+  left: 0.7rem;
+  right: 0.45rem;
+  bottom: 0.75rem;
+  z-index: 12;
   display: flex;
   justify-content: flex-start;
-  align-self: flex-start;
-  flex: 0 0 auto;
-  margin-top: 0.45rem;
   pointer-events: none;
 }
 
 .account-float.is-open {
-  align-self: stretch;
+  justify-content: stretch;
 }
 
 .sidebar.is-collapsed .account-float {
-  align-self: center;
+  left: 0;
+  right: 0;
   justify-content: center;
-  margin-top: 0.4rem;
 }
 
 .account-float > * {

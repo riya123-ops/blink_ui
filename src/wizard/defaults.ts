@@ -104,25 +104,25 @@ export interface IntegrationItem {
 }
 
 export const TOPOLOGY_OPTIONS = [
-  { id: 'single-app', label: 'Single App', icon: '📱' },
-  { id: 'frontend-only', label: 'Frontend Only', icon: '🖥️' },
-  { id: 'full-stack', label: 'Full Stack', icon: '⚡' },
-  { id: 'data-platform', label: 'Data Platform', icon: '📊' },
-  { id: 'microservices', label: 'Microservices', icon: '🔗' },
-  { id: 'ai-ml', label: 'AI / ML', icon: '🤖' },
+  { id: 'single-app', label: 'Single App', icon: '📱', hint: 'One deployable product surface' },
+  { id: 'frontend-only', label: 'Frontend Only', icon: '🖥️', hint: 'UI against existing APIs' },
+  { id: 'full-stack', label: 'Full Stack', icon: '⚡', hint: 'UI + API together' },
+  { id: 'data-platform', label: 'Data Platform', icon: '📊', hint: 'Pipelines, warehouse, jobs' },
+  { id: 'microservices', label: 'Microservices', icon: '🔗', hint: 'Multiple independently deployable services' },
+  { id: 'ai-ml', label: 'AI / ML', icon: '🤖', hint: 'Model serving and training paths' },
 ]
 
 export const REPO_MODEL_OPTIONS = [
-  { id: 'single-repo', label: 'Single Repo' },
-  { id: 'monorepo', label: 'Monorepo' },
-  { id: 'multi-repo', label: 'Multi-Repo' },
+  { id: 'single-repo', label: 'Single Repo', hint: 'One Git repo for the product' },
+  { id: 'monorepo', label: 'Monorepo', hint: 'One repo with multiple packages/apps' },
+  { id: 'multi-repo', label: 'Multi-Repo', hint: 'Separate Git repos per component' },
 ]
 
 export const ARCHITECTURE_OPTIONS = [
-  { id: 'layered', label: 'Layered' },
-  { id: 'microservices', label: 'Microservices' },
-  { id: 'modular-monolith', label: 'Modular Monolith' },
-  { id: 'event-driven', label: 'Event Driven' },
+  { id: 'layered', label: 'Layered', hint: 'Presentation → domain → data' },
+  { id: 'microservices', label: 'Microservices', hint: 'Service boundaries and APIs' },
+  { id: 'modular-monolith', label: 'Modular Monolith', hint: 'Modules in one deployable' },
+  { id: 'event-driven', label: 'Event Driven', hint: 'Async events between components' },
 ]
 
 export const IDE_TOOL_OPTIONS = [
@@ -182,42 +182,155 @@ export function githubRepoSlug(projectName: string): string {
   return slug || 'project'
 }
 
-const REPO_VARIANTS = [
-  {
+type RepoVariant = {
+  id: string
+  suffix: string
+  purpose: string
+  description: string
+}
+
+const VARIANT = {
+  workspace: {
     id: 'repo-workspace',
     suffix: 'workspace',
     purpose: 'Workspace',
     description: 'AI-SDLC overlay and planning artifacts',
   },
-  {
+  app: {
+    id: 'repo-app',
+    suffix: 'app',
+    purpose: 'Application',
+    description: 'Primary product application',
+  },
+  backend: {
     id: 'repo-backend',
     suffix: 'backend',
     purpose: 'Backend',
     description: 'Application API and business services',
   },
-  {
+  frontend: {
     id: 'repo-frontend',
     suffix: 'frontend',
     purpose: 'Frontend',
     description: 'Web UI',
   },
-  {
+  db: {
     id: 'repo-db',
     suffix: 'db',
     purpose: 'Database',
     description: 'Schema, migrations, and data scripts',
   },
-  {
+  infra: {
     id: 'repo-infra',
     suffix: 'infra',
     purpose: 'Infrastructure',
     description: 'Provisioning, environments, and delivery',
   },
-] as const
+  data: {
+    id: 'repo-data',
+    suffix: 'data',
+    purpose: 'Data',
+    description: 'Pipelines, warehouse jobs, and analytics',
+  },
+  ml: {
+    id: 'repo-ml',
+    suffix: 'ml',
+    purpose: 'ML',
+    description: 'Training, evaluation, and model packaging',
+  },
+  workers: {
+    id: 'repo-workers',
+    suffix: 'workers',
+    purpose: 'Workers',
+    description: 'Async jobs and event consumers',
+  },
+} as const satisfies Record<string, RepoVariant>
 
-export function defaultRepositories(projectName: string): RepoDefinition[] {
-  const slug = githubRepoSlug(projectName)
-  return REPO_VARIANTS.map((variant) => ({
+export interface ProjectShapeInput {
+  topology?: string
+  repositoryModel?: string
+  architectureStyle?: string
+}
+
+function topologyVariants(topology: string): RepoVariant[] {
+  switch (topology) {
+    case 'single-app':
+      return [VARIANT.workspace, VARIANT.app]
+    case 'frontend-only':
+      return [VARIANT.workspace, VARIANT.frontend]
+    case 'full-stack':
+      return [VARIANT.workspace, VARIANT.backend, VARIANT.frontend, VARIANT.db]
+    case 'data-platform':
+      return [VARIANT.workspace, VARIANT.data, VARIANT.backend, VARIANT.infra]
+    case 'ai-ml':
+      return [VARIANT.workspace, VARIANT.backend, VARIANT.ml, VARIANT.frontend, VARIANT.infra]
+    case 'microservices':
+    default:
+      return [VARIANT.workspace, VARIANT.backend, VARIANT.frontend, VARIANT.db, VARIANT.infra]
+  }
+}
+
+function applyArchitecture(variants: RepoVariant[], architectureStyle: string): RepoVariant[] {
+  if (architectureStyle === 'event-driven' && !variants.some((v) => v.id === VARIANT.workers.id)) {
+    return [...variants, VARIANT.workers]
+  }
+  if (architectureStyle === 'modular-monolith') {
+    const kept = variants.filter((v) => v.id !== VARIANT.infra.id && v.id !== VARIANT.db.id)
+    const hasAppSurface = kept.some((v) =>
+      v.purpose === 'Backend' || v.purpose === 'Application' || v.purpose === 'Frontend',
+    )
+    return hasAppSurface ? kept : [...kept, VARIANT.app]
+  }
+  return variants
+}
+
+function applyRepoModel(variants: RepoVariant[], repositoryModel: string, slug: string): RepoDefinition[] {
+  const workspace = variants.find((v) => v.id === VARIANT.workspace.id) || VARIANT.workspace
+  const others = variants.filter((v) => v.id !== VARIANT.workspace.id)
+
+  if (repositoryModel === 'single-repo') {
+    return [
+      {
+        id: workspace.id,
+        name: `${slug}-workspace`,
+        purpose: workspace.purpose,
+        description: workspace.description,
+        owner: '',
+        dependencies: '',
+      },
+      {
+        id: 'repo-product',
+        name: slug,
+        purpose: 'Product',
+        description: `Single repo for ${others.map((o) => o.purpose.toLowerCase()).join(', ') || 'the product'}`,
+        owner: '',
+        dependencies: '',
+      },
+    ]
+  }
+
+  if (repositoryModel === 'monorepo') {
+    return [
+      {
+        id: workspace.id,
+        name: `${slug}-workspace`,
+        purpose: workspace.purpose,
+        description: workspace.description,
+        owner: '',
+        dependencies: '',
+      },
+      {
+        id: 'repo-monorepo',
+        name: `${slug}-monorepo`,
+        purpose: 'Monorepo',
+        description: `Packages: ${others.map((o) => o.suffix).join(', ') || 'app'}`,
+        owner: '',
+        dependencies: '',
+      },
+    ]
+  }
+
+  return variants.map((variant) => ({
     id: variant.id,
     name: `${slug}-${variant.suffix}`,
     purpose: variant.purpose,
@@ -227,7 +340,24 @@ export function defaultRepositories(projectName: string): RepoDefinition[] {
   }))
 }
 
-export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology[] {
+/** Suggested repos from project name + Project Shape choices. */
+export function defaultRepositories(
+  projectName: string,
+  shape: ProjectShapeInput = {},
+): RepoDefinition[] {
+  const slug = githubRepoSlug(projectName)
+  const topology = shape.topology || 'full-stack'
+  const repositoryModel = shape.repositoryModel || 'multi-repo'
+  const architectureStyle = shape.architectureStyle || 'layered'
+  const variants = applyArchitecture(topologyVariants(topology), architectureStyle)
+  return applyRepoModel(variants, repositoryModel, slug)
+}
+
+export function defaultRepoTechnologies(
+  repos: RepoDefinition[],
+  shape: ProjectShapeInput = {},
+): RepoTechnology[] {
+  const topology = shape.topology || ''
   return repos.map((repo) => {
     const name = repo.name.toLowerCase()
     const purpose = repo.purpose.toLowerCase()
@@ -248,17 +378,17 @@ export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology
         framework: 'React 19 + Vite',
         database: '—',
         buildTool: 'npm / Vite',
-        status: 'confirmed' as const,
+        status: 'recommendation' as const,
       }
     }
-    if (purpose === 'database' || name.endsWith('-db')) {
+    if (purpose === 'database' || name.endsWith('-db') || purpose === 'data') {
       return {
         repoId: repo.id,
-        language: 'SQL',
-        framework: 'PostgreSQL',
+        language: purpose === 'data' ? 'Python / SQL' : 'SQL',
+        framework: purpose === 'data' ? 'dbt / Spark jobs' : 'PostgreSQL',
         database: 'PostgreSQL',
-        buildTool: 'Flyway / Liquibase',
-        status: 'confirmed' as const,
+        buildTool: purpose === 'data' ? 'Airflow / dbt' : 'Flyway / Liquibase',
+        status: 'recommendation' as const,
       }
     }
     if (purpose === 'infrastructure' || name.endsWith('-infra')) {
@@ -268,18 +398,165 @@ export function defaultRepoTechnologies(repos: RepoDefinition[]): RepoTechnology
         framework: 'Terraform',
         database: '—',
         buildTool: 'Terraform',
-        status: 'confirmed' as const,
+        status: 'recommendation' as const,
+      }
+    }
+    if (purpose === 'ml' || name.endsWith('-ml')) {
+      return {
+        repoId: repo.id,
+        language: 'Python',
+        framework: 'PyTorch / scikit-learn',
+        database: 'Feature store / object storage',
+        buildTool: 'poetry / Docker',
+        status: 'recommendation' as const,
+      }
+    }
+    if (purpose === 'workers' || name.endsWith('-workers')) {
+      return {
+        repoId: repo.id,
+        language: 'TypeScript / Go',
+        framework: 'Queue consumers',
+        database: '—',
+        buildTool: 'Docker',
+        status: 'recommendation' as const,
+      }
+    }
+    if (purpose === 'monorepo' || purpose === 'product' || purpose === 'application') {
+      if (topology === 'frontend-only') {
+        return {
+          repoId: repo.id,
+          language: 'TypeScript',
+          framework: 'React 19 + Vite',
+          database: '—',
+          buildTool: 'npm / Vite',
+          status: 'recommendation' as const,
+        }
+      }
+      if (topology === 'ai-ml') {
+        return {
+          repoId: repo.id,
+          language: 'TypeScript + Python',
+          framework: 'API + model serving',
+          database: 'PostgreSQL',
+          buildTool: 'Docker Compose',
+          status: 'recommendation' as const,
+        }
+      }
+      return {
+        repoId: repo.id,
+        language: 'TypeScript / Java 21',
+        framework: 'Full-stack application',
+        database: 'PostgreSQL',
+        buildTool: 'Docker',
+        status: 'recommendation' as const,
       }
     }
     return {
       repoId: repo.id,
-      language: 'Java 21',
-      framework: 'Spring Boot 3.4',
+      language: topology === 'ai-ml' ? 'Python / Java 21' : 'Java 21',
+      framework: topology === 'data-platform' ? 'Spring Boot 3.4 + data services' : 'Spring Boot 3.4',
       database: 'PostgreSQL',
       buildTool: 'Gradle',
-      status: 'confirmed' as const,
+      status: 'recommendation' as const,
     }
   })
+}
+
+export function platformOptionsForCloud(cloudProvider: string): {
+  deployment: { id: string; label: string }[]
+  iac: { id: string; label: string }[]
+  secrets: { id: string; label: string }[]
+  cicd: { id: string; label: string }[]
+} {
+  switch (cloudProvider) {
+    case 'azure':
+      return {
+        deployment: [
+          { id: 'aks', label: 'Azure Kubernetes (AKS)' },
+          { id: 'app-service', label: 'Azure App Service' },
+          { id: 'container-apps', label: 'Azure Container Apps' },
+        ],
+        iac: [
+          { id: 'bicep', label: 'Bicep' },
+          { id: 'terraform', label: 'Terraform' },
+        ],
+        secrets: [
+          { id: 'azure-key-vault', label: 'Azure Key Vault' },
+          { id: 'vault', label: 'HashiCorp Vault' },
+        ],
+        cicd: [
+          { id: 'github-actions', label: 'GitHub Actions' },
+          { id: 'azure-devops', label: 'Azure DevOps' },
+        ],
+      }
+    case 'gcp':
+      return {
+        deployment: [
+          { id: 'gke', label: 'Google Kubernetes (GKE)' },
+          { id: 'cloud-run', label: 'Cloud Run' },
+        ],
+        iac: [
+          { id: 'terraform', label: 'Terraform' },
+          { id: 'pulumi', label: 'Pulumi' },
+        ],
+        secrets: [
+          { id: 'gcp-secret-manager', label: 'GCP Secret Manager' },
+          { id: 'vault', label: 'HashiCorp Vault' },
+        ],
+        cicd: [
+          { id: 'github-actions', label: 'GitHub Actions' },
+          { id: 'cloud-build', label: 'Cloud Build' },
+        ],
+      }
+    case 'aws':
+    default:
+      return {
+        deployment: [
+          { id: 'kubernetes-eks', label: 'Kubernetes (EKS)' },
+          { id: 'ecs', label: 'AWS ECS' },
+          { id: 'lambda', label: 'AWS Lambda' },
+        ],
+        iac: [
+          { id: 'terraform', label: 'Terraform' },
+          { id: 'cloudformation', label: 'CloudFormation' },
+        ],
+        secrets: [
+          { id: 'aws-secrets-manager', label: 'AWS Secrets Manager' },
+          { id: 'vault', label: 'HashiCorp Vault' },
+        ],
+        cicd: [
+          { id: 'github-actions', label: 'GitHub Actions' },
+          { id: 'gitlab-ci', label: 'GitLab CI' },
+          { id: 'jenkins', label: 'Jenkins' },
+        ],
+      }
+  }
+}
+
+export function ensurePlatformDefaults(
+  cloudProvider: string,
+  current: {
+    deploymentModel: string
+    iac: string
+    secretsManagement: string
+    cicd: string
+  },
+): Partial<typeof current> {
+  const opts = platformOptionsForCloud(cloudProvider)
+  const patch: Partial<typeof current> = {}
+  if (!opts.deployment.some((o) => o.id === current.deploymentModel)) {
+    patch.deploymentModel = opts.deployment[0]?.id || current.deploymentModel
+  }
+  if (!opts.iac.some((o) => o.id === current.iac)) {
+    patch.iac = opts.iac[0]?.id || current.iac
+  }
+  if (!opts.secrets.some((o) => o.id === current.secretsManagement)) {
+    patch.secretsManagement = opts.secrets[0]?.id || current.secretsManagement
+  }
+  if (!opts.cicd.some((o) => o.id === current.cicd)) {
+    patch.cicd = opts.cicd[0]?.id || current.cicd
+  }
+  return patch
 }
 
 export const GENERATION_CHECKLIST = [

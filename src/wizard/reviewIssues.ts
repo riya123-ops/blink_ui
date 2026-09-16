@@ -52,11 +52,9 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
       label: `${missingDetails.length} Missing decision${missingDetails.length > 1 ? 's' : ''}`,
       targetStep: missingStakeholders.length
         ? 'project-stakeholders'
-        : unsentQuestions.length
-          ? 'stakeholder-questions'
-          : pendingMandatory.length
-            ? 'stakeholder-responses'
-            : state.requirementsText.trim() && !state.groomConfirmed
+        : unsentQuestions.length || pendingMandatory.length
+          ? 'stakeholder-qa'
+          : state.requirementsText.trim() && !state.groomConfirmed
               ? 'requirements'
               : !state.requirementsAnalyzed
                 ? 'requirements'

@@ -23,6 +23,8 @@ interface Props {
   sending?: boolean
   posting?: boolean
   refreshing?: boolean
+  /** When true, omit outer page header (used inside Stakeholder Q&A). */
+  embedded?: boolean
 }
 
 type PersonGroup = {
@@ -74,6 +76,7 @@ export function StakeholderQuestionsScreen({
   sending,
   posting,
   refreshing,
+  embedded,
 }: Props) {
   const issues = useMemo(() => matchableJiraIssues(state), [state])
   const jiraReady = isJiraReady(state) && issues.length > 0
@@ -161,13 +164,15 @@ export function StakeholderQuestionsScreen({
   }
 
   return (
-    <div className="screen screen-ref">
-      <div className="screen-header">
-        <h2>Questions for Stakeholders</h2>
-        <p>
-          Leftover clarify items, grouped by person. One email per person; Jira comments land on auto-mapped tickets.
-        </p>
-      </div>
+    <div className={embedded ? 'stakeholder-qa-pane' : 'screen screen-ref'}>
+      {!embedded ? (
+        <div className="screen-header">
+          <h2>Questions for Stakeholders</h2>
+          <p>
+            Leftover clarify items, grouped by person. One email per person; Jira comments land on auto-mapped tickets.
+          </p>
+        </div>
+      ) : null}
 
       {!jiraReady && state.questions.some((q) => q.queueJira || !q.sent) ? (
         <div className="ux-blocker">

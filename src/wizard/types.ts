@@ -31,8 +31,7 @@ export type WizardStep =
   | 'project-stakeholders'
   | 'integrations'
   | 'requirements'
-  | 'stakeholder-questions'
-  | 'stakeholder-responses'
+  | 'stakeholder-qa'
   | 'sdlc-planning'
   | 'project-shape'
   | 'repositories'
@@ -42,6 +41,9 @@ export type WizardStep =
   | 'review-resolve'
   | 'project-preview'
   | 'generation'
+
+/** Legacy step ids persisted in drafts / URLs before Q&A merge. */
+export type LegacyWizardStep = 'stakeholder-questions' | 'stakeholder-responses'
 
 export interface StakeholderAssignment {
   id: string
@@ -302,6 +304,8 @@ export interface WizardState extends SetupForm {
   implementStep?: { issueId?: string; commitMessage?: string; summary?: string; files?: { path: string; content: string; repoHint?: string }[]; notes?: string[] } | null
   draftPullRequests?: { url?: string; number?: number; branch?: string; owner?: string; repo?: string; sha?: string; kind?: string }[]
   qaValidation?: { issueId?: string; verdict?: string; summary?: string; markdown?: string; draftPrUrl?: string | null } | null
+  /** True after user Continues or Refresh-plan on Ship (plan may predate stack). */
+  shipPlanAcknowledged?: boolean
   jiraCreatedIssues?: JiraCreatedIssue[]
 }
 
@@ -419,6 +423,7 @@ export const defaultWizardState: WizardState = {
   implementStep: null,
   draftPullRequests: [],
   qaValidation: null,
+  shipPlanAcknowledged: false,
   jiraCreatedIssues: [],
 }
 
@@ -475,11 +480,16 @@ export function syncEmailsFromStakeholders(state: WizardState): WizardState {
 
 export function syncRepositoriesFromArtifact(state: WizardState): WizardState {
   if (state.repositoriesTouched) return state
-  const repos = defaultRepositories(state.projectName)
+  const shape = {
+    topology: state.topology,
+    repositoryModel: state.repositoryModel,
+    architectureStyle: state.architectureStyle,
+  }
+  const repos = defaultRepositories(state.projectName, shape)
   return {
     ...state,
     repositories: repos,
-    repoTechnologies: defaultRepoTechnologies(repos),
+    repoTechnologies: defaultRepoTechnologies(repos, shape),
   }
 }
 
@@ -532,6 +542,7 @@ export function clearGroomingPatch(): Partial<WizardState> {
     implementStep: null,
     draftPullRequests: [],
     qaValidation: null,
+    shipPlanAcknowledged: false,
     jiraCreatedIssues: [],
   }
 }

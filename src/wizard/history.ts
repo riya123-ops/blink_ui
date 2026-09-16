@@ -1,5 +1,5 @@
 import { canNavigateToStep, STEP_ORDER, stepIndex } from './steps.ts'
-import { isWizardStep } from './resume.ts'
+import { isWizardStep, normalizeWizardStep } from './resume.ts'
 import type { WizardStep } from './types.ts'
 
 export const WIZARD_HISTORY_KEY = 'blinkWizard'
@@ -12,7 +12,7 @@ export interface WizardHistoryState {
 export function stepFromLocation(): WizardStep | null {
   if (typeof window === 'undefined') return null
   const value = new URLSearchParams(window.location.search).get('step')
-  return isWizardStep(value) ? value : null
+  return isWizardStep(value) ? normalizeWizardStep(value) : null
 }
 
 export function urlForStep(step: WizardStep): string {

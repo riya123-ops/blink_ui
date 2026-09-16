@@ -4,16 +4,15 @@ import {
   ClipboardList,
   Cloud,
   Cpu,
-  Download,
   Eye,
   FileText,
   GitBranch,
-  HelpCircle,
   Home,
   Layers,
   Link2,
   MessageSquare,
   Monitor,
+  Rocket,
   Users,
 } from 'lucide-react'
 import type { WizardState, WizardStep } from './types'
@@ -36,8 +35,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#4f46e5' },
   { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#0369a1' },
-  { id: 'stakeholder-questions', label: 'Stakeholder Questions', icon: HelpCircle, iconColor: '#d97706' },
-  { id: 'stakeholder-responses', label: 'Stakeholder Responses', icon: MessageSquare, iconColor: '#0f9d4a' },
+  { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
   { id: 'sdlc-planning', label: 'SDLC Planning', icon: ClipboardList, iconColor: '#0d9488' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#7c3aed' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#ea580c' },
@@ -46,7 +44,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'platform-delivery', label: 'Platform & Delivery', icon: Cloud, iconColor: '#0284c7' },
   { id: 'review-resolve', label: 'Review & Resolve', icon: CheckSquare, iconColor: '#16a34a' },
   { id: 'project-preview', label: 'Generated Project Preview', icon: Eye, iconColor: '#7e22ce' },
-  { id: 'generation', label: 'Generation / Download', icon: Download, iconColor: '#087a38' },
+  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#087a38' },
 ]
 
 export const WIZARD_PHASES: PhaseDefinition[] = [
@@ -58,7 +56,7 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
   {
     id: 'clarify',
     label: 'Clarify & align',
-    stepIds: ['requirements', 'stakeholder-questions', 'stakeholder-responses', 'sdlc-planning'],
+    stepIds: ['requirements', 'stakeholder-qa', 'sdlc-planning'],
   },
   {
     id: 'shape',
@@ -122,25 +120,22 @@ export function stepAttention(
   if (skipped) return 'skipped'
   if (stepId === current) return 'active'
   if (idx <= completedThrough || (generationComplete && stepId === 'generation')) {
-    if (stepId === 'stakeholder-questions') {
-      const pending = state.questions.filter((q) => {
+    if (stepId === 'stakeholder-qa') {
+      const outboundPending = state.questions.filter((q) => {
         const emailed = q.sent
         const jiraDone =
           (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
         const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
         return !(emailed || jiraDone || answered)
       })
-      if (pending.length > 0) return 'attention'
-    }
-    if (stepId === 'stakeholder-responses') {
-      const pending = state.questions
+      const answerPending = state.questions
         .filter((q) => q.mandatory)
         .filter((q) => {
           const response = state.responses.find((r) => r.questionId === q.id)
           const text = response?.response?.trim() || q.jiraReplyBody?.trim()
           return !(response?.status === 'answered' && text)
         })
-      if (pending.length > 0) return 'attention'
+      if (outboundPending.length > 0 || answerPending.length > 0) return 'attention'
     }
     return 'done'
   }
@@ -161,17 +156,25 @@ export function primaryContinueLabel(
       return 'Continue'
     case 'requirements':
       return state.groomConfirmed ? 'Continue' : 'Save & Continue'
-    case 'stakeholder-questions':
-      return state.questions.length === 0 ? 'Continue — nothing left' : 'Continue when outbound is done'
-    case 'stakeholder-responses': {
-      const pending = state.questions
+    case 'stakeholder-qa': {
+      const outboundPending = state.questions.filter((q) => {
+        const emailed = q.sent
+        const jiraDone =
+          (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
+        const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
+        return !(emailed || jiraDone || answered)
+      })
+      const answerPending = state.questions
         .filter((q) => q.mandatory)
         .filter((q) => {
           const response = state.responses.find((r) => r.questionId === q.id)
           const text = response?.response?.trim() || q.jiraReplyBody?.trim()
           return !(response?.status === 'answered' && text)
         })
-      return pending.length > 0 ? 'Continue when mandatory answered' : 'Continue'
+      if (state.questions.length === 0) return 'Continue — nothing left'
+      if (outboundPending.length > 0) return 'Continue when outbound is done'
+      if (answerPending.length > 0) return 'Continue when mandatory answered'
+      return 'Continue'
     }
     case 'repositories':
       return state.repositories.some((r) => r.name.trim() && r.createStatus !== 'created' && r.createStatus !== 'exists')

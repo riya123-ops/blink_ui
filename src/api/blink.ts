@@ -922,7 +922,30 @@ export async function createRepositories(payload: CreateRepositoriesPayload): Pr
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
-  return response.json() as Promise<CreateRepositoriesResult>
+  const raw = (await response.json()) as {
+    provider?: string
+    repositories?: CreatedRepository[]
+    results?: Array<{ name: string; status: string; htmlUrl?: string | null; url?: string | null; message?: string }>
+  }
+  const rows = Array.isArray(raw.repositories)
+    ? raw.repositories
+    : Array.isArray(raw.results)
+      ? raw.results.map((item) => ({
+          name: item.name,
+          status: item.status,
+          htmlUrl: item.htmlUrl ?? item.url ?? null,
+          message: item.message || '',
+        }))
+      : []
+  return {
+    provider: raw.provider || payload.provider,
+    repositories: rows.map((item) => ({
+      name: item.name,
+      status: item.status,
+      htmlUrl: item.htmlUrl ?? null,
+      message: item.message || '',
+    })),
+  }
 }
 
 export interface WorkspaceEntryDto {

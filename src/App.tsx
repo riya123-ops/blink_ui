@@ -8,7 +8,6 @@ import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
-  GenerationDownloadScreen,
   IdeAndToolsScreen,
   PlatformDeliveryScreen,
   ProjectPreviewScreen,
@@ -17,6 +16,7 @@ import {
   ReviewResolveScreen,
   TechnologyPerRepoScreen,
 } from './screens/ExtendedScreens'
+import { ShipScreen } from './screens/ShipScreen'
 import {
   ProjectStakeholdersScreen,
   validateProjectStakeholders,
@@ -24,14 +24,10 @@ import {
 import { RequirementsScreen, validateRequirements } from './screens/RequirementsScreen'
 import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import {
-  StakeholderQuestionsScreen,
+  StakeholderQaScreen,
   jiraCommentForQuestion,
-  validateStakeholderQuestions,
-} from './screens/StakeholderQuestionsScreen'
-import {
-  StakeholderResponsesScreen,
-  validateStakeholderResponses,
-} from './screens/StakeholderResponsesScreen'
+  validateStakeholderQa,
+} from './screens/StakeholderQaScreen'
 import {
   SdlcPlanningScreen,
   validateSdlcPlanning,
@@ -158,6 +154,7 @@ export default function App() {
   const [simulatingJira, setSimulatingJira] = useState(false)
   const [resettingSimJira, setResettingSimJira] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
+  const creatingReposRef = useRef(false)
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
@@ -186,10 +183,8 @@ export default function App() {
         return validateProjectStakeholders(state)
       case 'requirements':
         return validateRequirements(state)
-      case 'stakeholder-questions':
-        return validateStakeholderQuestions(state)
-      case 'stakeholder-responses':
-        return validateStakeholderResponses(state)
+      case 'stakeholder-qa':
+        return validateStakeholderQa(state)
       case 'sdlc-planning':
         return validateSdlcPlanning(state)
       default:
@@ -590,21 +585,24 @@ export default function App() {
   }, [governancePrep])
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
-    const github = state.integrations.find((item) => item.id === 'github')
+    if (creatingReposRef.current) return false
+    const github = state.integrations?.find((item) => item.id === 'github')
     if (!github?.connected || !state.projectId) {
       setStatus({ type: 'error', message: 'Connect GitHub on the Integrations screen first.' })
       return false
     }
-    const pending = state.repositories.filter(
+    const repos = state.repositories || []
+    const pending = repos.filter(
       (repo) => repo.name.trim() && repo.createStatus !== 'created' && repo.createStatus !== 'exists',
     )
     if (!pending.length) {
-      if (!state.repositories.some((repo) => repo.name.trim())) {
+      if (!repos.some((repo) => repo.name.trim())) {
         setStatus({ type: 'error', message: 'Add at least one repository name.' })
         return false
       }
       return true
     }
+    creatingReposRef.current = true
     setCreatingRepos(true)
     setStatus(null)
     try {
@@ -614,9 +612,11 @@ export default function App() {
         organization: github.organization,
         repositories: pending.map((repo) => ({ name: repo.name.trim(), description: repo.description })),
       })
+      const createdRows = result.repositories || []
       patch({
-        repositories: state.repositories.map((repo) => {
-          const created = result.repositories.find((item) => item.name === repo.name.trim())
+        repositoriesTouched: true,
+        repositories: repos.map((repo) => {
+          const created = createdRows.find((item) => item.name === repo.name.trim())
           if (!created) return repo
           return {
             ...repo,
@@ -626,11 +626,14 @@ export default function App() {
           }
         }),
       })
-      const created = result.repositories.filter((item) => item.status === 'created').length
-      const exists = result.repositories.filter((item) => item.status === 'exists').length
-      const failed = result.repositories.filter((item) => item.status === 'failed').length
+      const created = createdRows.filter((item) => item.status === 'created').length
+      const exists = createdRows.filter((item) => item.status === 'exists').length
+      const failed = createdRows.filter((item) => item.status === 'failed').length
       if (failed && !created && !exists) {
-        setStatus({ type: 'error', message: result.repositories.map((item) => item.message).join(' ') })
+        setStatus({
+          type: 'error',
+          message: createdRows.map((item) => item.message).filter(Boolean).join(' ') || 'Could not create GitHub repositories.',
+        })
         return false
       }
       setStatus({
@@ -642,6 +645,7 @@ export default function App() {
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not create GitHub repositories.' })
       return false
     } finally {
+      creatingReposRef.current = false
       setCreatingRepos(false)
     }
   }, [state.integrations, state.repositories, state.projectId, patch])
@@ -693,11 +697,11 @@ export default function App() {
         }
       }
     } else if (step === 'repositories') {
-      if (!skipStepValidation && !state.repositories.some((repo) => repo.name.trim())) {
+      if (!skipStepValidation && !(state.repositories || []).some((repo) => repo.name.trim())) {
         setStatus({ type: 'error', message: 'Keep at least one repository, or add one.' })
         return
       }
-      const github = state.integrations.find((item) => item.id === 'github')
+      const github = state.integrations?.find((item) => item.id === 'github')
       if (github?.connected && state.projectId) {
         const created = await handleCreateGithubRepos()
         if (!created) return
@@ -1737,7 +1741,13 @@ export default function App() {
         projectId = (await persistProject()).id
       }
       const repositories = (
-        state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName)
+        state.repositoriesTouched
+          ? state.repositories
+          : defaultRepositories(state.projectName, {
+              topology: state.topology,
+              repositoryModel: state.repositoryModel,
+              architectureStyle: state.architectureStyle,
+            })
       ).map((repo) => ({
         name: repo.name,
         purpose: repo.purpose,
@@ -1928,9 +1938,9 @@ export default function App() {
             }}
           />
         )
-      case 'stakeholder-questions':
+      case 'stakeholder-qa':
         return (
-          <StakeholderQuestionsScreen
+          <StakeholderQaScreen
             state={state}
             onUpdate={patch}
             onSendOne={handleSendOne}
@@ -1938,23 +1948,8 @@ export default function App() {
             onPostJira={handlePostJiraOne}
             onPostAllJira={handlePostJiraAll}
             onRefreshJira={handleRefreshJira}
-            onNavigate={(s) => {
-              setStatus(null)
-              goToStep(s)
-            }}
-            sending={sending}
-            posting={postingJira}
-            refreshing={refreshingJira}
-          />
-        )
-      case 'stakeholder-responses':
-        return (
-          <StakeholderResponsesScreen
-            state={state}
-            onUpdate={patch}
             onSimulateResponses={handleSimulateResponses}
             onResetSimulatedReplies={handleResetSimulatedReplies}
-            onRefreshJira={() => void handleRefreshJira()}
             onUpdateResponse={handleUpdateResponse}
             onResolveAllLatest={handleResolveAllLatest}
             onPatchQuestion={(questionId, questionPatch) => {
@@ -1963,6 +1958,12 @@ export default function App() {
                 questions: prev.questions.map((q) => (q.id === questionId ? { ...q, ...questionPatch } : q)),
               }))
             }}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
+            sending={sending}
+            posting={postingJira}
             refreshing={refreshingJira}
             simulating={simulatingJira}
             resetting={resettingSimJira}
@@ -1989,24 +1990,35 @@ export default function App() {
           />
         )
       case 'project-preview':
-        return <ProjectPreviewScreen state={state} onGenerate={() => void runGeneration()} loading={loading} />
+        return (
+          <ProjectPreviewScreen
+            state={state}
+            onGenerate={() => {
+              setCompletedThrough((prev) => Math.max(prev, stepIndex('project-preview')))
+              goToStep('generation')
+            }}
+            loading={loading}
+          />
+        )
       case 'generation':
         return (
-          <GenerationDownloadScreen
+          <ShipScreen
             state={state}
+            onUpdate={patch}
             loading={loading}
             exporting={creatingRepos}
             onExportGithub={() => void handleCreateGithubRepos()}
+            onGenerateKit={() => void runGeneration()}
             onBack={() => goToStep('welcome')}
           />
         )
     }
   }
 
-  const showBack = step !== 'welcome' && !(step === 'generation' && state.generationComplete)
+  const showBack = step !== 'welcome'
   const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
   const isWelcome = step === 'welcome'
-  const isSuccessScreen = step === 'generation' && state.generationComplete
+  const isSuccessScreen = false
   const generationIdx = stepIndex('generation')
   const currentSkipped = state.generationComplete && stepIndex(step) > completedThrough && stepIndex(step) < generationIdx
   const showQuickDownload =

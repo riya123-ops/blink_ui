@@ -26,15 +26,35 @@ export interface WizardDraft {
   freshStart?: boolean
 }
 
+const LEGACY_WIZARD_STEPS = [
+  'stakeholder-questions',
+  'stakeholder-responses',
+  'sdlc-planning',
+  'ide-and-tools',
+  'platform-delivery',
+  'review-resolve',
+  'project-preview',
+] as const
+
 export function isWizardStep(value: unknown): value is WizardStep {
   if (typeof value !== 'string') return false
-  if (value === 'stakeholder-questions' || value === 'stakeholder-responses') return true
-  return STEP_ORDER.includes(value as WizardStep)
+  return STEP_ORDER.includes(value as WizardStep) || (LEGACY_WIZARD_STEPS as readonly string[]).includes(value)
 }
 
-export function normalizeWizardStep(step: string): WizardStep {
+export function normalizeWizardStep(
+  step: string,
+  state?: Pick<WizardState, 'productScope' | 'sdlcStartIssueId'>,
+): WizardStep {
   if (step === 'stakeholder-questions' || step === 'stakeholder-responses') return 'stakeholder-qa'
-  return step as WizardStep
+  if (step === 'sdlc-planning') {
+    const confirmed = Boolean(state?.productScope?.status === 'confirmed' || state?.productScope?.confirmationDigest)
+    if (confirmed && state?.sdlcStartIssueId) return 'sdlc-plan'
+    return 'sdlc-scope'
+  }
+  if (step === 'ide-and-tools' || step === 'platform-delivery') return 'project-shape'
+  if (step === 'review-resolve' || step === 'project-preview') return 'generation'
+  if (STEP_ORDER.includes(step as WizardStep)) return step as WizardStep
+  return 'welcome'
 }
 
 export function serializeWizardState(state: WizardState): WizardState {
@@ -91,12 +111,13 @@ export function loadWizardDraft(email: string): WizardDraft | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<WizardDraft>
     if (!parsed?.email || parsed.email.toLowerCase() !== email.trim().toLowerCase()) return null
-    const step = isWizardStep(parsed.step) ? normalizeWizardStep(parsed.step) : 'welcome'
+    const state = restoreWizardState(parsed.state)
+    const step = isWizardStep(parsed.step) ? normalizeWizardStep(parsed.step, state) : 'welcome'
     return {
       email: parsed.email,
       step,
       completedThrough: typeof parsed.completedThrough === 'number' ? parsed.completedThrough : 0,
-      state: restoreWizardState(parsed.state),
+      state,
       updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
       freshStart: Boolean(parsed.freshStart),
     }
@@ -196,7 +217,7 @@ export function draftFromRemote(email: string, remote: RemoteProject): WizardDra
     })
   }
   const step = isWizardStep(remote.wizardStep)
-    ? normalizeWizardStep(remote.wizardStep)
+    ? normalizeWizardStep(remote.wizardStep, state)
     : state.projectId
       ? 'project-stakeholders'
       : 'welcome'
@@ -217,7 +238,7 @@ export function canOfferResume(draft: Pick<WizardDraft, 'step' | 'state' | 'comp
 }
 
 export function resumeTarget(draft: Pick<WizardDraft, 'step' | 'completedThrough' | 'state'>): WizardStep {
-  if (draft.step !== 'welcome') return normalizeWizardStep(draft.step)
+  if (draft.step !== 'welcome') return normalizeWizardStep(draft.step, draft.state)
   if (draft.completedThrough > 0) {
     return STEP_ORDER[Math.min(draft.completedThrough, STEP_ORDER.length - 1)]
   }

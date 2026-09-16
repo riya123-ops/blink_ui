@@ -44,6 +44,10 @@ function suggestionsForStep(step: string): string[] {
         'What is still waiting on replies?',
         'How do I record an answer here?',
       ]
+    case 'sdlc-scope':
+      return ['What does /sdlc-start do?', 'When should I confirm product scope?', 'What happens after start?']
+    case 'sdlc-plan':
+      return ['Why is classify blocked?', 'What is G-PLAN?', 'When do I confirm acceptance criteria?']
     default:
       return ['What should I do on this step?', 'Summarize my project so far', 'What is blocking me from continuing?']
   }

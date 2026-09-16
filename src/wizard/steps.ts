@@ -1,17 +1,14 @@
 import type { LucideIcon } from 'lucide-react'
 import {
-  CheckSquare,
   ClipboardList,
-  Cloud,
   Cpu,
-  Eye,
   FileText,
   GitBranch,
   Home,
   Layers,
   Link2,
   MessageSquare,
-  Monitor,
+  Play,
   Rocket,
   Users,
 } from 'lucide-react'
@@ -35,15 +32,12 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#2563eb' },
   { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
+  { id: 'sdlc-scope', label: 'Scope & start', icon: Play, iconColor: '#0ea5e9' },
   { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
-  { id: 'sdlc-planning', label: 'SDLC Planning', icon: ClipboardList, iconColor: '#0ea5e9' },
+  { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
   { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#2563eb' },
-  { id: 'ide-and-tools', label: 'IDE and Tools', icon: Monitor, iconColor: '#3b82f6' },
-  { id: 'platform-delivery', label: 'Platform & Delivery', icon: Cloud, iconColor: '#0ea5e9' },
-  { id: 'review-resolve', label: 'Review & Resolve', icon: CheckSquare, iconColor: '#16a34a' },
-  { id: 'project-preview', label: 'Generated Project Preview', icon: Eye, iconColor: '#2563eb' },
   { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
 ]
 
@@ -54,19 +48,29 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
     stepIds: ['welcome', 'project-stakeholders', 'integrations'],
   },
   {
-    id: 'clarify',
-    label: 'Clarify & align',
-    stepIds: ['requirements', 'stakeholder-qa', 'sdlc-planning'],
+    id: 'scope',
+    label: 'Scope',
+    stepIds: ['requirements', 'sdlc-scope'],
+  },
+  {
+    id: 'groom',
+    label: 'Groom',
+    stepIds: ['stakeholder-qa'],
+  },
+  {
+    id: 'plan',
+    label: 'Plan',
+    stepIds: ['sdlc-plan'],
   },
   {
     id: 'shape',
-    label: 'Shape delivery',
-    stepIds: ['project-shape', 'repositories', 'technology-per-repo', 'ide-and-tools', 'platform-delivery'],
+    label: 'Shape',
+    stepIds: ['project-shape', 'repositories', 'technology-per-repo'],
   },
   {
     id: 'ship',
     label: 'Ship',
-    stepIds: ['review-resolve', 'project-preview', 'generation'],
+    stepIds: ['generation'],
   },
 ]
 
@@ -112,7 +116,7 @@ export function stepAttention(
   current: WizardStep,
   completedThrough: number,
   generationComplete: boolean,
-  state: Pick<WizardState, 'questions' | 'responses' | 'groomConfirmed'>,
+  state: Pick<WizardState, 'questions' | 'responses' | 'groomConfirmed' | 'groomAcknowledged'>,
 ): StepAttention {
   const idx = stepIndex(stepId)
   const generationIdx = stepIndex('generation')
@@ -121,6 +125,7 @@ export function stepAttention(
   if (stepId === current) return 'active'
   if (idx <= completedThrough || (generationComplete && stepId === 'generation')) {
     if (stepId === 'stakeholder-qa') {
+      if (!state.groomAcknowledged) return 'attention'
       const outboundPending = state.questions.filter((q) => {
         const emailed = q.sent
         const jiraDone =
@@ -156,6 +161,9 @@ export function primaryContinueLabel(
       return 'Continue'
     case 'requirements':
       return state.groomConfirmed ? 'Continue' : 'Save & Continue'
+    case 'sdlc-scope':
+    case 'sdlc-plan':
+      return 'Continue'
     case 'stakeholder-qa': {
       const outboundPending = state.questions.filter((q) => {
         const emailed = q.sent
@@ -178,12 +186,8 @@ export function primaryContinueLabel(
     }
     case 'repositories':
       return 'Continue'
-    case 'review-resolve':
-      return 'Continue to preview'
     case 'project-shape':
     case 'technology-per-repo':
-    case 'ide-and-tools':
-    case 'platform-delivery':
       return 'Continue'
     default:
       return 'Save & Continue'

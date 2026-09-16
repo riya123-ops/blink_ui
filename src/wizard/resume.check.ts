@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import {
   isWizardStep,
+  normalizeWizardStep,
   parseRemoteUpdatedAt,
   restoreWizardState,
   serializeWizardState,
@@ -35,7 +36,20 @@ assert.equal(restored.requirementFile, null)
 assert.equal(restored.integrations.find((item) => item.id === 'github')?.connected, true)
 assert.equal(restored.integrations.find((item) => item.id === 'github')?.token, undefined)
 assert.equal(isWizardStep('requirements'), true)
+assert.equal(isWizardStep('sdlc-scope'), true)
+assert.equal(isWizardStep('sdlc-plan'), true)
+assert.equal(isWizardStep('sdlc-planning'), true)
 assert.equal(isWizardStep('nope'), false)
+assert.equal(normalizeWizardStep('sdlc-planning'), 'sdlc-scope')
+assert.equal(
+  normalizeWizardStep('sdlc-planning', {
+    productScope: { status: 'confirmed' },
+    sdlcStartIssueId: 'ST-1',
+  }),
+  'sdlc-plan',
+)
+assert.equal(normalizeWizardStep('ide-and-tools'), 'project-shape')
+assert.equal(normalizeWizardStep('review-resolve'), 'generation')
 assert.ok(parseRemoteUpdatedAt('2026-09-11T10:00:00') > 0)
 
 console.log('resume.check.ts: ok')

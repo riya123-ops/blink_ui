@@ -155,7 +155,15 @@ export function StakeholderQaScreen(props: Props) {
 export function validateStakeholderQa(state: WizardState): string | null {
   const outbound = validateStakeholderQuestions(state)
   if (outbound) return outbound
-  return validateStakeholderResponses(state)
+  const responses = validateStakeholderResponses(state)
+  if (responses) return responses
+  if (state.groomRejectPending && !state.groomingRevision) {
+    return 'G-GROOM was rejected — run /grooming-revision, then acknowledge again.'
+  }
+  if (!state.groomAcknowledged) {
+    return 'Acknowledge G-GROOM before continuing to Work plan.'
+  }
+  return null
 }
 
 export { jiraCommentForQuestion }

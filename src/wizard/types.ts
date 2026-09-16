@@ -31,19 +31,29 @@ export type WizardStep =
   | 'project-stakeholders'
   | 'integrations'
   | 'requirements'
+  | 'sdlc-scope'
   | 'stakeholder-qa'
-  | 'sdlc-planning'
+  | 'sdlc-plan'
   | 'project-shape'
   | 'repositories'
   | 'technology-per-repo'
+  | 'generation'
+  /** Legacy ids remapped on resume. */
+  | 'sdlc-planning'
   | 'ide-and-tools'
   | 'platform-delivery'
   | 'review-resolve'
   | 'project-preview'
-  | 'generation'
 
-/** Legacy step ids persisted in drafts / URLs before Q&A merge. */
-export type LegacyWizardStep = 'stakeholder-questions' | 'stakeholder-responses'
+/** Legacy step ids persisted in drafts / URLs before Q&A merge and spine split. */
+export type LegacyWizardStep =
+  | 'stakeholder-questions'
+  | 'stakeholder-responses'
+  | 'sdlc-planning'
+  | 'ide-and-tools'
+  | 'platform-delivery'
+  | 'review-resolve'
+  | 'project-preview'
 
 export interface StakeholderAssignment {
   id: string
@@ -308,6 +318,13 @@ export interface WizardState extends SetupForm {
   shipPlanAcknowledged?: boolean
   /** Human G-GROOM acknowledgement (not approve-gate). */
   groomAcknowledged?: boolean
+  /** After G-GROOM reject: revision required before a new ack. */
+  groomRejectPending?: boolean
+  /** Human confirmation of acceptance criteria after /create-spec. */
+  acceptanceCriteriaAcknowledged?: boolean
+  /** Human /confirm-stakeholders freshness attestation. */
+  stakeholdersConfirmed?: boolean
+  stakeholdersConfirmationDigest?: string | null
   /** Human G-PLAN acknowledgement (alias kept in sync with shipPlanAcknowledged). */
   planAcknowledged?: boolean
   /** Human G-BOOTSTRAP acknowledgement before physical remotes / implement. */
@@ -437,6 +454,10 @@ export const defaultWizardState: WizardState = {
   qaValidation: null,
   shipPlanAcknowledged: false,
   groomAcknowledged: false,
+  groomRejectPending: false,
+  acceptanceCriteriaAcknowledged: false,
+  stakeholdersConfirmed: false,
+  stakeholdersConfirmationDigest: null,
   planAcknowledged: false,
   bootstrapAcknowledged: false,
   implementationAuthorized: false,
@@ -571,6 +592,10 @@ export function clearGroomingPatch(): Partial<WizardState> {
     qaValidation: null,
     shipPlanAcknowledged: false,
     groomAcknowledged: false,
+    groomRejectPending: false,
+    acceptanceCriteriaAcknowledged: false,
+    stakeholdersConfirmed: false,
+    stakeholdersConfirmationDigest: null,
     planAcknowledged: false,
     bootstrapAcknowledged: false,
     implementationAuthorized: false,

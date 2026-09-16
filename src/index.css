@@ -340,14 +340,14 @@ textarea {
 
 .content {
   flex: 1;
-  padding: calc(var(--top-float-h, 2.75rem) + 0.75rem) 1.25rem calc(var(--action-dock-h, 3.5rem) + 0.75rem) 1.5rem;
+  padding: calc(var(--top-float-h, 2.75rem) + 0.75rem) 0 calc(var(--action-dock-h, 3.5rem) + 0.75rem) 1.5rem;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: unset;
+  scrollbar-gutter: auto;
 }
 
 .content-fill {
-  padding: 1rem 1.5rem 1.5rem;
+  padding: 1rem 0 1.5rem 1.5rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -5466,13 +5466,15 @@ textarea::placeholder {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.45rem 0.55rem;
+  padding: 0.45rem 0.35rem 0.45rem 0.45rem;
   border: none;
   background: transparent;
   border-radius: 10px;
   cursor: pointer;
   color: var(--muted);
   font: inherit;
+  line-height: 1.35;
+  overflow: visible;
 }
 
 .nav-phase-header:hover {

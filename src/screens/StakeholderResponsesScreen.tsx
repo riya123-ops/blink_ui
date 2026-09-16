@@ -10,13 +10,14 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react'
-import { summarizeDiscussion } from '../api/blink'
+import { summarizeDiscussion, groomingStakeholderPack, groomingRevision, groomingSignOffCapture, postJiraGateEvidence } from '../api/blink'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
 import type { JiraThreadReply, QuestionResponse, StakeholderQuestion, WizardState } from '../wizard/types'
 
 interface Props {
   state: WizardState
+  onUpdate?: (patch: Partial<WizardState>) => void
   onSimulateResponses: () => void | Promise<void>
   onResetSimulatedReplies?: () => void | Promise<void>
   onRefreshJira?: () => void
@@ -61,6 +62,7 @@ function initials(name: string): string {
 
 export function StakeholderResponsesScreen({
   state,
+  onUpdate,
   onSimulateResponses,
   onResetSimulatedReplies,
   onRefreshJira,
@@ -78,6 +80,8 @@ export function StakeholderResponsesScreen({
   const [summarizingId, setSummarizingId] = useState<string | null>(null)
   const [summaryMeta, setSummaryMeta] = useState<Record<string, string>>({})
   const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [groomBusy, setGroomBusy] = useState<'pack' | 'revision' | 'signoff' | null>(null)
+  const [groomError, setGroomError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!onRefreshJira) return
@@ -191,15 +195,169 @@ export function StakeholderResponsesScreen({
     }
   }
 
+  const requirementText =
+    state.groomDraft?.trim()
+    || state.requirementsText?.trim()
+    || state.description?.trim()
+    || ''
+
+  const stakeholderFeedback = state.responses
+    .filter((r) => r.status === 'answered' && r.response.trim())
+    .map((r) => {
+      const q = state.questions.find((qq) => qq.id === r.questionId)
+      return `Q: ${q?.question || r.questionId}\nA: ${r.response}`
+    })
+    .join('\n\n')
+
+  const runPack = async () => {
+    if (!state.projectId || !onUpdate) return
+    setGroomBusy('pack')
+    setGroomError(null)
+    try {
+      const res = await groomingStakeholderPack(state.projectId, {
+        requirementText,
+        overlayFiles: state.scopeOverlays || [],
+        issueId: state.productScope?.storyIds?.[0],
+      })
+      if (res.status !== 'ok') throw new Error(res.message || 'Stakeholder pack failed')
+      onUpdate({
+        stakeholderPack: res.stakeholderPack || null,
+        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        nextSdlcCommand: res.nextCommand || '/grooming-revision',
+      })
+    } catch (e) {
+      setGroomError(e instanceof Error ? e.message : 'Could not build stakeholder pack.')
+    } finally {
+      setGroomBusy(null)
+    }
+  }
+
+  const runRevision = async () => {
+    if (!state.projectId || !onUpdate) return
+    setGroomBusy('revision')
+    setGroomError(null)
+    try {
+      const res = await groomingRevision(state.projectId, {
+        requirementText,
+        stakeholderFeedback,
+        overlayFiles: state.scopeOverlays || [],
+        groomingRevision: state.groomingRevision,
+        issueId: state.stakeholderPack?.issueId,
+      })
+      if (res.status !== 'ok') throw new Error(res.message || 'Grooming revision failed')
+      const draftText = res.requirementDraft || res.groomingRevision?.requirementMarkdown || ''
+      onUpdate({
+        groomingRevision: res.groomingRevision || null,
+        groomDraft: draftText || state.groomDraft,
+        requirementsText: draftText || state.requirementsText,
+        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        nextSdlcCommand: res.nextCommand || '/grooming-sign-off-capture',
+      })
+    } catch (e) {
+      setGroomError(e instanceof Error ? e.message : 'Could not apply grooming revision.')
+    } finally {
+      setGroomBusy(null)
+    }
+  }
+
+  const runSignOff = async () => {
+    if (!state.projectId || !onUpdate) return
+    setGroomBusy('signoff')
+    setGroomError(null)
+    try {
+      const res = await groomingSignOffCapture(state.projectId, {
+        requirementText: state.groomDraft || requirementText,
+        stakeholderFeedback,
+        overlayFiles: state.scopeOverlays || [],
+        issueId: state.groomingRevision?.issueId || state.stakeholderPack?.issueId,
+      })
+      if (res.status !== 'ok') throw new Error(res.message || 'Sign-off capture failed')
+      onUpdate({
+        groomingSignOff: res.groomingSignOff || null,
+        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        nextSdlcCommand: res.nextCommand || '/plan-product-scope',
+      })
+      const issueKey =
+        state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
+        || state.questions.find((q) => q.jiraIssueKey)?.jiraIssueKey
+      if (issueKey && state.projectId) {
+        void postJiraGateEvidence(state.projectId, {
+          issueKey,
+          gate: 'G-GROOM',
+          message: 'Grooming sign-off summary captured (advisory — not an approval).',
+        }).catch(() => undefined)
+      }
+    } catch (e) {
+      setGroomError(e instanceof Error ? e.message : 'Could not capture sign-off summary.')
+    } finally {
+      setGroomBusy(null)
+    }
+  }
+
   return (
     <div className="screen">
       <div className="screen-header">
         <h2>Stakeholder Responses</h2>
         <p>
           Each clarification is a parent thread. Child replies stay nested for context. Summarize the discussion, then
-          resolve one answer Blink can continue with.
+          resolve one answer Blink can continue with. After responses, run the grooming loop.
         </p>
       </div>
+
+      <section className="sdlc-panel" style={{ marginBottom: '1.5rem' }}>
+        <div className="sdlc-panel__head">
+          <Sparkles size={18} />
+          <div>
+            <h3>Grooming loop</h3>
+            <p className="muted">Build pack, apply feedback, capture G-GROOM readiness (no gate approval).</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!state.projectId || !requirementText || !!groomBusy}
+            onClick={() => void runPack()}
+          >
+            {groomBusy === 'pack' ? <Loader2 className="spin" size={16} /> : null}
+            {state.stakeholderPack ? 'Rebuild pack' : '1. Stakeholder pack'}
+          </button>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!state.projectId || !state.stakeholderPack || !stakeholderFeedback || !!groomBusy}
+            onClick={() => void runRevision()}
+          >
+            {groomBusy === 'revision' ? <Loader2 className="spin" size={16} /> : null}
+            {state.groomingRevision
+              ? `2. Re-revise (#${state.groomingRevision.revisionNumber})`
+              : '2. Apply revision'}
+          </button>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!state.projectId || !state.groomingRevision || !!groomBusy}
+            onClick={() => void runSignOff()}
+          >
+            {groomBusy === 'signoff' ? <Loader2 className="spin" size={16} /> : null}
+            {state.groomingSignOff ? '3. Refresh sign-off' : '3. Sign-off capture'}
+          </button>
+        </div>
+        {state.stakeholderPack?.markdown ? (
+          <p className="muted small">
+            Pack ready · {(state.stakeholderPack.rolesCovered || []).join(', ') || 'roles TBD'}
+          </p>
+        ) : null}
+        {state.groomingRevision?.revisionNumber ? (
+          <p className="muted small">
+            Revision #{state.groomingRevision.revisionNumber} applied to requirement draft
+          </p>
+        ) : null}
+        {state.groomingSignOff?.readyForHumanSignOff ? (
+          <p className="muted small">Sign-off summary captured — ready for human G-GROOM review</p>
+        ) : null}
+        {groomError ? <p className="error-text">{groomError}</p> : null}
+      </section>
 
       {state.questions.length === 0 ? (
         <section className="card">

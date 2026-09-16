@@ -1289,6 +1289,165 @@ export function technicalPlan(
   return postAdvisory(projectId, 'technical-plan', payload)
 }
 
+export interface StakeholderPackData {
+  issueId?: string
+  markdown?: string
+  rolesCovered?: string[]
+  openQuestions?: string[]
+  generatedAt?: string
+}
+
+export interface GroomingRevisionData {
+  issueId?: string
+  revisionNumber?: number
+  requirementMarkdown?: string
+  revisionSummaryMarkdown?: string
+  changesApplied?: string[]
+}
+
+export interface GroomingSignOffData {
+  issueId?: string
+  markdown?: string
+  readyForHumanSignOff?: boolean
+  blockers?: string[]
+  openQuestions?: string[]
+  capturedAt?: string
+}
+
+export interface ImplementStepData {
+  issueId?: string
+  commitMessage?: string
+  summary?: string
+  files?: { path: string; content: string; repoHint?: string }[]
+  notes?: string[]
+}
+
+export interface QaValidationData {
+  issueId?: string
+  verdict?: string
+  summary?: string
+  checks?: { name?: string; status?: string; detail?: string }[]
+  acceptanceCriteria?: { criterion?: string; status?: string }[]
+  markdown?: string
+  blockers?: string[]
+  draftPrUrl?: string | null
+}
+
+export interface DraftPullRequest {
+  url?: string
+  number?: number
+  branch?: string
+  owner?: string
+  repo?: string
+  sha?: string
+  kind?: string
+}
+
+export interface DeliveryAgentResponse extends AdvisoryAgentResponse {
+  stakeholderPack?: StakeholderPackData
+  groomingRevision?: GroomingRevisionData
+  groomingSignOff?: GroomingSignOffData
+  implementStep?: ImplementStepData
+  qaValidation?: QaValidationData
+  requirementDraft?: string
+  gitWritten?: boolean
+  commit?: { sha?: string; url?: string; branch?: string; owner?: string; repo?: string; treeCount?: number }
+  draftPullRequests?: DraftPullRequest[]
+  evidence?: Record<string, unknown>
+}
+
+export function groomingStakeholderPack(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'grooming-stakeholder-pack', payload) as Promise<DeliveryAgentResponse>
+}
+
+export function groomingRevision(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    stakeholderFeedback?: string
+    overlayFiles?: OverlayFilePayload[]
+    groomingRevision?: GroomingRevisionData | null
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'grooming-revision', payload) as Promise<DeliveryAgentResponse>
+}
+
+export function groomingSignOffCapture(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    stakeholderFeedback?: string
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'grooming-sign-off-capture', payload) as Promise<DeliveryAgentResponse>
+}
+
+export async function gitApply(
+  projectId: string,
+  payload: {
+    confirm: boolean
+    overlayFiles: OverlayFilePayload[]
+    repositories?: { name: string; htmlUrl?: string; purpose?: string }[]
+    workspaceRepo?: string
+    commitMessage?: string
+    issueKey?: string
+  },
+): Promise<DeliveryAgentResponse> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/git-apply`), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<DeliveryAgentResponse>
+}
+
+export async function implementStep(
+  projectId: string,
+  payload: Record<string, unknown>,
+): Promise<DeliveryAgentResponse> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/implement-step`), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<DeliveryAgentResponse>
+}
+
+export function qaValidation(
+  projectId: string,
+  payload: Record<string, unknown>,
+) {
+  return postAdvisory(projectId, 'qa-validation', payload) as Promise<DeliveryAgentResponse>
+}
+
+export async function postJiraGateEvidence(
+  projectId: string,
+  payload: { issueKey: string; gate: 'G-GROOM' | 'G-PLAN' | 'G-BOOTSTRAP' | 'G-PR-OPEN'; message: string },
+): Promise<{ status: string; message?: string; commentId?: string; gate?: string }> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/jira-gate-evidence`), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json()
+}
+
 export interface ChatMessageDto {
   id: number
   threadId: number

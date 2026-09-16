@@ -1312,6 +1312,41 @@ export function technicalPlan(
   return postAdvisory(projectId, 'technical-plan', payload)
 }
 
+export function sdlcStart(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'sdlc-start', payload)
+}
+
+export function sdlcNext(
+  projectId: string,
+  payload: {
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    workClassification?: WorkClassificationData | null
+    specification?: SpecificationData | null
+    technicalPlan?: TechnicalPlanData | null
+    overlayFiles?: OverlayFilePayload[]
+    issueId?: string
+    groomAcknowledged?: boolean
+    planAcknowledged?: boolean
+    shipPlanAcknowledged?: boolean
+    bootstrapAcknowledged?: boolean
+    implementationAuthorized?: boolean
+    impactAnalysisSkipped?: boolean
+    actor?: string
+  },
+) {
+  return postAdvisory(projectId, 'sdlc-next', payload)
+}
+
 export interface StakeholderPackData {
   issueId?: string
   markdown?: string

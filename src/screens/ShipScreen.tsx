@@ -16,6 +16,7 @@ import {
 import {
   gitApply,
   implementStep,
+  postJiraGateEvidence,
   qaValidation,
   technicalPlan,
 } from '../api/blink'
@@ -81,11 +82,13 @@ export function ShipScreen({
   const [kitOpen, setKitOpen] = useState(false)
 
   const hasPlan = Boolean(state.technicalPlan?.markdown || state.technicalPlan?.steps?.length)
-  const stackReady = state.repoTechnologies.some((t) => t.status === 'confirmed')
   const reposCreated = state.repositories.some(
     (r) => r.createStatus === 'created' || r.createStatus === 'exists' || Boolean(r.htmlUrl),
   )
-  const needsPlanAck = hasPlan && stackReady && !state.shipPlanAcknowledged
+  const planAck = Boolean(state.planAcknowledged || state.shipPlanAcknowledged)
+  const needsPlanAck = hasPlan && !planAck
+  const needsBootstrapAck = planAck && !state.bootstrapAcknowledged
+  const needsImplAuth = Boolean(state.bootstrapAcknowledged && !state.implementationAuthorized)
   const gitWritten = Boolean(state.gitWritten)
   const hasDraftPr = (state.draftPullRequests || []).length > 0
   const hasQa = Boolean(state.qaValidation?.verdict || state.qaValidation?.markdown)
@@ -97,10 +100,15 @@ export function ShipScreen({
     || state.description?.trim()
     || ''
 
-  const shipUnlocked = hasPlan && (!needsPlanAck) && Boolean(state.projectId)
-  const canGit = Boolean(shipUnlocked && hasPlan && (state.scopeOverlays || []).length && !busy)
-  const canImplement = Boolean(shipUnlocked && gitWritten && hasPlan && !busy)
+  const shipUnlocked = hasPlan && planAck && Boolean(state.bootstrapAcknowledged) && Boolean(state.projectId)
+  const canGit = Boolean(
+    shipUnlocked && planAck && state.bootstrapAcknowledged && hasPlan && (state.scopeOverlays || []).length && !busy,
+  )
+  const canImplement = Boolean(
+    state.implementationAuthorized && gitWritten && planAck && state.bootstrapAcknowledged && hasPlan && !busy,
+  )
   const canQa = Boolean(shipUnlocked && hasDraftPr && !busy)
+  const canExportGithub = Boolean(state.bootstrapAcknowledged && !exporting)
 
   const changeLog = useMemo(() => {
     const items: string[] = []
@@ -128,7 +136,24 @@ export function ShipScreen({
   }
 
   const acknowledgePlan = () => {
-    onUpdate({ shipPlanAcknowledged: true })
+    onUpdate({ planAcknowledged: true, shipPlanAcknowledged: true })
+  }
+
+  const acknowledgeBootstrap = () => {
+    onUpdate({ bootstrapAcknowledged: true })
+    const issueKey = primaryIssueKey(state)
+    if (issueKey && state.projectId) {
+      void postJiraGateEvidence(state.projectId, {
+        issueKey,
+        gate: 'G-BOOTSTRAP',
+        message:
+          'Human acknowledgement of G-BOOTSTRAP (not an approve-gate). Remote repository create/export enabled.',
+      }).catch(() => undefined)
+    }
+  }
+
+  const authorizeImplementation = () => {
+    onUpdate({ implementationAuthorized: true })
   }
 
   const refreshPlan = useCallback(async () => {
@@ -151,8 +176,9 @@ export function ShipScreen({
       onUpdate({
         technicalPlan: res.technicalPlan || null,
         scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        planAcknowledged: true,
         shipPlanAcknowledged: true,
-        nextSdlcCommand: res.nextCommand || '/implement-step',
+        nextSdlcCommand: res.nextCommand || '/sdlc-next',
       })
     } catch (err) {
       setError('refresh-plan', err instanceof Error ? err.message : 'Could not refresh technical plan.')
@@ -352,9 +378,9 @@ export function ShipScreen({
           Finish SDLC Planning (<code>/technical-plan</code>) before shipping.
         </p>
       )}
-      {hasPlan && !reposCreated && (
+      {hasPlan && planAck && state.bootstrapAcknowledged && !reposCreated && (
         <p className="status-banner info">
-          Create GitHub repositories on the Repositories step (including <code>*-workspace</code>) before Git
+          Create GitHub repositories below (including <code>*-workspace</code>) after G-BOOTSTRAP — then run Git
           apply.
         </p>
       )}
@@ -364,16 +390,16 @@ export function ShipScreen({
           <div className="sdlc-panel__head">
             <Workflow size={18} />
             <div>
-              <h3>Plan was written before stack was confirmed</h3>
+              <h3>Acknowledge G-PLAN</h3>
               <p className="muted">
-                Continue with the current plan, or refresh via <code>/technical-plan</code> with confirmed
-                stack context.
+                Human acknowledgement that the technical plan was reviewed — not an approve-gate. Required
+                before bootstrap and ship actions.
               </p>
             </div>
           </div>
           <div className="ship-actions">
             <button type="button" className="primary-btn" disabled={!!busy} onClick={acknowledgePlan}>
-              Continue with current plan
+              Acknowledge G-PLAN (human)
             </button>
             <button
               type="button"
@@ -386,6 +412,64 @@ export function ShipScreen({
             </button>
           </div>
           {errors['refresh-plan'] ? <p className="error-text">{errors['refresh-plan']}</p> : null}
+        </section>
+      )}
+
+      {needsBootstrapAck && (
+        <section className="card shape-section ship-step-card">
+          <div className="sdlc-panel__head">
+            <GitBranch size={18} />
+            <div>
+              <h3>Acknowledge G-BOOTSTRAP</h3>
+              <p className="muted">
+                Enables remote repository create/export. Human acknowledgement only — not an approve-gate.
+              </p>
+            </div>
+          </div>
+          <button type="button" className="primary-btn" disabled={!!busy} onClick={acknowledgeBootstrap}>
+            Acknowledge G-BOOTSTRAP
+          </button>
+        </section>
+      )}
+
+      {planAck && state.bootstrapAcknowledged ? (
+        <section className="card shape-section ship-step-card">
+          <div className="sdlc-panel__head">
+            <ExternalLink size={18} />
+            <div>
+              <h3>Create / export remotes</h3>
+              <p className="muted">
+                Remotes are created here after G-BOOTSTRAP — not on Repositories Continue.
+              </p>
+            </div>
+            {reposCreated ? <CheckCircle2 className="ok" size={18} /> : null}
+          </div>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={!githubReady || !canExportGithub}
+            onClick={() => onExportGithub?.()}
+          >
+            <ExternalLink size={16} /> {exporting ? 'Creating repos…' : 'Export / create GitHub repos'}
+          </button>
+          {!githubReady && <p className="muted small">Connect GitHub on Integrations first.</p>}
+        </section>
+      ) : null}
+
+      {needsImplAuth && (
+        <section className="card shape-section ship-step-card">
+          <div className="sdlc-panel__head">
+            <ShieldCheck size={18} />
+            <div>
+              <h3>Authorize implementation</h3>
+              <p className="muted">
+                Required before <code>/implement-step</code>. Confirms you intend to open draft PRs (no merge).
+              </p>
+            </div>
+          </div>
+          <button type="button" className="primary-btn" disabled={!!busy} onClick={authorizeImplementation}>
+            Authorize implementation
+          </button>
         </section>
       )}
 
@@ -505,7 +589,7 @@ export function ShipScreen({
           <button
             type="button"
             className="secondary-btn"
-            disabled={!githubReady || exporting}
+            disabled={!githubReady || !canExportGithub}
             onClick={() => onExportGithub?.()}
           >
             <ExternalLink size={16} /> {exporting ? 'Creating repos…' : 'Export / create GitHub repos'}
@@ -522,6 +606,9 @@ export function ShipScreen({
             <Download size={14} /> {state.generationComplete ? 'Show kit summary' : 'Generate kit ZIP'}
           </button>
         </div>
+        {!state.bootstrapAcknowledged && (
+          <p className="muted small">Acknowledge G-BOOTSTRAP above before creating remotes.</p>
+        )}
         {!githubReady && <p className="muted small">Connect GitHub on Integrations first.</p>}
       </section>
 

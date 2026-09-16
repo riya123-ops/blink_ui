@@ -6,9 +6,9 @@ body,
 }
 
 body {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
-  color: #12263a;
-  background: #f4f1fb;
+  font-family: "Manrope", system-ui, -apple-system, sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -30,23 +30,25 @@ body {
 }
 
 .dev-popup-head svg {
-  color: #7c3aed;
+  color: #2563eb;
   margin-top: 0.15rem;
   flex-shrink: 0;
 }
 
 .dev-popup-head h1 {
   margin: 0;
+  font-family: "Outfit", Manrope, system-ui, sans-serif;
   font-size: 1.05rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  color: #0b1220;
 }
 
 .dev-popup-head p {
   margin: 0.2rem 0 0;
   font-size: 0.75rem;
   line-height: 1.4;
-  color: #5d7084;
+  color: #64748b;
 }
 
 .dev-mode-master,
@@ -61,13 +63,14 @@ body {
 .dev-mode-master {
   padding: 0.8rem 0.85rem;
   border-radius: 14px;
-  border: 1px solid rgba(124, 58, 237, 0.18);
+  border: 1px solid rgba(37, 99, 235, 0.18);
   background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .dev-mode-master.is-on {
-  border-color: rgba(124, 58, 237, 0.4);
-  background: rgba(124, 58, 237, 0.08);
+  border-color: rgba(37, 99, 235, 0.4);
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .dev-mode-master span,
@@ -91,7 +94,7 @@ body {
   font-style: normal;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #5d7084;
+  color: #64748b;
 }
 
 .dev-mode-master input,
@@ -128,7 +131,7 @@ body {
 
 .dev-mode-master.is-on .dev-mode-switch,
 .dev-mode-flag.is-on .dev-mode-switch {
-  background: #7c3aed;
+  background: #2563eb;
 }
 
 .dev-mode-master.is-on .dev-mode-switch::after,
@@ -150,7 +153,8 @@ body {
   padding: 0.8rem 0.85rem;
   border-radius: 14px;
   background: #fff;
-  border: 1px solid rgba(18, 38, 58, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .dev-mode-group h2 {
@@ -174,7 +178,7 @@ body {
   padding: 0.8rem 0.85rem;
   border-radius: 14px;
   background: #fff;
-  border: 1px dashed rgba(124, 58, 237, 0.28);
+  border: 1px dashed rgba(37, 99, 235, 0.28);
 }
 
 .dev-popup-session h3 {
@@ -182,7 +186,7 @@ body {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #7c3aed;
+  color: #2563eb;
 }
 
 .dev-popup-session dl {
@@ -199,7 +203,7 @@ body {
 }
 
 .dev-popup-session dt {
-  color: #5d7084;
+  color: #64748b;
 }
 
 .dev-popup-session dd {
@@ -217,7 +221,7 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   font-size: 0.68rem;
-  color: #5d7084;
+  color: #64748b;
 }
 
 .dev-mode-text-btn {
@@ -226,62 +230,71 @@ body {
   gap: 0.35rem;
   border: 0;
   background: transparent;
-  color: #5d7084;
+  color: #64748b;
   cursor: pointer;
   padding: 0;
   font: inherit;
 }
 
 .dev-mode-text-btn:hover {
-  color: #7c3aed;
+  color: #2563eb;
 }
 
 .dev-window-opener {
   position: fixed;
-  left: 12px;
-  right: auto;
-  bottom: 12px;
+  left: auto;
+  right: 18px;
+  bottom: 18px;
   z-index: 80;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 999px;
-  border: 1px solid rgba(18, 38, 58, 0.12);
-  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.94);
   color: #64748b;
-  font: 650 0.72rem/1 Inter, system-ui, sans-serif;
+  font: 650 0.72rem/1 Manrope, system-ui, sans-serif;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(16, 42, 78, 0.06);
-  opacity: 0.55;
-  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  opacity: 0.78;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .dev-window-opener:hover,
 .dev-window-opener:focus-visible {
   opacity: 1;
-  color: var(--text-navy, #0d2137);
-  border-color: rgba(18, 38, 58, 0.2);
+  color: #0f172a;
+  border-color: rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
 }
 
 .dev-window-opener.is-on {
   opacity: 1;
-  background: rgba(18, 38, 58, 0.88);
+  background: #2563eb;
   color: #fff;
   border-color: transparent;
+}
+
+@media (max-width: 960px) {
+  .dev-window-opener {
+    right: 14px;
+    bottom: calc(var(--action-dock-h, 4.5rem) + 12px);
+  }
 }
 
 .dev-popup-s3 {
   padding: 0.8rem 0.85rem;
   border-radius: 14px;
   background: #fff;
-  border: 1px solid rgba(18, 38, 58, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 .dev-popup-s3-head {
@@ -296,13 +309,13 @@ body {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #7c3aed;
+  color: #2563eb;
 }
 
 .dev-popup-s3-head p {
   margin: 0.25rem 0 0;
   font-size: 0.7rem;
-  color: #5d7084;
+  color: #64748b;
   line-height: 1.35;
   word-break: break-all;
 }
@@ -324,6 +337,7 @@ body {
   gap: 0.55rem;
   max-height: 280px;
   overflow: auto;
+  scrollbar-width: thin;
 }
 
 .dev-s3-list li {
@@ -334,7 +348,7 @@ body {
   padding: 0.55rem 0.6rem;
   border-radius: 10px;
   background: #f8fafc;
-  border: 1px solid rgba(18, 38, 58, 0.06);
+  border: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .dev-s3-list strong {
@@ -349,7 +363,7 @@ body {
   margin-top: 0.15rem;
   font-style: normal;
   font-size: 0.68rem;
-  color: #5d7084;
+  color: #64748b;
   line-height: 1.35;
 }
 
@@ -362,7 +376,7 @@ body {
   color: #b91c1c;
   cursor: pointer;
   padding: 0;
-  font: 650 0.68rem/1 Inter, system-ui, sans-serif;
+  font: 650 0.68rem/1 Manrope, system-ui, sans-serif;
   flex-shrink: 0;
 }
 
@@ -379,7 +393,7 @@ body {
   margin: 0;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #5d7084;
+  color: #64748b;
 }
 
 .dev-s3-msg.is-error {

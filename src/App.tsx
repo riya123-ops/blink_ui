@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -66,6 +66,7 @@ import {
   loadWizardDraft,
   loadSessionStep,
   resumeTarget,
+  resolveBootStep,
   saveWizardDraft,
   saveSessionStep,
   serializeWizardState,
@@ -123,15 +124,15 @@ export default function App() {
   const { session } = useAuth()
   const boot = initialDraft(session?.email ?? null)
   const sessionStep = loadSessionStep()
-  const bootStep = sessionStep
-    ? allowedStep(
-        sessionStep,
-        sessionStep,
-        boot.completedThrough,
-        groomingComplete(boot.state),
-        false,
-      )
-    : 'welcome'
+  const urlStep = stepFromLocation()
+  const preferredBoot = resolveBootStep(boot, sessionStep, urlStep)
+  const bootStep = allowedStep(
+    preferredBoot,
+    preferredBoot,
+    boot.completedThrough,
+    groomingComplete(boot.state),
+    false,
+  )
   const [state, setState] = useState<WizardState>(boot.state)
   const [step, setStep] = useState<WizardStep>(bootStep)
   const [completedThrough, setCompletedThrough] = useState(boot.completedThrough)
@@ -359,6 +360,47 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [session?.email, state, step, completedThrough, projectPayload])
 
+  // Flush draft + best-effort server save before tab close/refresh.
+  useEffect(() => {
+    if (!session?.email) return
+    const flush = () => {
+      saveWizardDraft(session.email, {
+        step: stepRef.current,
+        completedThrough: completedRef.current,
+        state,
+        updatedAt: Date.now(),
+        freshStart: freshStartRef.current && !state.projectId,
+      })
+      saveSessionStep(stepRef.current)
+      if (!state.projectId) return
+      const payload = withDraftProjectPayload(projectPayload())
+      const body = JSON.stringify({
+        ...payload,
+        wizardStep: stepRef.current,
+        wizardCompletedThrough: completedRef.current,
+        wizardState: serializeWizardState(state),
+      })
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session.token) headers.Authorization = `Bearer ${session.token}`
+      try {
+        void fetch(apiUrl(`/projects/${state.projectId}`), {
+          method: 'PUT',
+          headers,
+          body,
+          keepalive: true,
+        }).catch(() => undefined)
+      } catch {
+        /* ignore unload errors */
+      }
+    }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+    }
+  }, [session?.email, session?.token, state, projectPayload])
+
   useEffect(() => {
     if (!session?.email || skipRemoteResumeRef.current) return
     const localNow = loadWizardDraft(session.email)
@@ -371,19 +413,32 @@ export default function App() {
         if (freshStartRef.current || loadWizardDraft(email)?.freshStart) return
         const local = initialDraft(email)
         const remoteDraft = draftFromRemote(email, remote)
-        if (local.updatedAt >= remoteDraft.updatedAt && hasWizardProgress(local)) return
+        const preferLocal = local.updatedAt >= remoteDraft.updatedAt && hasWizardProgress(local)
+        if (preferLocal) {
+          // Local draft already booted; ensure we are not stuck on welcome.
+          const next = resolveBootStep(local, loadSessionStep(), stepFromLocation())
+          if (next !== 'welcome' && stepRef.current === 'welcome') {
+            goToStep(
+              allowedStep(next, next, local.completedThrough, groomingComplete(local.state), false),
+              'replace',
+            )
+            seedWizardHistory(next, true)
+          }
+          return
+        }
         if (!hasWizardProgress(remoteDraft)) return
         skipRemoteResumeRef.current = true
         setState(remoteDraft.state)
         setCompletedThrough(remoteDraft.completedThrough)
-        const active = loadSessionStep()
-        if (!active || active === 'welcome') {
-          goToStep('welcome', 'replace')
-          seedWizardHistory('welcome', true)
-          return
-        }
+        saveWizardDraft(email, {
+          step: remoteDraft.step,
+          completedThrough: remoteDraft.completedThrough,
+          state: remoteDraft.state,
+          updatedAt: Math.max(remoteDraft.updatedAt, Date.now()),
+          freshStart: false,
+        })
         const nextStep = allowedStep(
-          active,
+          resolveBootStep(remoteDraft, loadSessionStep(), stepFromLocation()),
           remoteDraft.step,
           remoteDraft.completedThrough,
           groomingComplete(remoteDraft.state),

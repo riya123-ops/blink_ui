@@ -133,13 +133,18 @@ export function clearSessionStep(): void {
 
 export function parkDraftForNextLogin(email: string | null | undefined): void {
   clearSessionStep()
+  // Keep draft step/progress intact so the next login can offer Resume.
+  // Do not bump updatedAt — that would make a "welcome" local draft beat the server.
   if (!email) return
   const draft = loadWizardDraft(email)
-  if (!draft) return
+  if (!draft || !hasWizardProgress(draft)) return
+  // Ensure draft remains keyed to this email for the next session.
   saveWizardDraft(email, {
-    ...draft,
-    step: 'welcome',
-    updatedAt: Date.now(),
+    step: draft.step,
+    completedThrough: draft.completedThrough,
+    state: draft.state,
+    updatedAt: draft.updatedAt,
+    freshStart: false,
   })
 }
 
@@ -210,6 +215,24 @@ export function resumeTarget(draft: Pick<WizardDraft, 'step' | 'completedThrough
     return STEP_ORDER[Math.min(draft.completedThrough, STEP_ORDER.length - 1)]
   }
   return hasWizardProgress(draft) ? 'project-stakeholders' : 'welcome'
+}
+
+/** Pick the best step to open after refresh/login. */
+export function resolveBootStep(
+  draft: Pick<WizardDraft, 'step' | 'completedThrough' | 'state' | 'freshStart'>,
+  sessionStep: WizardStep | null,
+  urlStep: WizardStep | null,
+): WizardStep {
+  if (draft.freshStart && !draft.state.projectId) {
+    return urlStep || sessionStep || draft.step || 'project-stakeholders'
+  }
+  const preferred =
+    urlStep
+    || sessionStep
+    || (draft.step !== 'welcome' ? draft.step : null)
+    || (hasWizardProgress(draft) ? resumeTarget(draft) : null)
+  if (!preferred) return 'welcome'
+  return preferred
 }
 
 export function initialDraft(email: string | null): WizardDraft {

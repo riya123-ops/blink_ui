@@ -97,6 +97,25 @@ export function apiUrl(path: string): string {
   return `${base}${suffix}`
 }
 
+/** Short JSON calls (login, email). Long agent/download calls must keep their own timeouts. */
+export async function timedFetch(url: string, init: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timed out. Try again.')
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Could not reach the Blink API.')
+    }
+    throw err
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 /** Absolute OAuth callback GitHub/Atlassian will redirect to (API host after deploy, Vite origin locally). */
 export function oauthCallbackUrl(provider: 'github' | 'jira' | 'figma'): string {
   const path = `/integrations/${provider}/oauth/callback`

@@ -51,7 +51,7 @@ export function LoginScreen() {
       setEmail(trimmed)
       const localCode = result.otp?.trim() || null
       setIssuedOtp(localCode)
-      setOtp('')
+      setOtp(localCode || '')
       setStep('otp')
       setResendIn(result.resendAfterSeconds || 45)
       setNotice({
@@ -59,7 +59,13 @@ export function LoginScreen() {
         message: result.message,
       })
     } catch (err) {
-      setNotice({ type: 'error', message: err instanceof Error ? err.message : 'Could not send the code.' })
+      const message = err instanceof Error ? err.message : 'Could not send the code.'
+      setNotice({
+        type: 'error',
+        message: message.includes('timed out')
+          ? 'Sending the code timed out. Sign-in email may be blocked — try again, or check SMTP on the server.'
+          : message,
+      })
     } finally {
       setSending(false)
     }

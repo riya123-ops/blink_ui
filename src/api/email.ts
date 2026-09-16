@@ -1,4 +1,4 @@
-import { apiUrl } from './blink'
+import { apiUrl, timedFetch } from './blink'
 
 export interface SendQuestionPayload {
   question_id: string
@@ -26,11 +26,15 @@ export interface SendQuestionsResponse {
 export async function sendStakeholderQuestions(
   questions: SendQuestionPayload[],
 ): Promise<SendQuestionsResponse> {
-  const response = await fetch(apiUrl('/stakeholder-questions/send'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ questions }),
-  })
+  const response = await timedFetch(
+    apiUrl('/stakeholder-questions/send'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions }),
+    },
+    45000,
+  )
   if (!response.ok) {
     throw new Error(await response.text() || `Send failed (${response.status})`)
   }

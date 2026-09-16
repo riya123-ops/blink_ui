@@ -674,8 +674,10 @@ export async function fetchFigmaProjects(payload: {
 }
 
 export interface JiraCreatedIssueResult {
+  id?: string
   sourceId?: string
   jiraKey?: string | null
+  url?: string | null
   jiraUrl?: string | null
   type?: string
   status?: string
@@ -724,7 +726,25 @@ export async function createJiraIssues(payload: CreateJiraIssuesPayload): Promis
     body: JSON.stringify(payload),
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
-  return response.json() as Promise<CreateJiraIssuesResult>
+  const raw = (await response.json()) as CreateJiraIssuesResult & {
+    created?: Array<JiraCreatedIssueResult & { id?: string; url?: string | null }>
+  }
+  const rows = raw.issues?.length ? raw.issues : raw.created || []
+  const issues = rows.map((row) => {
+    const sourceId = row.sourceId || row.id
+    const jiraUrl = row.jiraUrl || row.url || null
+    return {
+      ...row,
+      sourceId,
+      jiraUrl,
+    }
+  })
+  return {
+    status: raw.status,
+    message: raw.message,
+    errors: raw.errors,
+    issues,
+  }
 }
 
 export interface CreateJiraCommentPayload {
@@ -732,6 +752,8 @@ export interface CreateJiraCommentPayload {
   issueKey: string
   body: string
   blinkQuestionId?: string
+  /** When set, posts as a threaded child reply under this comment */
+  parentCommentId?: string | null
 }
 
 export interface CreateJiraCommentResult {
@@ -767,10 +789,27 @@ export interface PollJiraCommentReply {
   created?: string | null
 }
 
+export interface PollJiraThreadReply {
+  commentId: string
+  body: string
+  author?: string | null
+  created?: string | null
+  parentId?: string | null
+}
+
+export interface PollJiraThread {
+  blinkQuestionId: string
+  issueKey: string
+  parentCommentId?: string | null
+  parentBody?: string | null
+  replies: PollJiraThreadReply[]
+}
+
 export interface PollJiraCommentsResult {
   status: string
   message: string
   replies: PollJiraCommentReply[]
+  threads?: PollJiraThread[]
 }
 
 export async function pollJiraComments(payload: PollJiraCommentsPayload): Promise<PollJiraCommentsResult> {
@@ -782,6 +821,72 @@ export async function pollJiraComments(payload: PollJiraCommentsPayload): Promis
   })
   if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
   return response.json() as Promise<PollJiraCommentsResult>
+}
+
+export interface ResetSimulatedJiraRepliesPayload {
+  projectId?: string | null
+  items: { issueKey: string; blinkQuestionId?: string; replyCommentId?: string | null }[]
+}
+
+export interface ResetSimulatedJiraRepliesResult {
+  status: string
+  message: string
+  deleted: number
+  errors?: string[]
+}
+
+export async function resetSimulatedJiraReplies(
+  payload: ResetSimulatedJiraRepliesPayload,
+): Promise<ResetSimulatedJiraRepliesResult> {
+  const url = apiUrl('/integrations/jira/comments/reset-simulated')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<ResetSimulatedJiraRepliesResult>
+}
+
+export interface SummarizeDiscussionPayload {
+  question: string
+  parentBody?: string | null
+  issueKey?: string | null
+  replies: {
+    commentId: string
+    author?: string | null
+    body: string
+    created?: string | null
+    parentId?: string | null
+  }[]
+}
+
+export interface SummarizeDiscussionResult {
+  status: string
+  message: string
+  summary: string
+  resolvedAnswer: string
+  source?: 'agent' | 'local' | string
+}
+
+export async function summarizeDiscussion(
+  payload: SummarizeDiscussionPayload,
+): Promise<SummarizeDiscussionResult> {
+  const url = apiUrl('/integrations/jira/discussions/summarize')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const raw = (await response.json()) as SummarizeDiscussionResult
+  return {
+    status: raw.status || 'ok',
+    message: raw.message || '',
+    summary: (raw.summary || '').trim(),
+    resolvedAnswer: (raw.resolvedAnswer || '').trim(),
+    source: raw.source,
+  }
 }
 
 export interface CreateRepositoriesPayload {

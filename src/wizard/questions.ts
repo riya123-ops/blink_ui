@@ -80,10 +80,50 @@ export function carryClarifyQuestionsForward(state: WizardState): StakeholderQue
   return out
 }
 
+/** Marker embedded in simulated Jira replies so reset can find/delete them. */
+export const BLINK_SIM_REPLY_MARKER = '[blink-sim-reply]'
+
+/** Build a realistic stakeholder-style reply for Jira simulation (posted as a real comment). */
+export function simulatedStakeholderReply(
+  question: StakeholderQuestion,
+  personName: string,
+): string {
+  const who = personName.trim() || 'stakeholder'
+  const proposed = question.proposedAnswer?.trim()
+  const topic = question.question.trim().replace(/\s+/g, ' ')
+  const shortTopic = topic.length > 160 ? `${topic.slice(0, 157)}…` : topic
+
+  const lines = proposed
+    ? [
+        `Hi — ${who} here (Blink simulation).`,
+        '',
+        `Re: ${shortTopic}`,
+        '',
+        proposed,
+        '',
+        'Please treat this as my confirmation on the ticket.',
+        '',
+        BLINK_SIM_REPLY_MARKER,
+      ]
+    : [
+        `Hi — ${who} here (Blink simulation).`,
+        '',
+        `Re: ${shortTopic}`,
+        '',
+        'Happy to proceed with the recommended approach for now. If anything material changes, I will follow up on this ticket.',
+        '',
+        'Please treat this as my confirmation on the ticket.',
+        '',
+        BLINK_SIM_REPLY_MARKER,
+      ]
+  return lines.join('\n')
+}
+
+/** @deprecated Prefer simulatedStakeholderReply — kept for local-only fallbacks. */
 export function mockResponsesForQuestions(questions: StakeholderQuestion[]): Record<string, string> {
   const responses: Record<string, string> = {}
   for (const q of questions) {
-    responses[q.id] = q.proposedAnswer?.trim() || 'Confirmed — proceed with the recommended approach.'
+    responses[q.id] = simulatedStakeholderReply(q, 'Stakeholder')
   }
   return responses
 }

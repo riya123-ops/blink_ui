@@ -46,7 +46,14 @@ function outboundDone(q: StakeholderQuestion, state: WizardState): boolean {
   return Boolean(emailed || jiraDone || answered)
 }
 
-function statusChip(q: StakeholderQuestion): { label: string; tone: string } {
+function statusChip(q: StakeholderQuestion, state: WizardState): { label: string; tone: string } {
+  const response = state.responses.find((r) => r.questionId === q.id)
+  const answer = response?.response?.trim() || q.jiraReplyBody?.trim() || ''
+  if (response?.status === 'answered' && answer) return { label: 'Resolved', tone: 'ok' }
+  if ((q.jiraThread?.length || 0) > 0 || response?.status === 'discussion' || q.jiraCommentStatus === 'discussion') {
+    return { label: `Discussion · ${q.jiraThread?.length || 0}`, tone: 'info' }
+  }
+  if (q.jiraCommentStatus === 'resolved' && answer) return { label: 'Resolved', tone: 'ok' }
   if (q.jiraCommentStatus === 'replied' && q.jiraCommentId) return { label: 'Answered on Jira', tone: 'ok' }
   if (q.jiraCommentStatus === 'posted' && q.jiraCommentId) return { label: 'Posted · awaiting reply', tone: 'info' }
   if (q.jiraCommentStatus === 'failed') return { label: 'Jira failed', tone: 'err' }
@@ -253,11 +260,15 @@ export function StakeholderQuestionsScreen({
 
                   <ul className="person-question-list">
                     {group.questions.map((q) => {
-                      const chip = statusChip(q)
+                      const chip = statusChip(q, state)
                       const alreadyOnJira =
                         (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') &&
                         Boolean(q.jiraCommentId)
                       const showPicker = openTickets[q.id] || !q.jiraIssueKey
+                      const replyText =
+                        state.responses.find((r) => r.questionId === q.id)?.response?.trim() ||
+                        q.jiraReplyBody?.trim() ||
+                        ''
                       return (
                         <li key={q.id} className="person-question">
                           <div className="person-question-main">
@@ -265,12 +276,30 @@ export function StakeholderQuestionsScreen({
                             {q.proposedAnswer ? (
                               <p className="sub">Proposed: {q.proposedAnswer}</p>
                             ) : null}
-                            <span className={`status-chip ${chip.tone}`}>{chip.label}</span>
-                            {q.jiraIssueUrl && alreadyOnJira ? (
-                              <a className="ticket-link" href={q.jiraIssueUrl} target="_blank" rel="noreferrer">
-                                Open ticket <ExternalLink size={12} />
-                              </a>
+                            {replyText ? (
+                              <blockquote className="jira-reply-excerpt">
+                                <strong>Jira reply</strong>
+                                <span>{replyText}</span>
+                              </blockquote>
                             ) : null}
+                            <div className="person-question-meta">
+                              <span className={`status-chip ${chip.tone}`}>{chip.label}</span>
+                              {q.jiraIssueKey ? (
+                                q.jiraIssueUrl ? (
+                                  <a
+                                    className="jira-ticket-badge"
+                                    href={q.jiraIssueUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={`Open ${q.jiraIssueKey} in Jira`}
+                                  >
+                                    {q.jiraIssueKey} <ExternalLink size={11} />
+                                  </a>
+                                ) : (
+                                  <span className="jira-ticket-badge jira-ticket-badge--plain">{q.jiraIssueKey}</span>
+                                )
+                              ) : null}
+                            </div>
                           </div>
                           <div className="person-question-side">
                             {issues.length === 0 ? (

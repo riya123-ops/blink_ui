@@ -50,7 +50,7 @@
   --font-display: "Outfit", Manrope, system-ui, sans-serif;
   --font-ui: "Manrope", system-ui, -apple-system, sans-serif;
   --action-dock-h: 3.5rem;
-  --top-float-h: 3.25rem;
+  --top-float-h: 2.75rem;
   --chat-width: 400px;
 }
 
@@ -178,6 +178,7 @@ textarea {
   flex-direction: column;
   height: 100vh;
   backdrop-filter: blur(18px) saturate(1.1);
+  transition: width 0.18s ease;
 }
 
 .sidebar-wave {
@@ -328,19 +329,21 @@ textarea {
 
 /* ── Main ── */
 .main {
-  flex: 1;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  width: auto;
+  max-width: none;
   background: transparent;
 }
 
 .content {
   flex: 1;
-  padding: calc(var(--top-float-h, 3.25rem) + 1rem) 1.5rem calc(var(--action-dock-h, 3.5rem) + 0.75rem);
+  padding: calc(var(--top-float-h, 2.75rem) + 0.75rem) 1.25rem calc(var(--action-dock-h, 3.5rem) + 0.75rem) 1.5rem;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: auto;
+  scrollbar-gutter: unset;
 }
 
 .content-fill {
@@ -3131,11 +3134,17 @@ textarea::placeholder {
   background: transparent;
   position: relative;
   overflow: hidden;
+  min-height: 0;
+  height: 100%;
 }
 
 .content-welcome {
   padding: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  min-height: 0;
+  scrollbar-gutter: auto;
 }
 
 /* App header */
@@ -3229,7 +3238,7 @@ textarea::placeholder {
 
 /* Welcome page */
 .welcome-page {
-  min-height: 100vh;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -3282,8 +3291,8 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 1rem 2rem 2rem;
+  justify-content: safe center;
+  padding: 1.25rem 2rem 2.5rem;
   position: relative;
   z-index: 1;
 }
@@ -4045,7 +4054,7 @@ textarea::placeholder {
 
 .top-bar,
 .top-float {
-  background: rgba(255, 255, 255, 0.9);
+  background: transparent;
   border-bottom: none;
 }
 
@@ -6499,7 +6508,7 @@ textarea::placeholder {
 
 /* ── Blink Chat panel (Cursor-like) ── */
 .app-shell.chat-open .main {
-  max-width: calc(100% - var(--chat-width, 400px));
+  max-width: none;
 }
 
 .chat-panel {

@@ -2045,26 +2045,24 @@ export default function App() {
     <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}${chatOpen && !isWelcome ? ' chat-open' : ''}`}>
       <ThemeBackground />
       {!isWelcome && (
-        <aside className="sidebar">
-          <WizardSidebar
-            currentStep={step}
-            completedThrough={completedThrough}
-            generationComplete={state.generationComplete}
-            groomingUnlocked={groomingComplete(state)}
-            unrestrictedNav={unrestrictedNav}
-            state={state}
-            onNavigate={(s) => {
-              setStatus(null)
-              goToStep(s)
-            }}
-          />
-        </aside>
+        <WizardSidebar
+          currentStep={step}
+          completedThrough={completedThrough}
+          generationComplete={state.generationComplete}
+          groomingUnlocked={groomingComplete(state)}
+          unrestrictedNav={unrestrictedNav}
+          state={state}
+          onNavigate={(s) => {
+            setStatus(null)
+            goToStep(s)
+          }}
+        />
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
         {(!isSuccessScreen || folderPrep === 'preparing' || governancePrep === 'preparing') && !isWelcome && (
-          <header className="top-float">
-            <div className="top-float-start">
+          <header className="top-float" aria-label="Step actions">
+            <div className="top-float-chip top-float-start">
               <span className="step-indicator">
                 {phaseProgressLabel(step)}
               </span>
@@ -2144,7 +2142,7 @@ export default function App() {
               )}
               </div>
             </div>
-            <div className="top-float-end">
+            <div className="top-float-chip top-float-end">
               <button
                 type="button"
                 className={`header-chat-btn${chatOpen ? ' is-active' : ''}`}

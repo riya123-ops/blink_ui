@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
 import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
+import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
   GenerationDownloadScreen,
@@ -171,6 +172,7 @@ export default function App() {
   const skipStepValidation = useDeveloperCapability('skipStepValidation')
   const autoEnsureProject = useDeveloperCapability('autoEnsureProject')
   const unrestrictedNav = useDeveloperCapability('unrestrictedStepNav')
+  const [chatOpen, setChatOpen] = useChatPanelOpen()
 
   const patch = useCallback((updates: Partial<WizardState>) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -2013,7 +2015,7 @@ export default function App() {
     stepIndex(step) >= stepIndex('requirements')
 
   return (
-    <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}`}>
+    <div className={`app-shell${isWelcome ? ' welcome-mode' : ''}${chatOpen && !isWelcome ? ' chat-open' : ''}`}>
       <ThemeBackground />
       {!isWelcome && (
         <aside className="sidebar">
@@ -2115,17 +2117,28 @@ export default function App() {
               )}
               </div>
             </div>
-            {showQuickDownload && (
+            <div className="top-bar-end">
               <button
                 type="button"
-                className="header-download-btn"
-                disabled={loading || grooming}
-                onClick={handleQuickDownload}
+                className={`header-chat-btn${chatOpen ? ' is-active' : ''}`}
+                onClick={() => setChatOpen(!chatOpen)}
+                title="Blink Chat"
               >
-                <Download size={16} />
-                Download Project
+                <MessageSquare size={16} />
+                Blink Chat
               </button>
-            )}
+              {showQuickDownload && (
+                <button
+                  type="button"
+                  className="header-download-btn"
+                  disabled={loading || grooming}
+                  onClick={handleQuickDownload}
+                >
+                  <Download size={16} />
+                  Download Project
+                </button>
+              )}
+            </div>
           </header>
         )}
 
@@ -2150,6 +2163,19 @@ export default function App() {
         </div>
         )}
       </div>
+
+      {!isWelcome && (
+        <ChatPanel
+          projectId={state.projectId}
+          currentStep={step}
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+          onNavigate={(s) => {
+            setStatus(null)
+            goToStep(s as WizardStep)
+          }}
+        />
+      )}
     </div>
   )
 }

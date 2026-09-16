@@ -76,6 +76,7 @@ export function StakeholderResponsesScreen({
   const [draft, setDraft] = useState('')
   const [summaryDraft, setSummaryDraft] = useState<Record<string, string>>({})
   const [summarizingId, setSummarizingId] = useState<string | null>(null)
+  const [summaryMeta, setSummaryMeta] = useState<Record<string, string>>({})
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -170,8 +171,19 @@ export function StakeholderResponsesScreen({
       const summary = res.summary || ''
       const resolved = res.resolvedAnswer || ''
       setSummaryDraft((prev) => ({ ...prev, [q.id]: summary }))
+      setSummaryMeta((prev) => ({
+        ...prev,
+        [q.id]: res.source === 'agent' ? 'AI summary' : 'Local digest (not LLM)',
+      }))
       onPatchQuestion?.(q.id, { jiraThreadSummary: summary })
       startEdit(q.id, resolved || summary)
+      if (res.source === 'local') {
+        setSummaryError(
+          `Used local digest (not LLM).${res.agentError ? ` Agent: ${res.agentError}` : ''}`,
+        )
+      } else {
+        setSummaryError(null)
+      }
     } catch (e) {
       setSummaryError(e instanceof Error ? e.message : 'Could not summarize discussion.')
     } finally {
@@ -392,7 +404,7 @@ export function StakeholderResponsesScreen({
                     {digest ? (
                       <div className="discussion-digest">
                         <div className="discussion-digest-label">
-                          <MessageSquareText size={14} /> Thread digest
+                          <MessageSquareText size={14} /> {summaryMeta[q.id] || 'Thread digest'}
                         </div>
                         <pre>{digest}</pre>
                       </div>

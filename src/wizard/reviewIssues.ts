@@ -64,24 +64,30 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
   }
 
   const tbdTech = state.repoTechnologies.filter((t) => t.status === 'tbd')
-  const tbdDetails = tbdTech.map((t) => {
-    const repo = state.repositories.find((r) => r.id === t.repoId)
-    return `${repo?.name ?? t.repoId}: technology stack marked TBD`
-  })
-  if (tbdDetails.length === 0) {
-    tbdDetails.push(
-      'Review recommended technology choices on repositories',
-      'Confirm Spring Boot and React stack selections',
-    )
+  const recommendedTech = state.repoTechnologies.filter((t) => t.status === 'recommendation')
+  if (tbdTech.length > 0) {
+    issues.push({
+      id: 'tbd',
+      type: 'warn',
+      label: `${tbdTech.length} TBD technolog${tbdTech.length > 1 ? 'ies' : 'y'}`,
+      targetStep: 'technology-per-repo',
+      details: tbdTech.map((t) => {
+        const repo = state.repositories.find((r) => r.id === t.repoId)
+        return `${repo?.name ?? t.repoId}: technology stack marked TBD`
+      }),
+    })
+  } else if (recommendedTech.length > 0) {
+    issues.push({
+      id: 'tbd',
+      type: 'info',
+      label: `${recommendedTech.length} recommendation${recommendedTech.length > 1 ? 's' : ''} to confirm`,
+      targetStep: 'technology-per-repo',
+      details: recommendedTech.map((t) => {
+        const repo = state.repositories.find((r) => r.id === t.repoId)
+        return `${repo?.name ?? t.repoId}: ${t.language} / ${t.framework}`
+      }),
+    })
   }
-
-  issues.push({
-    id: 'tbd',
-    type: 'warn',
-    label: `${tbdDetails.length} TBD item${tbdDetails.length > 1 ? 's' : ''}`,
-    targetStep: 'technology-per-repo',
-    details: tbdDetails,
-  })
 
   const archDetails: string[] = []
   if (state.architectureStyle === 'microservices' && state.repositories.length < 3) {
@@ -93,18 +99,18 @@ export function buildReviewIssues(state: WizardState): ReviewIssue[] {
   if (!state.cloudProvider) {
     archDetails.push('Cloud provider not configured')
   }
-  if (archDetails.length === 0) {
-    archDetails.push(`Architecture: ${state.architectureStyle.replace('-', ' ')}`)
-    archDetails.push(`Repository model: ${state.repositoryModel.replace('-', ' ')}`)
+  if (!state.repositories.some((r) => r.name.trim())) {
+    archDetails.push('No repositories defined yet')
   }
-
-  issues.push({
-    id: 'arch',
-    type: 'info',
-    label: `${archDetails.length} Architecture warning${archDetails.length > 1 ? 's' : ''}`,
-    targetStep: 'project-shape',
-    details: archDetails,
-  })
+  if (archDetails.length > 0) {
+    issues.push({
+      id: 'arch',
+      type: 'warn',
+      label: `${archDetails.length} architecture issue${archDetails.length > 1 ? 's' : ''}`,
+      targetStep: 'project-shape',
+      details: archDetails,
+    })
+  }
 
   return issues
 }

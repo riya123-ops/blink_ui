@@ -507,10 +507,19 @@ export function computeReadiness(state: WizardState): number {
       return response?.status === 'answered' && Boolean(text)
     })
   if (mandatoryAnswered && state.questions.length > 0) score += 15
-  if (state.repositories.length >= 2) score += 10
-  if (state.repoTechnologies.every((t) => t.status === 'confirmed')) score += 10
+  const namedRepos = state.repositories.filter((r) => r.name.trim())
+  if (namedRepos.length > 0) score += 10
+  if (
+    state.repoTechnologies.length > 0 &&
+    state.repoTechnologies.every((t) => t.status === 'confirmed')
+  ) {
+    score += 10
+  } else if (state.repoTechnologies.some((t) => t.status === 'confirmed' || t.status === 'recommendation')) {
+    score += 5
+  }
   if (state.ideTool) score += 5
   if (state.cloudProvider && state.cicd) score += 10
+  if (Object.values(state.environments || {}).some(Boolean)) score += 5
   if (state.integrations.some((i) => i.connected)) score += 5
   return Math.min(score, 100)
 }

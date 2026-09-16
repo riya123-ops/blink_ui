@@ -1038,7 +1038,9 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
                   <strong>Sign in with Figma</strong>
                 </div>
                 <p className="jira-oauth-desc">
-                  Sign in with your Figma account. If the popup fails, connect with a personal access token below.
+                  Sign in with your Figma account. The Figma app must enable
+                  current_user:read, file_content:read, and file_metadata:read — extra
+                  requested scopes cause “Invalid scopes for app”. PAT fallback is below.
                 </p>
                 <button
                   type="button"

@@ -867,6 +867,7 @@ export interface SummarizeDiscussionResult {
   summary: string
   resolvedAnswer: string
   source?: 'agent' | 'local' | string
+  agentError?: string
 }
 
 export async function summarizeDiscussion(
@@ -886,6 +887,7 @@ export async function summarizeDiscussion(
     summary: (raw.summary || '').trim(),
     resolvedAnswer: (raw.resolvedAnswer || '').trim(),
     source: raw.source,
+    agentError: raw.agentError,
   }
 }
 
@@ -1286,3 +1288,176 @@ export function technicalPlan(
 ) {
   return postAdvisory(projectId, 'technical-plan', payload)
 }
+
+export interface ChatMessageDto {
+  id: number
+  threadId: number
+  role: string
+  content: string
+  model?: string | null
+  mode?: string | null
+  toolJson?: unknown
+  turnId?: string | null
+  createdAt: string
+}
+
+export interface ChatThreadResponse {
+  thread: { id: number; projectId: number; ownerEmail: string }
+  messages: ChatMessageDto[]
+  models: string[]
+}
+
+export async function fetchProjectChat(projectId: string): Promise<ChatThreadResponse> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/chat`), { headers: authHeaders() })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<ChatThreadResponse>
+}
+
+export async function clearProjectChat(projectId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/chat/messages`), {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+}
+
+type SseHandlers = {
+  onUser?: (message: ChatMessageDto, turnId: string) => void
+  onAssistantStart?: (turnId: string) => void
+  onToken: (text: string) => void
+  onDone: (message: ChatMessageDto, turnId: string) => void
+  onError?: (message: string) => void
+}
+
+/** Parse SSE frames correctly across TCP chunks (multi-line data, event reset on blank line). */
+function consumeSseBuffer(
+  buffer: string,
+  handlers: {
+    onEvent: (event: string, data: string) => void
+  },
+): string {
+  let rest = buffer
+  while (true) {
+    const sep = rest.indexOf('\n\n')
+    if (sep < 0) break
+    const rawFrame = rest.slice(0, sep)
+    rest = rest.slice(sep + 2)
+    // Normalize CRLF frames from some proxies.
+    const frame = rawFrame.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (!frame.trim()) continue
+    let event = 'message'
+    const dataLines: string[] = []
+    for (const line of frame.split('\n')) {
+      if (!line || line.startsWith(':')) continue
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim()
+        continue
+      }
+      if (line.startsWith('data:')) {
+        // Spec: optional single leading space after data:
+        const value = line.startsWith('data: ') ? line.slice(6) : line.slice(5)
+        dataLines.push(value)
+      }
+    }
+    if (dataLines.length === 0) continue
+    handlers.onEvent(event, dataLines.join('\n'))
+  }
+  return rest
+}
+
+/**
+ * Live chat turn: one POST that streams LLM tokens as they arrive (not a fake replay).
+ * Events: user → assistant_start → token* → message_done | error
+ */
+export async function streamProjectChatMessage(
+  projectId: string,
+  body: { text: string; mode?: string; model?: string; currentStep?: string },
+  handlers: SseHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(apiUrl(`/projects/${projectId}/chat/messages`), {
+    method: 'POST',
+    headers: {
+      ...authHeaders(true),
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) {
+    handlers.onError?.(await readError(response))
+    return
+  }
+  if (!response.body) {
+    handlers.onError?.('No response body from chat stream')
+    return
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let turnId = ''
+  let sawDone = false
+
+  const dispatch = (event: string, data: string) => {
+    let parsed: Record<string, unknown> = {}
+    try {
+      parsed = JSON.parse(data) as Record<string, unknown>
+    } catch {
+      // Ignore non-JSON keepalives / partials that somehow framed.
+      return
+    }
+    if (event === 'user') {
+      const msg = parsed.message as ChatMessageDto | undefined
+      const tid = typeof parsed.turnId === 'string' ? parsed.turnId : ''
+      if (tid) turnId = tid
+      if (msg) handlers.onUser?.(msg, turnId)
+      return
+    }
+    if (event === 'assistant_start') {
+      const tid = typeof parsed.turnId === 'string' ? parsed.turnId : turnId
+      if (tid) turnId = tid
+      handlers.onAssistantStart?.(turnId)
+      return
+    }
+    if (event === 'token') {
+      const text = typeof parsed.text === 'string' ? parsed.text : ''
+      if (text) handlers.onToken(text)
+      return
+    }
+    if (event === 'error') {
+      const message = typeof parsed.message === 'string' ? parsed.message : 'Chat stream error'
+      handlers.onError?.(message)
+      return
+    }
+    if (event === 'message_done') {
+      sawDone = true
+      const msg = parsed.message as ChatMessageDto | undefined
+      const tid = typeof parsed.turnId === 'string' ? parsed.turnId : turnId
+      if (msg) handlers.onDone(msg, tid)
+    }
+  }
+
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        await reader.cancel()
+        break
+      }
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      buffer = consumeSseBuffer(buffer, { onEvent: dispatch })
+    }
+    // Flush any trailing decoded text (rare; usually ends with \n\n).
+    buffer += decoder.decode()
+    buffer = consumeSseBuffer(buffer, { onEvent: dispatch })
+    if (!sawDone && !signal?.aborted) {
+      handlers.onError?.('Chat stream ended before the assistant finished')
+    }
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') return
+    handlers.onError?.(e instanceof Error ? e.message : 'Chat stream failed')
+  }
+}
+

@@ -12,12 +12,16 @@ import {
   fetchGithubOrgs,
   fetchJiraOAuthUrl,
   fetchJiraProjects,
+  fetchMyIntegrations,
+  fetchProjectIntegrations,
+  applyMyIntegrationsToProject,
   saveIntegrationBinding,
   type GithubOrgItem,
   type JiraProjectItem,
 } from '../api/blink'
 import type { IntegrationItem } from '../wizard/defaults'
 import { DEFAULT_INTEGRATIONS } from '../wizard/defaults'
+import { mergeSavedIntegrations } from '../wizard/mergeIntegrations'
 import type { WizardState } from '../wizard/types'
 import { IntegrationLogo } from './IntegrationLogo'
 import { subscribeOauthResult, type OauthResult } from '../oauth/channel'
@@ -176,6 +180,37 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
   useEffect(() => {
     projectIdRef.current = state.projectId
   }, [state.projectId])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydrate = async () => {
+      try {
+        let saved = state.projectId
+          ? await fetchProjectIntegrations(state.projectId)
+          : await fetchMyIntegrations()
+        if (cancelled) return
+        if (state.projectId && saved.length === 0) {
+          saved = await applyMyIntegrationsToProject(state.projectId)
+          if (cancelled) return
+        }
+        if (!saved.length) return
+        const merged = mergeSavedIntegrations(state.integrations, saved)
+        const changed = merged.some((item, i) => {
+          const cur = state.integrations.find((c) => c.id === item.id) || state.integrations[i]
+          return Boolean(item.connected) !== Boolean(cur?.connected) || item.account !== cur?.account || item.projectKey !== cur?.projectKey
+        })
+        if (changed) onUpdate({ integrations: merged })
+      } catch {
+        /* ignore hydrate errors */
+      }
+    }
+    void hydrate()
+    return () => {
+      cancelled = true
+    }
+    // Re-run when project changes; avoid thrashing on every integrations edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.projectId, onUpdate])
 
   const requireStoredProject = useCallback(async (): Promise<string> => {
     if (projectIdRef.current) return projectIdRef.current

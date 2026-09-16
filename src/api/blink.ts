@@ -460,6 +460,48 @@ export async function connectIntegration(payload: IntegrationConnectPayload): Pr
   return response.json() as Promise<IntegrationConnectResult>
 }
 
+export interface SavedIntegrationDto {
+  provider: string
+  connected: boolean
+  account?: string
+  detail?: string
+  baseUrl?: string
+  email?: string
+  username?: string
+  organization?: string
+  workspace?: string
+  projectKey?: string
+  projectName?: string
+  spaceKey?: string
+  cloudId?: string
+  authType?: 'oauth' | 'token'
+  scope?: 'user' | 'project'
+}
+
+export async function fetchMyIntegrations(): Promise<SavedIntegrationDto[]> {
+  const url = apiUrl('/integrations')
+  const response = await fetch(url, { headers: authHeaders(), cache: 'no-store' })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const data = (await response.json()) as { integrations?: SavedIntegrationDto[] }
+  return data.integrations ?? []
+}
+
+export async function fetchProjectIntegrations(projectId: string): Promise<SavedIntegrationDto[]> {
+  const url = apiUrl(`/projects/${projectId}/integrations`)
+  const response = await fetch(url, { headers: authHeaders(), cache: 'no-store' })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const data = (await response.json()) as { integrations?: SavedIntegrationDto[] }
+  return data.integrations ?? []
+}
+
+export async function applyMyIntegrationsToProject(projectId: string): Promise<SavedIntegrationDto[]> {
+  const url = apiUrl(`/projects/${projectId}/integrations/apply`)
+  const response = await fetch(url, { method: 'POST', headers: authHeaders(true), body: '{}' })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const data = (await response.json()) as { integrations?: SavedIntegrationDto[] }
+  return data.integrations ?? []
+}
+
 export async function fetchJiraOAuthUrl(): Promise<JiraOAuthUrlResult> {
   const redirectUri = oauthCallbackUrl('jira')
   const url = apiUrl(`/integrations/jira/oauth/url?redirectUri=${encodeURIComponent(redirectUri)}`)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -40,6 +40,7 @@ import {
 import { roleLabel } from './wizard/stakeholders'
 import { primaryContinueLabel, stepIndex } from './wizard/steps'
 import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
+import { mergeSavedIntegrations } from './wizard/mergeIntegrations'
 import {
   clearGroomingPatch,
   defaultWizardState,
@@ -396,6 +397,35 @@ export default function App() {
       cancelled = true
     }
   }, [session?.email, goToStep])
+
+  useEffect(() => {
+    if (!session?.email) return
+    let cancelled = false
+    const run = async () => {
+      try {
+        const projectId = state.projectId
+        let saved = projectId
+          ? await fetchProjectIntegrations(projectId)
+          : await fetchMyIntegrations()
+        if (cancelled) return
+        if (projectId && saved.length === 0) {
+          saved = await applyMyIntegrationsToProject(projectId)
+          if (cancelled) return
+        }
+        if (!saved.length) return
+        setState((prev) => ({
+          ...prev,
+          integrations: mergeSavedIntegrations(prev.integrations, saved),
+        }))
+      } catch {
+        /* keep local wizard snapshot if hydrate fails */
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [session?.email, state.projectId])
 
   useEffect(() => {
     publishDeveloperSession({

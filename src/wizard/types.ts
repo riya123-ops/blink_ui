@@ -302,6 +302,8 @@ export interface WizardState extends SetupForm {
   implementStep?: { issueId?: string; commitMessage?: string; summary?: string; files?: { path: string; content: string; repoHint?: string }[]; notes?: string[] } | null
   draftPullRequests?: { url?: string; number?: number; branch?: string; owner?: string; repo?: string; sha?: string; kind?: string }[]
   qaValidation?: { issueId?: string; verdict?: string; summary?: string; markdown?: string; draftPrUrl?: string | null } | null
+  /** True after user Continues or Refresh-plan on Ship (plan may predate stack). */
+  shipPlanAcknowledged?: boolean
   jiraCreatedIssues?: JiraCreatedIssue[]
 }
 
@@ -419,6 +421,7 @@ export const defaultWizardState: WizardState = {
   implementStep: null,
   draftPullRequests: [],
   qaValidation: null,
+  shipPlanAcknowledged: false,
   jiraCreatedIssues: [],
 }
 
@@ -532,6 +535,7 @@ export function clearGroomingPatch(): Partial<WizardState> {
     implementStep: null,
     draftPullRequests: [],
     qaValidation: null,
+    shipPlanAcknowledged: false,
     jiraCreatedIssues: [],
   }
 }

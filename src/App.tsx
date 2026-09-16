@@ -8,7 +8,6 @@ import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
-  GenerationDownloadScreen,
   IdeAndToolsScreen,
   PlatformDeliveryScreen,
   ProjectPreviewScreen,
@@ -17,6 +16,7 @@ import {
   ReviewResolveScreen,
   TechnologyPerRepoScreen,
 } from './screens/ExtendedScreens'
+import { ShipScreen } from './screens/ShipScreen'
 import {
   ProjectStakeholdersScreen,
   validateProjectStakeholders,
@@ -1989,24 +1989,35 @@ export default function App() {
           />
         )
       case 'project-preview':
-        return <ProjectPreviewScreen state={state} onGenerate={() => void runGeneration()} loading={loading} />
+        return (
+          <ProjectPreviewScreen
+            state={state}
+            onGenerate={() => {
+              setCompletedThrough((prev) => Math.max(prev, stepIndex('project-preview')))
+              goToStep('generation')
+            }}
+            loading={loading}
+          />
+        )
       case 'generation':
         return (
-          <GenerationDownloadScreen
+          <ShipScreen
             state={state}
+            onUpdate={patch}
             loading={loading}
             exporting={creatingRepos}
             onExportGithub={() => void handleCreateGithubRepos()}
+            onGenerateKit={() => void runGeneration()}
             onBack={() => goToStep('welcome')}
           />
         )
     }
   }
 
-  const showBack = step !== 'welcome' && !(step === 'generation' && state.generationComplete)
+  const showBack = step !== 'welcome'
   const showNext = step !== 'welcome' && step !== 'generation' && step !== 'project-preview'
   const isWelcome = step === 'welcome'
-  const isSuccessScreen = step === 'generation' && state.generationComplete
+  const isSuccessScreen = false
   const generationIdx = stepIndex('generation')
   const currentSkipped = state.generationComplete && stepIndex(step) > completedThrough && stepIndex(step) < generationIdx
   const showQuickDownload =

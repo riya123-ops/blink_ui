@@ -4,7 +4,6 @@ import {
   ClipboardList,
   Cloud,
   Cpu,
-  Download,
   Eye,
   FileText,
   GitBranch,
@@ -14,6 +13,7 @@ import {
   Link2,
   MessageSquare,
   Monitor,
+  Rocket,
   Users,
 } from 'lucide-react'
 import type { WizardState, WizardStep } from './types'
@@ -46,7 +46,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'platform-delivery', label: 'Platform & Delivery', icon: Cloud, iconColor: '#0284c7' },
   { id: 'review-resolve', label: 'Review & Resolve', icon: CheckSquare, iconColor: '#16a34a' },
   { id: 'project-preview', label: 'Generated Project Preview', icon: Eye, iconColor: '#7e22ce' },
-  { id: 'generation', label: 'Generation / Download', icon: Download, iconColor: '#087a38' },
+  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#087a38' },
 ]
 
 export const WIZARD_PHASES: PhaseDefinition[] = [

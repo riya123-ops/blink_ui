@@ -548,7 +548,7 @@ export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: Wi
       </section>
       <div className="row-actions">
         <button type="button" className="primary-btn large" disabled={loading} onClick={onGenerate}>
-          Generate Project →
+          Continue to Ship →
         </button>
       </div>
     </div>

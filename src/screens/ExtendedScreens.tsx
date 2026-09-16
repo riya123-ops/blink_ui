@@ -10,7 +10,9 @@ import {
   TOPOLOGY_OPTIONS,
   defaultRepositories,
   defaultRepoTechnologies,
+  ensurePlatformDefaults,
   githubRepoSlug,
+  platformOptionsForCloud,
   workspaceRootName,
   buildDownloadStructure,
   sanitizeDownloadStructure,
@@ -24,11 +26,40 @@ interface ScreenProps {
 }
 
 export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
+  const shape = {
+    topology: state.topology,
+    repositoryModel: state.repositoryModel,
+    architectureStyle: state.architectureStyle,
+  }
+  const suggested = defaultRepositories(state.projectName, shape)
+
+  const applyShape = (patch: Partial<WizardState>) => {
+    const next = { ...state, ...patch }
+    if (state.repositoriesTouched) {
+      onUpdate(patch)
+      return
+    }
+    const nextShape = {
+      topology: next.topology,
+      repositoryModel: next.repositoryModel,
+      architectureStyle: next.architectureStyle,
+    }
+    const repos = defaultRepositories(next.projectName, nextShape)
+    onUpdate({
+      ...patch,
+      repositories: repos,
+      repoTechnologies: defaultRepoTechnologies(repos, nextShape),
+    })
+  }
+
   return (
     <div className="screen">
       <div className="screen-header">
         <h2>Project Shape</h2>
-        <p>Define topology, repository model, and architecture style. You will name repositories on the next step.</p>
+        <p>
+          Choose topology, repository model, and architecture. Suggested repositories update live
+          {state.repositoriesTouched ? ' (locked after you edited Repositories)' : ''}.
+        </p>
       </div>
 
       <section className="card">
@@ -39,10 +70,11 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
               key={opt.id}
               type="button"
               className={`topology-card ${state.topology === opt.id ? 'active' : ''}`}
-              onClick={() => onUpdate({ topology: opt.id })}
+              onClick={() => applyShape({ topology: opt.id })}
             >
               <span className="topo-icon">{opt.icon}</span>
               <span>{opt.label}</span>
+              {'hint' in opt && opt.hint ? <span className="topo-hint">{opt.hint}</span> : null}
             </button>
           ))}
         </div>
@@ -58,9 +90,12 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
                   type="radio"
                   name="repoModel"
                   checked={state.repositoryModel === opt.id}
-                  onChange={() => onUpdate({ repositoryModel: opt.id })}
+                  onChange={() => applyShape({ repositoryModel: opt.id })}
                 />
-                {opt.label}
+                <span>
+                  {opt.label}
+                  {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
+                </span>
               </label>
             ))}
           </div>
@@ -74,18 +109,39 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
                   type="radio"
                   name="arch"
                   checked={state.architectureStyle === opt.id}
-                  onChange={() => onUpdate({ architectureStyle: opt.id })}
+                  onChange={() => applyShape({ architectureStyle: opt.id })}
                 />
-                {opt.label}
+                <span>
+                  {opt.label}
+                  {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
+                </span>
               </label>
             ))}
           </div>
         </section>
       </div>
 
+      <section className="card">
+        <h3 className="card-title">Suggested repositories</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          From <strong>{state.projectName || 'your project'}</strong> ·{' '}
+          {TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label} ·{' '}
+          {REPO_MODEL_OPTIONS.find((m) => m.id === state.repositoryModel)?.label}
+        </p>
+        <ul className="shape-repo-preview">
+          {suggested.map((repo) => (
+            <li key={repo.id}>
+              <code>{repo.name}</code>
+              <span>{repo.purpose}</span>
+              <span className="muted">{repo.description}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <div className="summary-cards">
         <div className="summary-card"><strong>Topology</strong><span>{TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}</span></div>
-        <div className="summary-card"><strong>Repos</strong><span>Named next</span></div>
+        <div className="summary-card"><strong>Repos</strong><span>{suggested.length} suggested</span></div>
         <div className="summary-card"><strong>Architecture</strong><span>{ARCHITECTURE_OPTIONS.find((a) => a.id === state.architectureStyle)?.label}</span></div>
       </div>
     </div>
@@ -101,35 +157,61 @@ export function RepositoriesScreen({
 }) {
   useEffect(() => {
     if (state.repositoriesTouched) return
-    const repos = defaultRepositories(state.projectName)
-    onUpdate({ repositories: repos, repoTechnologies: defaultRepoTechnologies(repos) })
-  }, [state.projectName, state.repositoriesTouched, onUpdate])
+    const shape = {
+      topology: state.topology,
+      repositoryModel: state.repositoryModel,
+      architectureStyle: state.architectureStyle,
+    }
+    const repos = defaultRepositories(state.projectName, shape)
+    const current = state.repositories || []
+    const unchanged =
+      current.length === repos.length &&
+      current.every((repo, index) => repo.id === repos[index]?.id && repo.name === repos[index]?.name)
+    if (unchanged) return
+    onUpdate({ repositories: repos, repoTechnologies: defaultRepoTechnologies(repos, shape) })
+  }, [
+    state.projectName,
+    state.topology,
+    state.repositoryModel,
+    state.architectureStyle,
+    state.repositoriesTouched,
+    state.repositories,
+    onUpdate,
+  ])
 
-  const markTouched = (repositories: WizardState['repositories']) => {
-    const keptIds = new Set(repositories.map((repo) => repo.id))
-    const existingTech = state.repoTechnologies.filter((tech) => keptIds.has(tech.repoId))
-    const missing = repositories.filter((repo) => !existingTech.some((tech) => tech.repoId === repo.id))
+  const repositories = state.repositories || []
+  const repoTechnologies = state.repoTechnologies || []
+
+  const markTouched = (nextRepos: WizardState['repositories']) => {
+    const keptIds = new Set(nextRepos.map((repo) => repo.id))
+    const existingTech = repoTechnologies.filter((tech) => keptIds.has(tech.repoId))
+    const missing = nextRepos.filter((repo) => !existingTech.some((tech) => tech.repoId === repo.id))
+    const shape = {
+      topology: state.topology,
+      repositoryModel: state.repositoryModel,
+      architectureStyle: state.architectureStyle,
+    }
     onUpdate({
-      repositories,
+      repositories: nextRepos,
       repositoriesTouched: true,
-      repoTechnologies: [...existingTech, ...defaultRepoTechnologies(missing)],
+      repoTechnologies: [...existingTech, ...defaultRepoTechnologies(missing, shape)],
     })
   }
 
   const updateRepo = (id: string, field: string, value: string) => {
-    markTouched(state.repositories.map((r) => (r.id === id ? { ...r, [field]: value } : r)))
+    markTouched(repositories.map((r) => (r.id === id ? { ...r, [field]: value } : r)))
   }
 
   const addRepo = () => {
     const id = `repo-${Date.now()}`
     const slug = githubRepoSlug(state.projectName)
     markTouched([
-      ...state.repositories,
+      ...repositories,
       { id, name: `${slug}-service`, purpose: 'Service', description: '', owner: '', dependencies: '' },
     ])
   }
 
-  const github = state.integrations.find((item) => item.id === 'github')
+  const github = state.integrations?.find((item) => item.id === 'github')
   const githubReady = Boolean(github?.connected)
 
   return (
@@ -163,7 +245,7 @@ export function RepositoriesScreen({
               </tr>
             </thead>
             <tbody>
-              {state.repositories.map((repo) => (
+              {repositories.map((repo) => (
                 <tr key={repo.id}>
                   <td><input className="table-input mono" value={repo.name} onChange={(e) => updateRepo(repo.id, 'name', e.target.value)} /></td>
                   <td><input className="table-input" value={repo.purpose} onChange={(e) => updateRepo(repo.id, 'purpose', e.target.value)} /></td>
@@ -188,7 +270,7 @@ export function RepositoriesScreen({
                       type="button"
                       className="icon-btn"
                       title="Delete"
-                      onClick={() => markTouched(state.repositories.filter((r) => r.id !== repo.id))}
+                      onClick={() => markTouched(repositories.filter((r) => r.id !== repo.id))}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -211,9 +293,35 @@ export function RepositoriesScreen({
 }
 
 export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
+  const shape = {
+    topology: state.topology,
+    repositoryModel: state.repositoryModel,
+    architectureStyle: state.architectureStyle,
+  }
+  const repositories = state.repositories || []
+  const techRows = state.repoTechnologies || []
+
+  useEffect(() => {
+    const missing = repositories.filter((repo) => !techRows.some((t) => t.repoId === repo.id))
+    const stale = techRows.filter((t) => !repositories.some((repo) => repo.id === t.repoId))
+    if (!missing.length && !stale.length) return
+    const kept = techRows.filter((t) => repositories.some((repo) => repo.id === t.repoId))
+    onUpdate({
+      repoTechnologies: [...kept, ...defaultRepoTechnologies(missing, shape)],
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shape fields listed explicitly
+  }, [
+    state.repositories,
+    state.repoTechnologies,
+    state.topology,
+    state.repositoryModel,
+    state.architectureStyle,
+    onUpdate,
+  ])
+
   const updateTech = (repoId: string, field: string, value: string) => {
     onUpdate({
-      repoTechnologies: state.repoTechnologies.map((t) =>
+      repoTechnologies: techRows.map((t) =>
         t.repoId === repoId ? { ...t, [field]: value } : t,
       ),
     })
@@ -223,7 +331,11 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen">
       <div className="screen-header">
         <h2>Technology (Per Repository)</h2>
-        <p>Configure language, framework, and database for each repository.</p>
+        <p>
+          Defaults follow your Project Shape
+          {state.topology ? ` (${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label})` : ''}. Edit any row to lock a
+          choice.
+        </p>
       </div>
       <section className="card">
         <div className="table-wrap">
@@ -239,8 +351,8 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
               </tr>
             </thead>
             <tbody>
-              {state.repoTechnologies.map((tech) => {
-                const repo = state.repositories.find((r) => r.id === tech.repoId)
+              {techRows.map((tech) => {
+                const repo = repositories.find((r) => r.id === tech.repoId)
                 return (
                   <tr key={tech.repoId}>
                     <td><strong>{repo?.name}</strong></td>
@@ -317,24 +429,51 @@ export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
 
 export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
   const envs = ['dev', 'qa', 'staging', 'prod'] as const
+  const platform = platformOptionsForCloud(state.cloudProvider)
+
+  useEffect(() => {
+    const patch = ensurePlatformDefaults(state.cloudProvider, {
+      deploymentModel: state.deploymentModel,
+      iac: state.iac,
+      secretsManagement: state.secretsManagement,
+      cicd: state.cicd,
+    })
+    if (Object.keys(patch).length) onUpdate(patch)
+  }, [state.cloudProvider, state.deploymentModel, state.iac, state.secretsManagement, state.cicd, onUpdate])
 
   return (
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Platform &amp; Delivery</h2>
-        <p>Configure runtime and delivery context.</p>
+        <p>
+          Runtime and delivery options follow <strong>{state.cloudProvider.toUpperCase()}</strong>
+          {state.topology ? ` · ${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}` : ''}.
+        </p>
       </div>
       <section className="card ref-card platform-panel">
         <div className="platform-row">
           <div className="field-group">
             <label>Cloud / Provider</label>
             <div className="select-with-add">
-              <select value={state.cloudProvider} onChange={(e) => onUpdate({ cloudProvider: e.target.value })}>
+              <select
+                value={state.cloudProvider}
+                onChange={(e) => {
+                  const cloudProvider = e.target.value
+                  onUpdate({
+                    cloudProvider,
+                    ...ensurePlatformDefaults(cloudProvider, {
+                      deploymentModel: state.deploymentModel,
+                      iac: state.iac,
+                      secretsManagement: state.secretsManagement,
+                      cicd: state.cicd,
+                    }),
+                  })
+                }}
+              >
                 <option value="aws">AWS</option>
                 <option value="azure">Azure</option>
                 <option value="gcp">GCP</option>
               </select>
-              <button type="button" className="add-chip-btn">+ Add</button>
             </div>
           </div>
           <div className="field-group">
@@ -342,14 +481,15 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
             <select value={state.containerization} onChange={(e) => onUpdate({ containerization: e.target.value })}>
               <option value="docker">Docker</option>
               <option value="podman">Podman</option>
+              <option value="none">None</option>
             </select>
           </div>
           <div className="field-group">
             <label>CI/CD</label>
             <select value={state.cicd} onChange={(e) => onUpdate({ cicd: e.target.value })}>
-              <option value="github-actions">GitHub Actions</option>
-              <option value="gitlab-ci">GitLab CI</option>
-              <option value="jenkins">Jenkins</option>
+              {platform.cicd.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -358,22 +498,25 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
           <div className="field-group">
             <label>Deployment Model</label>
             <select value={state.deploymentModel} onChange={(e) => onUpdate({ deploymentModel: e.target.value })}>
-              <option value="kubernetes-eks">Kubernetes (EKS)</option>
-              <option value="ecs">AWS ECS</option>
+              {platform.deployment.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
             </select>
           </div>
           <div className="field-group">
             <label>Infrastructure as Code</label>
             <select value={state.iac} onChange={(e) => onUpdate({ iac: e.target.value })}>
-              <option value="terraform">Terraform</option>
-              <option value="cloudformation">CloudFormation</option>
+              {platform.iac.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
             </select>
           </div>
           <div className="field-group">
             <label>Secrets Management</label>
             <select value={state.secretsManagement} onChange={(e) => onUpdate({ secretsManagement: e.target.value })}>
-              <option value="aws-secrets-manager">AWS Secrets Manager</option>
-              <option value="vault">HashiCorp Vault</option>
+              {platform.secrets.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -420,7 +563,10 @@ export function ReviewResolveScreen({
   onNavigate: (step: WizardStep) => void
 }) {
   const readiness = computeReadiness(state)
-  const tbdCount = state.repoTechnologies.filter((t) => t.status === 'tbd').length
+  const tech = state.repoTechnologies || []
+  const confirmedCount = tech.filter((t) => t.status === 'confirmed').length
+  const recommendedCount = tech.filter((t) => t.status === 'recommendation').length
+  const tbdCount = tech.filter((t) => t.status === 'tbd').length
   const issues = buildReviewIssues(state)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -440,8 +586,8 @@ export function ReviewResolveScreen({
       </div>
 
       <div className="review-status-bar">
-        <div className="stat-card confirmed"><strong>52</strong><span>Confirmed</span></div>
-        <div className="stat-card recommended"><strong>18</strong><span>Recommended</span></div>
+        <div className="stat-card confirmed"><strong>{confirmedCount}</strong><span>Confirmed</span></div>
+        <div className="stat-card recommended"><strong>{recommendedCount}</strong><span>Recommended</span></div>
         <div className="stat-card tbd"><strong>{tbdCount || issues.find((i) => i.id === 'tbd')?.details.length || 0}</strong><span>TBD</span></div>
         <div className="stat-card missing"><strong>{issues.find((i) => i.id === 'missing')?.details.length ?? 0}</strong><span>Missing</span></div>
       </div>
@@ -625,7 +771,13 @@ export function GenerationDownloadScreen({
     state.downloadStructure.length
       ? state.downloadStructure
       : buildDownloadStructure(
-          state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName),
+          state.repositoriesTouched
+            ? state.repositories
+            : defaultRepositories(state.projectName, {
+                topology: state.topology,
+                repositoryModel: state.repositoryModel,
+                architectureStyle: state.architectureStyle,
+              }),
         ),
   )
   const nextCommand = state.nextSdlcCommand || NEXT_SDLC_COMMAND

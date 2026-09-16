@@ -480,11 +480,16 @@ export function syncEmailsFromStakeholders(state: WizardState): WizardState {
 
 export function syncRepositoriesFromArtifact(state: WizardState): WizardState {
   if (state.repositoriesTouched) return state
-  const repos = defaultRepositories(state.projectName)
+  const shape = {
+    topology: state.topology,
+    repositoryModel: state.repositoryModel,
+    architectureStyle: state.architectureStyle,
+  }
+  const repos = defaultRepositories(state.projectName, shape)
   return {
     ...state,
     repositories: repos,
-    repoTechnologies: defaultRepoTechnologies(repos),
+    repoTechnologies: defaultRepoTechnologies(repos, shape),
   }
 }
 

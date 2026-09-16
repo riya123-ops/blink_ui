@@ -154,6 +154,7 @@ export default function App() {
   const [simulatingJira, setSimulatingJira] = useState(false)
   const [resettingSimJira, setResettingSimJira] = useState(false)
   const [creatingRepos, setCreatingRepos] = useState(false)
+  const creatingReposRef = useRef(false)
   const [folderPrep, setFolderPrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const [folderProgress, setFolderProgress] = useState({ percent: 0, copied: 0, total: 0 })
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
@@ -584,21 +585,24 @@ export default function App() {
   }, [governancePrep])
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
-    const github = state.integrations.find((item) => item.id === 'github')
+    if (creatingReposRef.current) return false
+    const github = state.integrations?.find((item) => item.id === 'github')
     if (!github?.connected || !state.projectId) {
       setStatus({ type: 'error', message: 'Connect GitHub on the Integrations screen first.' })
       return false
     }
-    const pending = state.repositories.filter(
+    const repos = state.repositories || []
+    const pending = repos.filter(
       (repo) => repo.name.trim() && repo.createStatus !== 'created' && repo.createStatus !== 'exists',
     )
     if (!pending.length) {
-      if (!state.repositories.some((repo) => repo.name.trim())) {
+      if (!repos.some((repo) => repo.name.trim())) {
         setStatus({ type: 'error', message: 'Add at least one repository name.' })
         return false
       }
       return true
     }
+    creatingReposRef.current = true
     setCreatingRepos(true)
     setStatus(null)
     try {
@@ -608,9 +612,11 @@ export default function App() {
         organization: github.organization,
         repositories: pending.map((repo) => ({ name: repo.name.trim(), description: repo.description })),
       })
+      const createdRows = result.repositories || []
       patch({
-        repositories: state.repositories.map((repo) => {
-          const created = result.repositories.find((item) => item.name === repo.name.trim())
+        repositoriesTouched: true,
+        repositories: repos.map((repo) => {
+          const created = createdRows.find((item) => item.name === repo.name.trim())
           if (!created) return repo
           return {
             ...repo,
@@ -620,11 +626,14 @@ export default function App() {
           }
         }),
       })
-      const created = result.repositories.filter((item) => item.status === 'created').length
-      const exists = result.repositories.filter((item) => item.status === 'exists').length
-      const failed = result.repositories.filter((item) => item.status === 'failed').length
+      const created = createdRows.filter((item) => item.status === 'created').length
+      const exists = createdRows.filter((item) => item.status === 'exists').length
+      const failed = createdRows.filter((item) => item.status === 'failed').length
       if (failed && !created && !exists) {
-        setStatus({ type: 'error', message: result.repositories.map((item) => item.message).join(' ') })
+        setStatus({
+          type: 'error',
+          message: createdRows.map((item) => item.message).filter(Boolean).join(' ') || 'Could not create GitHub repositories.',
+        })
         return false
       }
       setStatus({
@@ -636,6 +645,7 @@ export default function App() {
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not create GitHub repositories.' })
       return false
     } finally {
+      creatingReposRef.current = false
       setCreatingRepos(false)
     }
   }, [state.integrations, state.repositories, state.projectId, patch])
@@ -687,11 +697,11 @@ export default function App() {
         }
       }
     } else if (step === 'repositories') {
-      if (!skipStepValidation && !state.repositories.some((repo) => repo.name.trim())) {
+      if (!skipStepValidation && !(state.repositories || []).some((repo) => repo.name.trim())) {
         setStatus({ type: 'error', message: 'Keep at least one repository, or add one.' })
         return
       }
-      const github = state.integrations.find((item) => item.id === 'github')
+      const github = state.integrations?.find((item) => item.id === 'github')
       if (github?.connected && state.projectId) {
         const created = await handleCreateGithubRepos()
         if (!created) return
@@ -1731,7 +1741,13 @@ export default function App() {
         projectId = (await persistProject()).id
       }
       const repositories = (
-        state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName)
+        state.repositoriesTouched
+          ? state.repositories
+          : defaultRepositories(state.projectName, {
+              topology: state.topology,
+              repositoryModel: state.repositoryModel,
+              architectureStyle: state.architectureStyle,
+            })
       ).map((repo) => ({
         name: repo.name,
         purpose: repo.purpose,

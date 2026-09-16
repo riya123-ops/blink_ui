@@ -279,7 +279,13 @@ export function ShipScreen({
     state.downloadStructure.length
       ? state.downloadStructure
       : buildDownloadStructure(
-          state.repositoriesTouched ? state.repositories : defaultRepositories(state.projectName),
+          state.repositoriesTouched
+          ? state.repositories
+          : defaultRepositories(state.projectName, {
+              topology: state.topology,
+              repositoryModel: state.repositoryModel,
+              architectureStyle: state.architectureStyle,
+            }),
         ),
   )
   const rootName =

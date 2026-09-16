@@ -319,18 +319,33 @@ export function ShipScreen({
     )
   }
 
+  const pipeline = [
+    { id: 'git', label: 'Overlay', done: gitWritten },
+    { id: 'implement', label: 'Draft PRs', done: hasDraftPr },
+    { id: 'qa', label: 'QA', done: hasQa },
+  ] as const
+
   return (
-    <div className="screen stack gap-lg">
-      <header className="stack gap-sm">
+    <div className="screen shape-screen ship-screen">
+      <div className="screen-header">
         <h2>
           <Rocket size={22} style={{ verticalAlign: 'middle', marginRight: 8 }} />
           Ship
         </h2>
-        <p className="muted">
-          Commit planning overlays, run <code>/implement-step</code> (draft PRs only), then{' '}
-          <code>/qa-validation</code>. No merges. Download kit is optional.
+        <p>
+          Commit overlays, open draft PRs with <code>/implement-step</code>, then run advisory{' '}
+          <code>/qa-validation</code>. Nothing merges automatically.
         </p>
-      </header>
+      </div>
+
+      <ol className="ship-pipeline" aria-label="Ship progress">
+        {pipeline.map((step, index) => (
+          <li key={step.id} className={step.done ? 'done' : busy === step.id ? 'active' : ''}>
+            <span className="ship-pipeline-index">{step.done ? <CheckCircle2 size={14} /> : index + 1}</span>
+            <span>{step.label}</span>
+          </li>
+        ))}
+      </ol>
 
       {!hasPlan && (
         <p className="status-banner info">
@@ -345,7 +360,7 @@ export function ShipScreen({
       )}
 
       {needsPlanAck && (
-        <section className="sdlc-panel">
+        <section className="card shape-section ship-step-card">
           <div className="sdlc-panel__head">
             <Workflow size={18} />
             <div>
@@ -356,7 +371,7 @@ export function ShipScreen({
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div className="ship-actions">
             <button type="button" className="primary-btn" disabled={!!busy} onClick={acknowledgePlan}>
               Continue with current plan
             </button>
@@ -375,9 +390,9 @@ export function ShipScreen({
       )}
 
       {changeLog.length > 0 && (
-        <section className="sdlc-panel">
-          <h3>What changed</h3>
-          <ul className="muted small">
+        <section className="card shape-section">
+          <h3 className="card-title">What changed</h3>
+          <ul className="muted small ship-changelog">
             {changeLog.map((line) => (
               <li key={line}>{line}</li>
             ))}
@@ -385,95 +400,100 @@ export function ShipScreen({
         </section>
       )}
 
-      <section className="sdlc-panel">
-        <div className="sdlc-panel__head">
-          <GitBranch size={18} />
-          <div>
-            <h3>1. Commit overlay to workspace</h3>
-            <p className="muted">Writes <code>.cursor/ai-sdlc/**</code> to the *-workspace default branch.</p>
+      <div className="ship-step-grid">
+        <section className={`card shape-section ship-step-card ${gitWritten ? 'is-done' : ''}`}>
+          <div className="sdlc-panel__head">
+            <GitBranch size={18} />
+            <div>
+              <p className="shape-kicker">Step 1</p>
+              <h3>Commit overlay to workspace</h3>
+              <p className="muted">Writes <code>.cursor/ai-sdlc/**</code> to the *-workspace default branch.</p>
+            </div>
+            {gitWritten ? <CheckCircle2 className="ok" size={18} /> : null}
           </div>
-          {gitWritten ? <CheckCircle2 className="ok" size={18} /> : null}
-        </div>
-        {gitWritten && state.gitApplyCommit?.sha ? (
-          <p className="muted small">
-            SHA {state.gitApplyCommit.sha.slice(0, 7)}
-            {state.gitApplyCommit.url ? (
-              <>
-                {' · '}
-                <a href={state.gitApplyCommit.url} target="_blank" rel="noreferrer">
-                  commit
-                </a>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        <button type="button" className="primary-btn" disabled={!canGit || !reposCreated} onClick={() => void runGitApply()}>
-          {busy === 'git' ? <Loader2 className="spin" size={16} /> : null}
-          {gitWritten ? 'Re-commit overlay' : 'Commit overlay to workspace'}
-        </button>
-        {errors.git ? <p className="error-text">{errors.git}</p> : null}
-      </section>
-
-      <section className="sdlc-panel">
-        <div className="sdlc-panel__head">
-          <Workflow size={18} />
-          <div>
-            <h3>2. Implement step (draft PRs)</h3>
-            <p className="muted">
-              Hosted command <code>/implement-step</code> — app repos only, never merges.
-            </p>
-          </div>
-          {hasDraftPr ? <CheckCircle2 className="ok" size={18} /> : null}
-        </div>
-        {hasDraftPr ? (
-          <ul className="muted small">
-            {(state.draftPullRequests || []).map((pr) => (
-              <li key={pr.url || `${pr.owner}/${pr.repo}/${pr.number}`}>
-                {pr.kind || 'app'}:{' '}
-                {pr.url ? (
-                  <a href={pr.url} target="_blank" rel="noreferrer">
-                    draft PR #{pr.number}
+          {gitWritten && state.gitApplyCommit?.sha ? (
+            <p className="muted small">
+              SHA {state.gitApplyCommit.sha.slice(0, 7)}
+              {state.gitApplyCommit.url ? (
+                <>
+                  {' · '}
+                  <a href={state.gitApplyCommit.url} target="_blank" rel="noreferrer">
+                    commit
                   </a>
-                ) : (
-                  `PR #${pr.number}`
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {state.implementStep?.summary ? (
-          <p className="muted small">{state.implementStep.summary.slice(0, 200)}</p>
-        ) : null}
-        <button type="button" className="primary-btn" disabled={!canImplement} onClick={() => void runImplement()}>
-          {busy === 'implement' ? <Loader2 className="spin" size={16} /> : null}
-          {hasDraftPr ? 'Re-run /implement-step' : 'Run /implement-step'}
-        </button>
-        {errors.implement ? <p className="error-text">{errors.implement}</p> : null}
-      </section>
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          <button type="button" className="primary-btn" disabled={!canGit || !reposCreated} onClick={() => void runGitApply()}>
+            {busy === 'git' ? <Loader2 className="spin" size={16} /> : null}
+            {gitWritten ? 'Re-commit overlay' : 'Commit overlay to workspace'}
+          </button>
+          {errors.git ? <p className="error-text">{errors.git}</p> : null}
+        </section>
 
-      <section className="sdlc-panel">
-        <div className="sdlc-panel__head">
-          <ShieldCheck size={18} />
-          <div>
-            <h3>3. QA validation (advisory)</h3>
-            <p className="muted">Hosted command <code>/qa-validation</code> — report only, no gate approval.</p>
+        <section className={`card shape-section ship-step-card ${hasDraftPr ? 'is-done' : ''}`}>
+          <div className="sdlc-panel__head">
+            <Workflow size={18} />
+            <div>
+              <p className="shape-kicker">Step 2</p>
+              <h3>Implement step (draft PRs)</h3>
+              <p className="muted">
+                Hosted command <code>/implement-step</code> — app repos only, never merges.
+              </p>
+            </div>
+            {hasDraftPr ? <CheckCircle2 className="ok" size={18} /> : null}
           </div>
-          {hasQa ? <CheckCircle2 className="ok" size={18} /> : null}
-        </div>
-        {hasQa ? (
-          <p className="muted small">
-            Verdict: {state.qaValidation?.verdict}
-            {state.qaValidation?.summary ? ` — ${state.qaValidation.summary.slice(0, 140)}` : ''}
-          </p>
-        ) : null}
-        <button type="button" className="primary-btn" disabled={!canQa} onClick={() => void runQa()}>
-          {busy === 'qa' ? <Loader2 className="spin" size={16} /> : null}
-          {hasQa ? 'Re-run /qa-validation' : 'Run /qa-validation'}
-        </button>
-        {errors.qa ? <p className="error-text">{errors.qa}</p> : null}
-      </section>
+          {hasDraftPr ? (
+            <ul className="muted small">
+              {(state.draftPullRequests || []).map((pr) => (
+                <li key={pr.url || `${pr.owner}/${pr.repo}/${pr.number}`}>
+                  {pr.kind || 'app'}:{' '}
+                  {pr.url ? (
+                    <a href={pr.url} target="_blank" rel="noreferrer">
+                      draft PR #{pr.number}
+                    </a>
+                  ) : (
+                    `PR #${pr.number}`
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {state.implementStep?.summary ? (
+            <p className="muted small">{state.implementStep.summary.slice(0, 200)}</p>
+          ) : null}
+          <button type="button" className="primary-btn" disabled={!canImplement} onClick={() => void runImplement()}>
+            {busy === 'implement' ? <Loader2 className="spin" size={16} /> : null}
+            {hasDraftPr ? 'Re-run /implement-step' : 'Run /implement-step'}
+          </button>
+          {errors.implement ? <p className="error-text">{errors.implement}</p> : null}
+        </section>
 
-      <section className="sdlc-panel">
+        <section className={`card shape-section ship-step-card ${hasQa ? 'is-done' : ''}`}>
+          <div className="sdlc-panel__head">
+            <ShieldCheck size={18} />
+            <div>
+              <p className="shape-kicker">Step 3</p>
+              <h3>QA validation (advisory)</h3>
+              <p className="muted">Hosted command <code>/qa-validation</code> — report only, no gate approval.</p>
+            </div>
+            {hasQa ? <CheckCircle2 className="ok" size={18} /> : null}
+          </div>
+          {hasQa ? (
+            <p className="muted small">
+              Verdict: {state.qaValidation?.verdict}
+              {state.qaValidation?.summary ? ` — ${state.qaValidation.summary.slice(0, 140)}` : ''}
+            </p>
+          ) : null}
+          <button type="button" className="primary-btn" disabled={!canQa} onClick={() => void runQa()}>
+            {busy === 'qa' ? <Loader2 className="spin" size={16} /> : null}
+            {hasQa ? 'Re-run /qa-validation' : 'Run /qa-validation'}
+          </button>
+          {errors.qa ? <p className="error-text">{errors.qa}</p> : null}
+        </section>
+      </div>
+
+      <section className="card shape-section">
         <div className="sdlc-panel__head">
           <Download size={18} />
           <div>
@@ -481,7 +501,7 @@ export function ShipScreen({
             <p className="muted">ZIP escape hatch — not required for draft PRs.</p>
           </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className="ship-actions">
           <button
             type="button"
             className="secondary-btn"
@@ -506,8 +526,8 @@ export function ShipScreen({
       </section>
 
       {(kitOpen || state.generationComplete) && state.generationComplete && (
-        <section className="sdlc-panel">
-          <h3>Kit summary</h3>
+        <section className="card shape-section">
+          <h3 className="card-title">Kit summary</h3>
           {timeStr ? <p className="muted small">Generated in {timeStr}</p> : null}
           <div className="next-command-box">
             <h4>Next SDLC command (local Cursor)</h4>

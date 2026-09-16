@@ -1,5 +1,32 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, ChevronLeft, Code2, Copy, ExternalLink, File, Folder, Monitor, Plus, Sparkles, Terminal, Trash2, XCircle } from 'lucide-react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import {
+  AlertTriangle,
+  Boxes,
+  Bot,
+  Brain,
+  CheckCircle2,
+  ChevronLeft,
+  Cloud,
+  Code2,
+  Copy,
+  Cpu,
+  Database,
+  ExternalLink,
+  File,
+  Folder,
+  GitBranch,
+  Layers,
+  Monitor,
+  Network,
+  Plus,
+  Server,
+  Smartphone,
+  Sparkles,
+  Terminal,
+  Trash2,
+  Workflow,
+  XCircle,
+} from 'lucide-react'
 import {
   ARCHITECTURE_OPTIONS,
   GENERATION_CHECKLIST,
@@ -25,13 +52,44 @@ interface ScreenProps {
   onUpdate: (patch: Partial<WizardState>) => void
 }
 
-export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
-  const shape = {
+const TOPOLOGY_ICONS = {
+  'single-app': Smartphone,
+  'frontend-only': Monitor,
+  'full-stack': Layers,
+  'data-platform': Database,
+  microservices: Network,
+  'ai-ml': Brain,
+} as const
+
+const CLOUD_OPTIONS = [
+  { id: 'aws', label: 'AWS', hint: 'EKS, ECS, Lambda' },
+  { id: 'azure', label: 'Azure', hint: 'AKS, App Service' },
+  { id: 'gcp', label: 'GCP', hint: 'GKE, Cloud Run' },
+] as const
+
+function shapeFrom(state: Pick<WizardState, 'topology' | 'repositoryModel' | 'architectureStyle'>) {
+  return {
     topology: state.topology,
     repositoryModel: state.repositoryModel,
     architectureStyle: state.architectureStyle,
   }
+}
+
+function statusTone(status: string | undefined) {
+  if (status === 'confirmed') return 'ok'
+  if (status === 'recommendation') return 'soft'
+  if (status === 'tbd') return 'warn'
+  if (status === 'created' || status === 'exists') return 'ok'
+  if (status === 'failed') return 'danger'
+  return 'muted'
+}
+
+export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
+  const shape = shapeFrom(state)
   const suggested = defaultRepositories(state.projectName, shape)
+  const topologyLabel = TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label
+  const modelLabel = REPO_MODEL_OPTIONS.find((m) => m.id === state.repositoryModel)?.label
+  const archLabel = ARCHITECTURE_OPTIONS.find((a) => a.id === state.architectureStyle)?.label
 
   const applyShape = (patch: Partial<WizardState>) => {
     const next = { ...state, ...patch }
@@ -39,11 +97,7 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
       onUpdate(patch)
       return
     }
-    const nextShape = {
-      topology: next.topology,
-      repositoryModel: next.repositoryModel,
-      architectureStyle: next.architectureStyle,
-    }
+    const nextShape = shapeFrom(next)
     const repos = defaultRepositories(next.projectName, nextShape)
     onUpdate({
       ...patch,
@@ -53,96 +107,137 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
   }
 
   return (
-    <div className="screen">
+    <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Project Shape</h2>
         <p>
-          Choose topology, repository model, and architecture. Suggested repositories update live
-          {state.repositoriesTouched ? ' (locked after you edited Repositories)' : ''}.
+          Pick how the product is structured. Suggested repositories update live
+          {state.repositoriesTouched ? ' — locked after you edited Repositories' : ''}.
         </p>
       </div>
 
-      <section className="card">
-        <h3 className="card-title">Application Topology</h3>
-        <div className="topology-grid">
-          {TOPOLOGY_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              className={`topology-card ${state.topology === opt.id ? 'active' : ''}`}
-              onClick={() => applyShape({ topology: opt.id })}
-            >
-              <span className="topo-icon">{opt.icon}</span>
-              <span>{opt.label}</span>
-              {'hint' in opt && opt.hint ? <span className="topo-hint">{opt.hint}</span> : null}
-            </button>
-          ))}
+      <div className="shape-layout">
+        <div className="shape-controls">
+          <section className="card shape-section">
+            <div className="shape-section-head">
+              <h3 className="card-title">Application topology</h3>
+              <span className="shape-section-meta">What you are building</span>
+            </div>
+            <div className="topology-grid">
+              {TOPOLOGY_OPTIONS.map((opt) => {
+                const Icon = TOPOLOGY_ICONS[opt.id as keyof typeof TOPOLOGY_ICONS] ?? Boxes
+                const active = state.topology === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`topology-card ${active ? 'active' : ''}`}
+                    onClick={() => applyShape({ topology: opt.id })}
+                    aria-pressed={active}
+                  >
+                    <span className="topo-icon" aria-hidden="true">
+                      <Icon size={20} />
+                    </span>
+                    <span className="topo-label">{opt.label}</span>
+                    {'hint' in opt && opt.hint ? <span className="topo-hint">{opt.hint}</span> : null}
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          <div className="setup-grid-2 shape-choice-grid">
+            <section className="card shape-section">
+              <div className="shape-section-head">
+                <h3 className="card-title">Repository model</h3>
+                <span className="shape-section-meta">How code is split</span>
+              </div>
+              <div className="choice-tile-list">
+                {REPO_MODEL_OPTIONS.map((opt) => {
+                  const active = state.repositoryModel === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`choice-tile ${active ? 'active' : ''}`}
+                      onClick={() => applyShape({ repositoryModel: opt.id })}
+                      aria-pressed={active}
+                    >
+                      <span className="choice-tile-check" aria-hidden="true">
+                        {active ? <CheckCircle2 size={16} /> : <GitBranch size={16} />}
+                      </span>
+                      <span>
+                        <strong>{opt.label}</strong>
+                        {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="card shape-section">
+              <div className="shape-section-head">
+                <h3 className="card-title">Architecture style</h3>
+                <span className="shape-section-meta">Internal boundaries</span>
+              </div>
+              <div className="choice-tile-list">
+                {ARCHITECTURE_OPTIONS.map((opt) => {
+                  const active = state.architectureStyle === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`choice-tile ${active ? 'active' : ''}`}
+                      onClick={() => applyShape({ architectureStyle: opt.id })}
+                      aria-pressed={active}
+                    >
+                      <span className="choice-tile-check" aria-hidden="true">
+                        {active ? <CheckCircle2 size={16} /> : <Workflow size={16} />}
+                      </span>
+                      <span>
+                        <strong>{opt.label}</strong>
+                        {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          </div>
         </div>
-      </section>
 
-      <div className="setup-grid-2">
-        <section className="card">
-          <h3 className="card-title">Repository Model</h3>
-          <div className="option-row">
-            {REPO_MODEL_OPTIONS.map((opt) => (
-              <label className="radio-option" key={opt.id}>
-                <input
-                  type="radio"
-                  name="repoModel"
-                  checked={state.repositoryModel === opt.id}
-                  onChange={() => applyShape({ repositoryModel: opt.id })}
-                />
-                <span>
-                  {opt.label}
-                  {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
-                </span>
-              </label>
-            ))}
+        <aside className="card shape-blueprint" aria-live="polite">
+          <div className="shape-blueprint-head">
+            <div>
+              <p className="shape-kicker">Live blueprint</p>
+              <h3>{state.projectName || 'Your project'}</h3>
+            </div>
+            <span className="shape-count-pill">{suggested.length} repo{suggested.length === 1 ? '' : 's'}</span>
           </div>
-        </section>
-        <section className="card">
-          <h3 className="card-title">Architecture Style</h3>
-          <div className="option-row">
-            {ARCHITECTURE_OPTIONS.map((opt) => (
-              <label className="radio-option" key={opt.id}>
-                <input
-                  type="radio"
-                  name="arch"
-                  checked={state.architectureStyle === opt.id}
-                  onChange={() => applyShape({ architectureStyle: opt.id })}
-                />
-                <span>
-                  {opt.label}
-                  {'hint' in opt && opt.hint ? <small className="option-hint">{opt.hint}</small> : null}
-                </span>
-              </label>
+          <p className="shape-blueprint-summary">
+            {topologyLabel} · {modelLabel} · {archLabel}
+          </p>
+          <ul className="shape-repo-preview">
+            {suggested.map((repo, index) => (
+              <li key={repo.id} style={{ '--i': index } as CSSProperties}>
+                <span className="shape-repo-index">{index + 1}</span>
+                <div className="shape-repo-body">
+                  <code>{repo.name}</code>
+                  <span className="shape-repo-purpose">{repo.purpose}</span>
+                  <span className="muted">{repo.description}</span>
+                </div>
+              </li>
             ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="card">
-        <h3 className="card-title">Suggested repositories</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          From <strong>{state.projectName || 'your project'}</strong> ·{' '}
-          {TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label} ·{' '}
-          {REPO_MODEL_OPTIONS.find((m) => m.id === state.repositoryModel)?.label}
-        </p>
-        <ul className="shape-repo-preview">
-          {suggested.map((repo) => (
-            <li key={repo.id}>
-              <code>{repo.name}</code>
-              <span>{repo.purpose}</span>
-              <span className="muted">{repo.description}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <div className="summary-cards">
-        <div className="summary-card"><strong>Topology</strong><span>{TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}</span></div>
-        <div className="summary-card"><strong>Repos</strong><span>{suggested.length} suggested</span></div>
-        <div className="summary-card"><strong>Architecture</strong><span>{ARCHITECTURE_OPTIONS.find((a) => a.id === state.architectureStyle)?.label}</span></div>
+          </ul>
+          {state.repositoriesTouched ? (
+            <p className="shape-lock-note">
+              Repositories were edited later — changing shape here no longer rewrites that list.
+            </p>
+          ) : (
+            <p className="shape-lock-note soft">Continue to edit names, owners, and GitHub creation.</p>
+          )}
+        </aside>
       </div>
     </div>
   )
@@ -157,11 +252,7 @@ export function RepositoriesScreen({
 }) {
   useEffect(() => {
     if (state.repositoriesTouched) return
-    const shape = {
-      topology: state.topology,
-      repositoryModel: state.repositoryModel,
-      architectureStyle: state.architectureStyle,
-    }
+    const shape = shapeFrom(state)
     const repos = defaultRepositories(state.projectName, shape)
     const current = state.repositories || []
     const unchanged =
@@ -186,11 +277,7 @@ export function RepositoriesScreen({
     const keptIds = new Set(nextRepos.map((repo) => repo.id))
     const existingTech = repoTechnologies.filter((tech) => keptIds.has(tech.repoId))
     const missing = nextRepos.filter((repo) => !existingTech.some((tech) => tech.repoId === repo.id))
-    const shape = {
-      topology: state.topology,
-      repositoryModel: state.repositoryModel,
-      architectureStyle: state.architectureStyle,
-    }
+    const shape = shapeFrom(state)
     onUpdate({
       repositories: nextRepos,
       repositoriesTouched: true,
@@ -211,93 +298,159 @@ export function RepositoriesScreen({
     ])
   }
 
+  const restoreFromShape = () => {
+    const shape = shapeFrom(state)
+    const repos = defaultRepositories(state.projectName, shape)
+    onUpdate({
+      repositories: repos,
+      repositoriesTouched: false,
+      repoTechnologies: defaultRepoTechnologies(repos, shape),
+    })
+  }
+
   const github = state.integrations?.find((item) => item.id === 'github')
   const githubReady = Boolean(github?.connected)
+  const namedCount = repositories.filter((r) => r.name.trim()).length
 
   return (
-    <div className="screen screen-ref">
-      <div className="screen-header">
-        <h2>Repositories</h2>
-        <p>
-          Names follow <strong>{state.projectName || 'your project'}</strong> and the shape you just chose. Edit or delete
-          any you do not need.{' '}
-          {githubReady
-            ? 'Save & Continue will create them on GitHub.'
-            : 'Connect GitHub on Integrations to create them on Save & Continue.'}
-        </p>
-      </div>
-      <section className="card ref-card">
-        <div className="card-title-row">
-          <h3 className="card-title muted-title">Repo / Component</h3>
-          <button type="button" className="text-btn" onClick={addRepo}><Plus size={14} /> Add Repository</button>
-        </div>
-        <div className="table-wrap">
-          <table className="data-table ref-table repo-table">
-            <thead>
-              <tr>
-                <th>Repo / Component</th>
-                <th>Purpose / Role</th>
-                <th>Description</th>
-                <th>Owner</th>
-                <th>Dependencies</th>
-                <th>GitHub</th>
-                <th className="col-action">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {repositories.map((repo) => (
-                <tr key={repo.id}>
-                  <td><input className="table-input mono" value={repo.name} onChange={(e) => updateRepo(repo.id, 'name', e.target.value)} /></td>
-                  <td><input className="table-input" value={repo.purpose} onChange={(e) => updateRepo(repo.id, 'purpose', e.target.value)} /></td>
-                  <td><input className="table-input wide" value={repo.description} onChange={(e) => updateRepo(repo.id, 'description', e.target.value)} /></td>
-                  <td><input className="table-input" value={repo.owner} onChange={(e) => updateRepo(repo.id, 'owner', e.target.value)} /></td>
-                  <td><input className="table-input" value={repo.dependencies} onChange={(e) => updateRepo(repo.id, 'dependencies', e.target.value)} /></td>
-                  <td>
-                    {repo.htmlUrl ? (
-                      <a className="repo-link" href={repo.htmlUrl} target="_blank" rel="noreferrer">
-                        {repo.createStatus === 'exists' ? 'Exists' : 'Created'}
-                      </a>
-                    ) : repo.createStatus === 'failed' ? (
-                      <span className="repo-status failed">{repo.createMessage || 'Failed'}</span>
-                    ) : creating ? (
-                      <span className="muted">Creating…</span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="col-action">
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      title="Delete"
-                      onClick={() => markTouched(repositories.filter((r) => r.id !== repo.id))}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="github-create-bar">
+    <div className="screen shape-screen">
+      <div className="screen-header screen-header-row">
+        <div>
+          <h2>Repositories</h2>
           <p>
+            Names follow <strong>{state.projectName || 'your project'}</strong> and your Project Shape.
             {githubReady
-              ? `GitHub connected as ${github?.account ?? 'your account'}${github?.organization ? ` / ${github.organization}` : ''}.`
-              : 'GitHub is not connected. Repos stay local until you connect it on Integrations.'}
+              ? ' Continue creates missing repos on GitHub.'
+              : ' Connect GitHub on Integrations to create them remotely.'}
           </p>
         </div>
-      </section>
+        <div className="screen-header-actions">
+          <button type="button" className="ghost-btn" onClick={restoreFromShape}>
+            Reset from shape
+          </button>
+          <button type="button" className="secondary-btn" onClick={addRepo}>
+            <Plus size={14} /> Add repository
+          </button>
+        </div>
+      </div>
+
+      <div className="repo-toolbar">
+        <div className="repo-toolbar-stat">
+          <strong>{namedCount}</strong>
+          <span>named · {repositories.length} total</span>
+        </div>
+        <div className={`repo-github-pill ${githubReady ? 'ready' : ''}`}>
+          <GitBranch size={14} />
+          {githubReady
+            ? `GitHub · ${github?.account ?? 'connected'}${github?.organization ? ` / ${github.organization}` : ''}`
+            : 'GitHub not connected'}
+        </div>
+      </div>
+
+      {repositories.length === 0 ? (
+        <section className="card empty-panel">
+          <Boxes size={28} />
+          <h3>No repositories yet</h3>
+          <p>Restore the shape suggestion or add a repository manually.</p>
+          <div className="row-actions">
+            <button type="button" className="primary-btn" onClick={restoreFromShape}>
+              Restore from shape
+            </button>
+            <button type="button" className="secondary-btn" onClick={addRepo}>
+              Add repository
+            </button>
+          </div>
+        </section>
+      ) : (
+        <div className="repo-card-grid">
+          {repositories.map((repo, index) => (
+            <article key={repo.id} className="card repo-edit-card">
+              <header className="repo-edit-head">
+                <span className="repo-edit-index">#{index + 1}</span>
+                <span className={`status-pill ${statusTone(repo.createStatus)}`}>
+                  {repo.htmlUrl
+                    ? repo.createStatus === 'exists'
+                      ? 'Exists on GitHub'
+                      : 'Created'
+                    : repo.createStatus === 'failed'
+                      ? repo.createMessage || 'Failed'
+                      : creating
+                        ? 'Creating…'
+                        : 'Local only'}
+                </span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Delete repository"
+                  onClick={() => markTouched(repositories.filter((r) => r.id !== repo.id))}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </header>
+
+              <div className="repo-edit-fields">
+                <label className="field-group">
+                  <span>Repository name</span>
+                  <input
+                    className="table-input mono"
+                    value={repo.name}
+                    onChange={(e) => updateRepo(repo.id, 'name', e.target.value)}
+                    placeholder="my-service"
+                  />
+                </label>
+                <label className="field-group">
+                  <span>Purpose / role</span>
+                  <input
+                    className="table-input"
+                    value={repo.purpose}
+                    onChange={(e) => updateRepo(repo.id, 'purpose', e.target.value)}
+                    placeholder="Frontend"
+                  />
+                </label>
+                <label className="field-group span-2">
+                  <span>Description</span>
+                  <input
+                    className="table-input wide"
+                    value={repo.description}
+                    onChange={(e) => updateRepo(repo.id, 'description', e.target.value)}
+                    placeholder="What this repo owns"
+                  />
+                </label>
+                <label className="field-group">
+                  <span>Owner</span>
+                  <input
+                    className="table-input"
+                    value={repo.owner}
+                    onChange={(e) => updateRepo(repo.id, 'owner', e.target.value)}
+                    placeholder="Team or person"
+                  />
+                </label>
+                <label className="field-group">
+                  <span>Dependencies</span>
+                  <input
+                    className="table-input"
+                    value={repo.dependencies}
+                    onChange={(e) => updateRepo(repo.id, 'dependencies', e.target.value)}
+                    placeholder="Depends on…"
+                  />
+                </label>
+              </div>
+
+              {repo.htmlUrl ? (
+                <a className="repo-link" href={repo.htmlUrl} target="_blank" rel="noreferrer">
+                  Open on GitHub <ExternalLink size={12} />
+                </a>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
-  const shape = {
-    topology: state.topology,
-    repositoryModel: state.repositoryModel,
-    architectureStyle: state.architectureStyle,
-  }
+  const shape = shapeFrom(state)
   const repositories = state.repositories || []
   const techRows = state.repoTechnologies || []
 
@@ -327,53 +480,104 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
     })
   }
 
+  const confirmAll = () => {
+    onUpdate({
+      repoTechnologies: techRows.map((t) =>
+        t.status === 'recommendation' || t.status === 'tbd' ? { ...t, status: 'confirmed' as const } : t,
+      ),
+    })
+  }
+
+  const pending = techRows.filter((t) => t.status !== 'confirmed').length
+
   return (
-    <div className="screen">
-      <div className="screen-header">
-        <h2>Technology (Per Repository)</h2>
-        <p>
-          Defaults follow your Project Shape
-          {state.topology ? ` (${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label})` : ''}. Edit any row to lock a
-          choice.
-        </p>
-      </div>
-      <section className="card">
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Repository</th>
-                <th>Language</th>
-                <th>Framework / Tech</th>
-                <th>Database</th>
-                <th>Build / Testing</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {techRows.map((tech) => {
-                const repo = repositories.find((r) => r.id === tech.repoId)
-                return (
-                  <tr key={tech.repoId}>
-                    <td><strong>{repo?.name}</strong></td>
-                    <td><input value={tech.language} onChange={(e) => updateTech(tech.repoId, 'language', e.target.value)} /></td>
-                    <td><input value={tech.framework} onChange={(e) => updateTech(tech.repoId, 'framework', e.target.value)} /></td>
-                    <td><input value={tech.database} onChange={(e) => updateTech(tech.repoId, 'database', e.target.value)} /></td>
-                    <td><input value={tech.buildTool} onChange={(e) => updateTech(tech.repoId, 'buildTool', e.target.value)} /></td>
-                    <td>
-                      <select value={tech.status} onChange={(e) => updateTech(tech.repoId, 'status', e.target.value)}>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="recommendation">Recommendation</option>
-                        <option value="tbd">TBD</option>
-                      </select>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+    <div className="screen shape-screen">
+      <div className="screen-header screen-header-row">
+        <div>
+          <h2>Technology (Per Repository)</h2>
+          <p>
+            Defaults follow Project Shape
+            {state.topology ? ` (${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label})` : ''}.
+            Confirm each stack before Ship.
+          </p>
         </div>
-      </section>
+        {pending > 0 ? (
+          <button type="button" className="primary-btn" onClick={confirmAll}>
+            Confirm all ({pending})
+          </button>
+        ) : null}
+      </div>
+
+      {techRows.length === 0 ? (
+        <section className="card empty-panel">
+          <Cpu size={28} />
+          <h3>No repositories to configure</h3>
+          <p>Add repositories first, then return here to lock the stack.</p>
+        </section>
+      ) : (
+        <div className="tech-card-grid">
+          {techRows.map((tech) => {
+            const repo = repositories.find((r) => r.id === tech.repoId)
+            return (
+              <article key={tech.repoId} className={`card tech-card status-${tech.status}`}>
+                <header className="tech-card-head">
+                  <div>
+                    <p className="shape-kicker">Repository</p>
+                    <h3>{repo?.name || tech.repoId}</h3>
+                    <span className="muted">{repo?.purpose}</span>
+                  </div>
+                  <div className="status-seg" role="group" aria-label="Technology status">
+                    {(['confirmed', 'recommendation', 'tbd'] as const).map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        className={tech.status === status ? 'active' : ''}
+                        onClick={() => updateTech(tech.repoId, 'status', status)}
+                      >
+                        {status === 'confirmed' ? 'Confirmed' : status === 'recommendation' ? 'Suggested' : 'TBD'}
+                      </button>
+                    ))}
+                  </div>
+                </header>
+                <div className="tech-card-fields">
+                  <label className="field-group">
+                    <span>Language</span>
+                    <input
+                      className="table-input"
+                      value={tech.language}
+                      onChange={(e) => updateTech(tech.repoId, 'language', e.target.value)}
+                    />
+                  </label>
+                  <label className="field-group">
+                    <span>Framework / tech</span>
+                    <input
+                      className="table-input"
+                      value={tech.framework}
+                      onChange={(e) => updateTech(tech.repoId, 'framework', e.target.value)}
+                    />
+                  </label>
+                  <label className="field-group">
+                    <span>Database</span>
+                    <input
+                      className="table-input"
+                      value={tech.database}
+                      onChange={(e) => updateTech(tech.repoId, 'database', e.target.value)}
+                    />
+                  </label>
+                  <label className="field-group">
+                    <span>Build / testing</span>
+                    <input
+                      className="table-input"
+                      value={tech.buildTool}
+                      onChange={(e) => updateTech(tech.repoId, 'buildTool', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -386,26 +590,33 @@ const IDE_ICONS = {
 } as const
 
 export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
+  const selected = IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)
+
   return (
-    <div className="screen">
+    <div className="screen shape-screen">
       <div className="screen-header">
         <h2>IDE and Tools</h2>
-        <p>Choose the IDE and AI coding assistant for this project.</p>
+        <p>Choose where engineers will run Blink commands and agents for this project.</p>
       </div>
-      <section className="card">
-        <h3 className="card-title">Development Environment</h3>
+      <section className="card shape-section">
+        <div className="shape-section-head">
+          <h3 className="card-title">Development environment</h3>
+          <span className="shape-section-meta">One primary IDE</span>
+        </div>
         <div className="ide-grid">
           {IDE_TOOL_OPTIONS.map((opt) => {
             const Icon = IDE_ICONS[opt.id as keyof typeof IDE_ICONS] ?? Monitor
-            const selected = state.ideTool === opt.id
+            const isSelected = state.ideTool === opt.id
             return (
               <button
                 key={opt.id}
                 type="button"
-                className={`ide-card ${selected ? 'active' : ''} ${opt.enabled ? '' : 'disabled'}`}
+                className={`ide-card ${isSelected ? 'active' : ''} ${opt.enabled ? '' : 'disabled'}`}
                 disabled={!opt.enabled}
                 onClick={() => opt.enabled && onUpdate({ ideTool: opt.id })}
+                aria-pressed={isSelected}
               >
+                {opt.id === 'cursor' && opt.enabled ? <span className="ide-badge">Recommended</span> : null}
                 <span className="ide-icon">
                   <Icon size={22} />
                 </span>
@@ -417,10 +628,14 @@ export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
           })}
         </div>
       </section>
-      <div className="summary-cards">
+      <div className="summary-cards ide-summary">
         <div className="summary-card">
           <strong>Selected</strong>
-          <span>{IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'None'}</span>
+          <span>{selected?.label ?? 'None'}</span>
+        </div>
+        <div className="summary-card">
+          <strong>Agent surface</strong>
+          <span>{selected?.enabled ? 'Slash commands + Blink Chat' : 'Unavailable'}</span>
         </div>
       </div>
     </div>
@@ -430,6 +645,7 @@ export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
 export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
   const envs = ['dev', 'qa', 'staging', 'prod'] as const
   const platform = platformOptionsForCloud(state.cloudProvider)
+  const envCount = envs.filter((env) => state.environments[env]).length
 
   useEffect(() => {
     const patch = ensurePlatformDefaults(state.cloudProvider, {
@@ -442,23 +658,30 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
   }, [state.cloudProvider, state.deploymentModel, state.iac, state.secretsManagement, state.cicd, onUpdate])
 
   return (
-    <div className="screen screen-ref">
+    <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Platform &amp; Delivery</h2>
         <p>
-          Runtime and delivery options follow <strong>{state.cloudProvider.toUpperCase()}</strong>
+          Runtime and delivery options follow your cloud choice
           {state.topology ? ` · ${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}` : ''}.
         </p>
       </div>
-      <section className="card ref-card platform-panel">
-        <div className="platform-row">
-          <div className="field-group">
-            <label>Cloud / Provider</label>
-            <div className="select-with-add">
-              <select
-                value={state.cloudProvider}
-                onChange={(e) => {
-                  const cloudProvider = e.target.value
+
+      <section className="card shape-section">
+        <div className="shape-section-head">
+          <h3 className="card-title">Cloud provider</h3>
+          <span className="shape-section-meta">Switches deployment defaults</span>
+        </div>
+        <div className="cloud-card-grid">
+          {CLOUD_OPTIONS.map((opt) => {
+            const active = state.cloudProvider === opt.id
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`cloud-card ${active ? 'active' : ''}`}
+                onClick={() => {
+                  const cloudProvider = opt.id
                   onUpdate({
                     cloudProvider,
                     ...ensurePlatformDefaults(cloudProvider, {
@@ -469,13 +692,24 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
                     }),
                   })
                 }}
+                aria-pressed={active}
               >
-                <option value="aws">AWS</option>
-                <option value="azure">Azure</option>
-                <option value="gcp">GCP</option>
-              </select>
-            </div>
-          </div>
+                <Cloud size={20} />
+                <strong>{opt.label}</strong>
+                <span>{opt.hint}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="card shape-section platform-panel">
+        <div className="shape-section-head">
+          <h3 className="card-title">Delivery stack</h3>
+          <span className="shape-section-meta">{envCount} environment{envCount === 1 ? '' : 's'} enabled</span>
+        </div>
+
+        <div className="platform-row">
           <div className="field-group">
             <label>Containerization</label>
             <select value={state.containerization} onChange={(e) => onUpdate({ containerization: e.target.value })}>
@@ -492,19 +726,19 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
               ))}
             </select>
           </div>
-        </div>
-
-        <div className="platform-row">
           <div className="field-group">
-            <label>Deployment Model</label>
+            <label>Deployment model</label>
             <select value={state.deploymentModel} onChange={(e) => onUpdate({ deploymentModel: e.target.value })}>
               {platform.deployment.map((opt) => (
                 <option key={opt.id} value={opt.id}>{opt.label}</option>
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="platform-row">
           <div className="field-group">
-            <label>Infrastructure as Code</label>
+            <label>Infrastructure as code</label>
             <select value={state.iac} onChange={(e) => onUpdate({ iac: e.target.value })}>
               {platform.iac.map((opt) => (
                 <option key={opt.id} value={opt.id}>{opt.label}</option>
@@ -512,41 +746,40 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
             </select>
           </div>
           <div className="field-group">
-            <label>Secrets Management</label>
+            <label>Secrets management</label>
             <select value={state.secretsManagement} onChange={(e) => onUpdate({ secretsManagement: e.target.value })}>
               {platform.secrets.map((opt) => (
                 <option key={opt.id} value={opt.id}>{opt.label}</option>
               ))}
             </select>
           </div>
-        </div>
-
-        <div className="field-group">
-          <label>Environments</label>
-          <div className="env-chips">
-            {envs.map((env) => (
-              <button
-                key={env}
-                type="button"
-                className={`env-chip ${state.environments[env] ? 'active' : ''}`}
-                onClick={() => onUpdate({ environments: { ...state.environments, [env]: !state.environments[env] } })}
-              >
-                {env.toUpperCase()}
-              </button>
-            ))}
+          <div className="field-group">
+            <label>Environments</label>
+            <div className="env-chips">
+              {envs.map((env) => (
+                <button
+                  key={env}
+                  type="button"
+                  className={`env-chip ${state.environments[env] ? 'active' : ''}`}
+                  onClick={() => onUpdate({ environments: { ...state.environments, [env]: !state.environments[env] } })}
+                >
+                  {env.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="field-group">
-          <label>Delivery Preferences</label>
+          <label>Release strategy</label>
           <div className="pref-checks">
             <label className="checkbox-option">
               <input type="checkbox" checked={state.blueGreenDeploy} onChange={(e) => onUpdate({ blueGreenDeploy: e.target.checked })} />
-              Blue/Green Deployment
+              Blue/Green deployment
             </label>
             <label className="checkbox-option">
               <input type="checkbox" checked={state.canaryDeploy} onChange={(e) => onUpdate({ canaryDeploy: e.target.checked })} />
-              Canary Releases
+              Canary releases
             </label>
           </div>
         </div>
@@ -568,82 +801,92 @@ export function ReviewResolveScreen({
   const recommendedCount = tech.filter((t) => t.status === 'recommendation').length
   const tbdCount = tech.filter((t) => t.status === 'tbd').length
   const issues = buildReviewIssues(state)
+  const blocking = issues.filter((i) => i.type === 'error' || i.type === 'warn')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const handleView = (issueId: string) => {
-    setExpandedId((prev) => (prev === issueId ? null : issueId))
-  }
-
-  const handleResolve = (step: WizardStep) => {
-    onNavigate(step)
-  }
+  const readinessCopy =
+    readiness >= 90
+      ? 'Ready to preview and ship.'
+      : readiness >= 70
+        ? 'Almost there — clear the remaining items.'
+        : 'Resolve the open items before generating.'
 
   return (
-    <div className="screen screen-ref">
+    <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Review &amp; Resolve</h2>
-        <p>Review decisions and resolve outstanding items.</p>
+        <p>Check decisions across shape, stack, and delivery before preview.</p>
       </div>
 
       <div className="review-status-bar">
-        <div className="stat-card confirmed"><strong>{confirmedCount}</strong><span>Confirmed</span></div>
-        <div className="stat-card recommended"><strong>{recommendedCount}</strong><span>Recommended</span></div>
-        <div className="stat-card tbd"><strong>{tbdCount || issues.find((i) => i.id === 'tbd')?.details.length || 0}</strong><span>TBD</span></div>
-        <div className="stat-card missing"><strong>{issues.find((i) => i.id === 'missing')?.details.length ?? 0}</strong><span>Missing</span></div>
+        <div className="stat-card confirmed"><strong>{confirmedCount}</strong><span>Confirmed tech</span></div>
+        <div className="stat-card recommended"><strong>{recommendedCount}</strong><span>Suggested</span></div>
+        <div className="stat-card tbd"><strong>{tbdCount}</strong><span>TBD</span></div>
+        <div className="stat-card missing"><strong>{blocking.length}</strong><span>Open issues</span></div>
       </div>
 
       <div className="review-body">
         <section className="card ref-card review-gauge-card">
-          <div className="gauge-ring large" style={{ '--pct': readiness } as React.CSSProperties}>
+          <div className="gauge-ring large" style={{ '--pct': readiness } as CSSProperties}>
             <span>{readiness}%</span>
           </div>
-          <h3>Project Readiness</h3>
-          <p>Almost there! Resolve remaining items to generate your project.</p>
+          <h3>Project readiness</h3>
+          <p>{readinessCopy}</p>
         </section>
 
         <section className="card ref-card review-warnings-card">
-          <h3 className="card-title">Items to Resolve</h3>
-          <ul className="resolve-list">
-            {issues.map((issue) => (
-              <li key={issue.id} className={`resolve-item ${issue.type}${expandedId === issue.id ? ' expanded' : ''}`}>
-                <div className="resolve-row">
-                  {issue.type === 'error' && <XCircle size={16} />}
-                  {issue.type === 'warn' && <AlertTriangle size={16} />}
-                  {issue.type === 'info' && <AlertTriangle size={16} />}
-                  <span>{issue.label}</span>
-                  <button
-                    type="button"
-                    className="view-link"
-                    onClick={() => handleView(issue.id)}
-                    aria-expanded={expandedId === issue.id}
-                  >
-                    {expandedId === issue.id ? 'Hide' : 'View'}
-                  </button>
-                </div>
-                {expandedId === issue.id && (
-                  <div className="resolve-detail">
-                    <ul>
-                      {issue.details.map((d) => (
-                        <li key={d}>{d}</li>
-                      ))}
-                    </ul>
+          <h3 className="card-title">Items to resolve</h3>
+          {issues.length === 0 ? (
+            <div className="empty-inline">
+              <CheckCircle2 size={22} />
+              <div>
+                <strong>All clear</strong>
+                <p className="muted">No blocking gaps from shape through delivery.</p>
+              </div>
+            </div>
+          ) : (
+            <ul className="resolve-list">
+              {issues.map((issue) => (
+                <li key={issue.id} className={`resolve-item ${issue.type}${expandedId === issue.id ? ' expanded' : ''}`}>
+                  <div className="resolve-row">
+                    {issue.type === 'error' && <XCircle size={16} />}
+                    {issue.type === 'warn' && <AlertTriangle size={16} />}
+                    {issue.type === 'info' && <Server size={16} />}
+                    <span>{issue.label}</span>
                     <button
                       type="button"
-                      className="resolve-go-btn"
-                      onClick={() => handleResolve(issue.targetStep)}
+                      className="view-link"
+                      onClick={() => setExpandedId((prev) => (prev === issue.id ? null : issue.id))}
+                      aria-expanded={expandedId === issue.id}
                     >
-                      Go resolve →
+                      {expandedId === issue.id ? 'Hide' : 'View'}
                     </button>
                   </div>
-                )}
-              </li>
-            ))}
-          </ul>
+                  {expandedId === issue.id && (
+                    <div className="resolve-detail">
+                      <ul>
+                        {issue.details.map((d) => (
+                          <li key={d}>{d}</li>
+                        ))}
+                      </ul>
+                      <button
+                        type="button"
+                        className="resolve-go-btn"
+                        onClick={() => onNavigate(issue.targetStep)}
+                      >
+                        Go resolve →
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
 
       <section className="card ref-card provenance-card">
-        <h3 className="card-title">Latest Updates</h3>
+        <h3 className="card-title">Latest updates</h3>
         <ul className="provenance-list">
           {PROVENANCE_LOG.map((entry, i) => (
             <li key={i}>
@@ -659,13 +902,41 @@ export function ReviewResolveScreen({
 
 export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: WizardState; onGenerate: () => void; loading: boolean }) {
   const [tab, setTab] = useState<'overview' | 'repos' | 'stack'>('overview')
+  const topologyLabel = TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label
+  const ideLabel = IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'Cursor'
+  const stackSummary = useMemo(() => {
+    const confirmed = state.repoTechnologies.filter((t) => t.status === 'confirmed' || t.status === 'recommendation')
+    if (!confirmed.length) return 'No stack configured yet'
+    return confirmed
+      .slice(0, 3)
+      .map((t) => {
+        const repo = state.repositories.find((r) => r.id === t.repoId)
+        return `${repo?.purpose || repo?.name || 'Repo'}: ${t.framework || t.language}`
+      })
+      .join(' · ')
+  }, [state.repoTechnologies, state.repositories])
 
   return (
-    <div className="screen">
+    <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Generated Project Preview</h2>
-        <p>Review what BLINK will generate before starting.</p>
+        <p>Confirm what Blink will generate from your shape through delivery choices.</p>
       </div>
+
+      <div className="preview-hero card">
+        <div>
+          <p className="shape-kicker">Project</p>
+          <h3>{state.projectName || 'Untitled project'}</h3>
+          <p className="muted">{state.description || 'No description yet'}</p>
+        </div>
+        <dl className="preview-meta">
+          <div><dt>Topology</dt><dd>{topologyLabel}</dd></div>
+          <div><dt>Repos</dt><dd>{state.repositories.length}</dd></div>
+          <div><dt>IDE</dt><dd>{ideLabel}</dd></div>
+          <div><dt>Cloud</dt><dd>{state.cloudProvider.toUpperCase()}</dd></div>
+        </dl>
+      </div>
+
       <div className="tab-row">
         {(['overview', 'repos', 'stack'] as const).map((t) => (
           <button key={t} type="button" className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
@@ -673,25 +944,49 @@ export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: Wi
           </button>
         ))}
       </div>
-      <section className="card">
+
+      <section className="card preview-panel">
         {tab === 'overview' && (
-          <div>
-            <p><strong>{state.projectName || 'Untitled'}</strong> — {state.description || 'No description'}</p>
-            <p>Stack: Java Spring Boot + React + TypeScript + Vite</p>
-            <p>IDE: {IDE_TOOL_OPTIONS.find((o) => o.id === state.ideTool)?.label ?? 'Cursor'}</p>
-            <p>Model: {state.repositoryModel} · {state.architectureStyle}</p>
+          <div className="preview-overview">
+            <p><strong>Stack snapshot</strong> — {stackSummary}</p>
+            <p>
+              <strong>Delivery</strong> — {state.deploymentModel} · {state.cicd} · {state.iac}
+              {(state.blueGreenDeploy || state.canaryDeploy) && (
+                <> · {[state.blueGreenDeploy && 'Blue/Green', state.canaryDeploy && 'Canary'].filter(Boolean).join(', ')}</>
+              )}
+            </p>
+            <p>
+              <strong>Model</strong> — {state.repositoryModel.replace('-', ' ')} · {state.architectureStyle.replace('-', ' ')}
+            </p>
           </div>
         )}
         {tab === 'repos' && (
-          <ul>{state.repositories.map((r) => <li key={r.id}>{r.name} — {r.purpose}</li>)}</ul>
+          <ul className="preview-list">
+            {state.repositories.map((r) => (
+              <li key={r.id}>
+                <code>{r.name}</code>
+                <span>{r.purpose}</span>
+                <span className="muted">{r.description}</span>
+              </li>
+            ))}
+          </ul>
         )}
         {tab === 'stack' && (
-          <ul>{state.repoTechnologies.map((t) => {
-            const repo = state.repositories.find((r) => r.id === t.repoId)
-            return <li key={t.repoId}>{repo?.name}: {t.language}, {t.framework}</li>
-          })}</ul>
+          <ul className="preview-list">
+            {state.repoTechnologies.map((t) => {
+              const repo = state.repositories.find((r) => r.id === t.repoId)
+              return (
+                <li key={t.repoId}>
+                  <code>{repo?.name}</code>
+                  <span>{t.language} · {t.framework}</span>
+                  <span className={`status-pill ${statusTone(t.status)}`}>{t.status}</span>
+                </li>
+              )
+            })}
+          </ul>
         )}
       </section>
+
       <div className="row-actions">
         <button type="button" className="primary-btn large" disabled={loading} onClick={onGenerate}>
           Continue to Ship →
@@ -773,11 +1068,7 @@ export function GenerationDownloadScreen({
       : buildDownloadStructure(
           state.repositoriesTouched
             ? state.repositories
-            : defaultRepositories(state.projectName, {
-                topology: state.topology,
-                repositoryModel: state.repositoryModel,
-                architectureStyle: state.architectureStyle,
-              }),
+            : defaultRepositories(state.projectName, shapeFrom(state)),
         ),
   )
   const nextCommand = state.nextSdlcCommand || NEXT_SDLC_COMMAND
@@ -817,7 +1108,7 @@ export function GenerationDownloadScreen({
           <span
             key={i}
             className="confetti"
-            style={{ '--c': ['#5850EC', '#F472B6', '#FBBF24', '#34D399', '#60A5FA'][i % 5], '--i': i } as React.CSSProperties}
+            style={{ '--c': ['#5850EC', '#F472B6', '#FBBF24', '#34D399', '#60A5FA'][i % 5], '--i': i } as CSSProperties}
           />
         ))}
       </div>
@@ -946,4 +1237,3 @@ export function GenerationDownloadScreen({
     </div>
   )
 }
-

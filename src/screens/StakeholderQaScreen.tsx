@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { HelpCircle, Inbox, Send } from 'lucide-react'
 import {
   StakeholderQuestionsScreen,
@@ -7,6 +7,7 @@ import {
 } from './StakeholderQuestionsScreen'
 import {
   StakeholderResponsesScreen,
+  shouldAutoRunGroomingLoop,
   validateStakeholderResponses,
 } from './StakeholderResponsesScreen'
 import type { QuestionResponse, StakeholderQuestion, WizardState, WizardStep } from '../wizard/types'
@@ -35,6 +36,7 @@ interface Props {
 }
 
 function defaultTab(state: WizardState): QaTab {
+  if (shouldAutoRunGroomingLoop(state)) return 'inbox'
   const hasOutbound = state.questions.some(
     (q) =>
       q.sent ||
@@ -50,6 +52,10 @@ function defaultTab(state: WizardState): QaTab {
 export function StakeholderQaScreen(props: Props) {
   const { state } = props
   const [tab, setTab] = useState<QaTab>(() => defaultTab(state))
+
+  useEffect(() => {
+    if (shouldAutoRunGroomingLoop(state)) setTab('inbox')
+  }, [state.questions, state.responses, state.groomRejectPending])
 
   const stats = useMemo(() => {
     const total = state.questions.length
@@ -77,7 +83,8 @@ export function StakeholderQaScreen(props: Props) {
           Stakeholder Q&amp;A
         </h2>
         <p>
-          Ask leftover clarifications, collect replies, resolve answers, then run the grooming loop — all in one place.
+          Ask leftover clarifications, collect replies, and resolve answers. When nothing is left to choose, the
+          grooming loop runs in the background — then acknowledge G-GROOM.
         </p>
       </div>
 

@@ -31,7 +31,6 @@ export type WizardStep =
   | 'project-stakeholders'
   | 'integrations'
   | 'requirements'
-  | 'sdlc-scope'
   | 'stakeholder-qa'
   | 'sdlc-plan'
   | 'project-shape'
@@ -39,6 +38,7 @@ export type WizardStep =
   | 'technology-per-repo'
   | 'generation'
   /** Legacy ids remapped on resume. */
+  | 'sdlc-scope'
   | 'sdlc-planning'
   | 'ide-and-tools'
   | 'platform-delivery'
@@ -462,7 +462,7 @@ export const defaultWizardState: WizardState = {
   groomAcknowledged: false,
   shapeAcknowledged: false,
   shapeDigest: null,
-  wizardLayoutVersion: 2,
+  wizardLayoutVersion: 3,
   groomRejectPending: false,
   acceptanceCriteriaAcknowledged: false,
   stakeholdersConfirmed: false,

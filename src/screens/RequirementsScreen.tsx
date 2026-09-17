@@ -3,6 +3,7 @@ import { CloudUpload, FileUp, GitBranch, Link2 } from 'lucide-react'
 import type { WizardState, WizardStep } from '../wizard/types'
 import { GroomingPanel } from './GroomRequirementScreen'
 import { JiraScopePanel } from './JiraScopePanel'
+import { ScopeStartStatus, validateSdlcScope } from './SdlcPlanningScreen'
 import { unansweredRequired } from '../wizard/grooming'
 
 type ReqStage = 'capture' | 'clarify' | 'tickets'
@@ -104,7 +105,7 @@ export function RequirementsScreen({
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Requirements</h2>
-        <p>One job at a time: capture wording, clarify gaps, then create Jira tickets from the cleared text.</p>
+        <p>Capture wording, clarify gaps, then create tickets. Blink locks scope and starts the SDLC here — no extra tab.</p>
       </div>
 
       <div className="req-stage-tabs" role="tablist" aria-label="Requirements stages">
@@ -313,6 +314,7 @@ export function RequirementsScreen({
                 onUpdate={onUpdate}
                 sourceText={state.groomDraft || state.requirementsText}
               />
+              <ScopeStartStatus state={state} onUpdate={onUpdate} />
               {!state.integrations.find((i) => i.id === 'jira')?.connected && onNavigate ? (
                 <p className="groom-blocker-hint">
                   Connect Atlassian first ·{' '}
@@ -343,13 +345,15 @@ export function validateRequirements(state: WizardState): string | null {
   if (!state.requirementsText.trim() && state.requirementFileName) {
     return null
   }
-  if (state.groomConfirmed) return null
-  if (!state.groomQuestions.length && state.groomStatus !== 'draft_ready' && state.groomStatus !== 'error') {
-    return 'Open Clarify, click Make it clearer, and answer the required questions.'
+  if (!state.groomConfirmed) {
+    if (!state.groomQuestions.length && state.groomStatus !== 'draft_ready' && state.groomStatus !== 'error') {
+      return 'Open Clarify, click Make it clearer, and answer the required questions.'
+    }
+    const missing = unansweredRequired(state)
+    if (missing.length) {
+      return `Answer or mark Jira later on the ${missing.length} required question${missing.length === 1 ? '' : 's'} under Need clarification.`
+    }
+    return 'Click Use this wording so Blink can rewrite from your answers.'
   }
-  const missing = unansweredRequired(state)
-  if (missing.length) {
-    return `Answer or mark Jira later on the ${missing.length} required question${missing.length === 1 ? '' : 's'} under Need clarification.`
-  }
-  return 'Click Use this wording so Blink can rewrite from your answers.'
+  return validateSdlcScope(state)
 }

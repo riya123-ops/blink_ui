@@ -28,6 +28,7 @@ export interface WizardDraft {
 }
 
 const LEGACY_WIZARD_STEPS = [
+  'sdlc-scope',
   'stakeholder-questions',
   'stakeholder-responses',
   'sdlc-planning',
@@ -47,10 +48,11 @@ export function normalizeWizardStep(
   state?: Pick<WizardState, 'productScope' | 'sdlcStartIssueId'>,
 ): WizardStep {
   if (step === 'stakeholder-questions' || step === 'stakeholder-responses') return 'stakeholder-qa'
+  if (step === 'sdlc-scope') return 'requirements'
   if (step === 'sdlc-planning') {
     const confirmed = Boolean(state?.productScope?.status === 'confirmed' || state?.productScope?.confirmationDigest)
     if (confirmed && state?.sdlcStartIssueId) return 'sdlc-plan'
-    return 'sdlc-scope'
+    return 'requirements'
   }
   if (step === 'ide-and-tools' || step === 'platform-delivery') return 'project-shape'
   if (step === 'review-resolve' || step === 'project-preview') return 'generation'

@@ -1717,6 +1717,56 @@ textarea::placeholder {
   border: 1px solid #bfdbfe;
 }
 
+.auto-run-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: color-mix(in srgb, var(--surface, #fff) 88%, var(--primary-soft, #eff6ff));
+}
+
+.auto-run-status.is-done {
+  background: color-mix(in srgb, var(--surface, #fff) 88%, var(--green-soft, #dcfce7));
+}
+
+.auto-run-status.is-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.auto-run-status__icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #2563eb;
+}
+
+.auto-run-status.is-done .auto-run-status__icon {
+  color: var(--ts-green-deep, #166534);
+}
+
+.auto-run-status.is-error .auto-run-status__icon {
+  color: #b91c1c;
+}
+
+.auto-run-status__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.auto-run-status__copy strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.auto-run-status__copy p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted, #64748b);
+}
+
 .sdlc-panel {
   display: flex;
   flex-direction: column;

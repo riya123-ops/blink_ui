@@ -27,7 +27,6 @@ import {
 import {
   SdlcPlanningScreen,
   validateSdlcPlan,
-  validateSdlcScope,
 } from './screens/SdlcPlanningScreen'
 import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
@@ -189,10 +188,9 @@ export default function App() {
         return null
       case 'project-stakeholders':
         return validateProjectStakeholders(state)
+      case 'sdlc-scope':
       case 'requirements':
         return validateRequirements(state)
-      case 'sdlc-scope':
-        return validateSdlcScope(state)
       case 'stakeholder-qa':
         return validateStakeholderQa(state)
       case 'project-shape':
@@ -572,6 +570,7 @@ export default function App() {
   useEffect(() => {
     if (folderPrep !== 'preparing' || !folderQuery?.name.trim()) return
     let cancelled = false
+    let emptyPolls = 0
     const check = async () => {
       try {
         const progress = await fetchWorkspaceStatus(folderQuery.name, folderQuery.id)
@@ -586,9 +585,19 @@ export default function App() {
           setFolderPrep('ready')
           return
         }
-        if (progress.status === 'failed') setFolderPrep('failed')
+        if (progress.status === 'failed') {
+          setFolderPrep('failed')
+          return
+        }
+        if (!progress.status) {
+          emptyPolls += 1
+          if (emptyPolls >= 20) setFolderPrep('idle')
+        } else {
+          emptyPolls = 0
+        }
       } catch {
-        /* keep the note until a later poll succeeds */
+        emptyPolls += 1
+        if (emptyPolls >= 20) setFolderPrep('idle')
       }
     }
     void check()
@@ -2004,6 +2013,7 @@ export default function App() {
             creating={creatingRepos}
           />
         )
+      case 'sdlc-scope':
       case 'requirements':
         return (
           <RequirementsScreen
@@ -2057,10 +2067,8 @@ export default function App() {
             resetting={resettingSimJira}
           />
         )
-      case 'sdlc-scope':
-        return <SdlcPlanningScreen state={state} onUpdate={patch} phase="scope" />
       case 'sdlc-plan':
-        return <SdlcPlanningScreen state={state} onUpdate={patch} phase="plan" />
+        return <SdlcPlanningScreen state={state} onUpdate={patch} />
       case 'project-shape':
         return <ProjectShapeScreen state={state} onUpdate={patch} />
       case 'technology-per-repo':

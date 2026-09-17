@@ -17,6 +17,8 @@ assert.deepEqual(
   STEP_ORDER.slice(STEP_ORDER.indexOf('stakeholder-qa'), STEP_ORDER.indexOf('generation') + 1),
   ['stakeholder-qa', 'project-shape', 'repositories', 'technology-per-repo', 'sdlc-plan', 'generation'],
 )
+assert.equal(STEP_ORDER.includes('sdlc-scope'), false)
+assert.equal(STEP_ORDER.indexOf('requirements') + 1, STEP_ORDER.indexOf('stakeholder-qa'))
 
 const planned = {
   ...defaultWizardState,
@@ -34,7 +36,7 @@ const remappedPlan = remapWizardProgress({
 })
 assert.equal(remappedPlan.step, 'project-shape')
 assert.equal(remappedPlan.completedThrough, STEP_ORDER.indexOf('stakeholder-qa'))
-assert.equal(remappedPlan.state.wizardLayoutVersion, 2)
+assert.equal(remappedPlan.state.wizardLayoutVersion, 3)
 assert.equal(remappedPlan.state.technicalPlan?.markdown, '# plan')
 
 const remappedDone = remapWizardProgress({
@@ -44,6 +46,15 @@ const remappedDone = remapWizardProgress({
 })
 assert.equal(remappedDone.step, 'generation')
 assert.equal(remappedDone.state.shapeAcknowledged, true)
+
+const remappedScope = remapWizardProgress({
+  step: 'sdlc-scope',
+  completedThrough: 4,
+  state: { ...defaultWizardState, wizardLayoutVersion: 2, sdlcStartIssueId: 'ST-1' },
+})
+assert.equal(remappedScope.step, 'requirements')
+assert.equal(remappedScope.completedThrough, STEP_ORDER.indexOf('requirements'))
+assert.equal(remappedScope.state.wizardLayoutVersion, 3)
 
 const before = { ...defaultWizardState, shapeAcknowledged: true, technicalPlan: { markdown: '# plan' } }
 const invalidated = withShapeInvalidation(before, { topology: 'microservices' })

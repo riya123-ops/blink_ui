@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   AlertCircle,
-  ChevronDown,
   CircleCheck,
   Code2,
   LogOut,
@@ -16,10 +15,8 @@ import { openDeveloperPopup } from '../developer/window'
 import { TalentServLogo } from './TalentServLogo'
 import { BlinkLogo } from './BlinkLogo'
 import {
-  WIZARD_PHASES,
   WIZARD_STEPS,
   canNavigateToStep,
-  phaseForStep,
   phaseProgressLabel,
   stepAttention,
   type StepAttention,
@@ -99,10 +96,6 @@ export function WizardSidebar({
 }: Props) {
   const { session, signOut } = useAuth()
   const { state: developerState } = useDeveloperMode()
-  const currentPhase = phaseForStep(currentStep)
-  const [openPhases, setOpenPhases] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(WIZARD_PHASES.map((p) => [p.id, p.id === currentPhase.id])),
-  )
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => readBool(SIDEBAR_OPEN_KEY, true))
   const [sidebarWidth, setSidebarWidth] = useState(() =>
@@ -115,10 +108,6 @@ export function WizardSidebar({
   )
   const accountDragRef = useRef<{ startY: number; startH: number } | null>(null)
   const sidebarDragRef = useRef<{ startX: number; startW: number } | null>(null)
-
-  useEffect(() => {
-    setOpenPhases((prev) => ({ ...prev, [currentPhase.id]: true }))
-  }, [currentPhase.id])
 
   useEffect(() => {
     try {
@@ -157,10 +146,6 @@ export function WizardSidebar({
     () => (session?.email ? initialsFromEmail(session.email) : '?'),
     [session?.email],
   )
-
-  function togglePhase(phaseId: string) {
-    setOpenPhases((prev) => ({ ...prev, [phaseId]: !prev[phaseId] }))
-  }
 
   function navigate(step: WizardStep) {
     onNavigate(step)
@@ -221,83 +206,45 @@ export function WizardSidebar({
   const railIcons = WIZARD_STEPS.filter((s) => s.id !== 'welcome')
 
   const navBody = (
-    <nav className="nav-card">
-      {WIZARD_PHASES.map((phase) => {
-        const open = openPhases[phase.id] ?? phase.id === currentPhase.id
-        const phaseActive = phase.id === currentPhase.id
-        const phaseSteps = phase.stepIds
-          .map((id) => WIZARD_STEPS.find((s) => s.id === id))
-          .filter(Boolean)
-        const doneCount = phase.stepIds.filter((id) => {
-          const a = stepAttention(id, currentStep, completedThrough, generationComplete, state)
-          return a === 'done'
-        }).length
-        const needsAttention = phase.stepIds.some(
-          (id) => stepAttention(id, currentStep, completedThrough, generationComplete, state) === 'attention',
-        )
-        return (
-          <div
-            key={phase.id}
-            className={`nav-phase${phaseActive ? ' is-active' : ''}${needsAttention ? ' needs-attention' : ''}`}
-          >
-            <button
-              type="button"
-              className="nav-phase-header"
-              onClick={() => togglePhase(phase.id)}
-              aria-expanded={open}
+    <nav className="nav-card" aria-label="SDLC steps">
+      <ul className="nav-list">
+        {railIcons.map((step) => {
+          const attention = stepAttention(
+            step.id,
+            currentStep,
+            completedThrough,
+            generationComplete,
+            state,
+          )
+          const clickable = canNavigateToStep(
+            step.id,
+            currentStep,
+            completedThrough,
+            groomingUnlocked,
+            unrestrictedNav,
+            Boolean(state.shapeAcknowledged),
+          )
+          const Icon =
+            attention === 'done'
+              ? CircleCheck
+              : attention === 'attention'
+                ? AlertCircle
+                : step.icon
+          return (
+            <li
+              key={step.id}
+              className={`nav-item ${attention} ${clickable ? 'clickable' : ''}`}
+              onClick={() => clickable && navigate(step.id)}
+              onKeyDown={(e) => e.key === 'Enter' && clickable && navigate(step.id)}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
             >
-              <span className="nav-phase-label">
-                {phase.label}
-                <span className="nav-phase-count">
-                  {doneCount}/{phase.stepIds.length}
-                </span>
-              </span>
-              <ChevronDown size={14} className={open ? 'chevron open' : 'chevron'} />
-            </button>
-            {open && (
-              <ul className="nav-list">
-                {phaseSteps.map((step) => {
-                  if (!step) return null
-                  const attention = stepAttention(
-                    step.id,
-                    currentStep,
-                    completedThrough,
-                    generationComplete,
-                    state,
-                  )
-                  const clickable = canNavigateToStep(
-                    step.id,
-                    currentStep,
-                    completedThrough,
-                    groomingUnlocked,
-                    unrestrictedNav,
-                    Boolean(state.shapeAcknowledged),
-                  )
-                  const Icon =
-                    attention === 'done'
-                      ? CircleCheck
-                      : attention === 'attention'
-                        ? AlertCircle
-                        : step.icon
-                  return (
-                    <li
-                      key={step.id}
-                      className={`nav-item ${attention} ${clickable ? 'clickable' : ''}`}
-                      onClick={() => clickable && navigate(step.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && clickable && navigate(step.id)}
-                      role={clickable ? 'button' : undefined}
-                      tabIndex={clickable ? 0 : undefined}
-                    >
-                      <Icon size={15} color={iconColor(attention)} strokeWidth={attention === 'done' ? 2.4 : 2} />
-                      <span className="nav-label">{step.label}</span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        )
-      })}
+              <Icon size={15} color={iconColor(attention)} strokeWidth={attention === 'done' ? 2.4 : 2} />
+              <span className="nav-label">{step.label}</span>
+            </li>
+          )
+        })}
+      </ul>
     </nav>
   )
 

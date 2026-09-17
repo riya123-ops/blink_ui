@@ -63,7 +63,7 @@ export function LoginScreen() {
       setNotice({
         type: 'error',
         message: message.includes('timed out')
-          ? 'Sending the code timed out. Sign-in email may be blocked — try again, or check SMTP on the server.'
+          ? 'Sign-in timed out waiting for the API. Retry once; if it happens again the backend is still on the old SMTP path.'
           : message,
       })
     } finally {

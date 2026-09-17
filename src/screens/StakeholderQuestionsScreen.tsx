@@ -206,7 +206,7 @@ export function StakeholderQuestionsScreen({
         {state.questions.length === 0 ? (
           <div className="empty-state-block">
             <h3>Nothing left to ask</h3>
-            <p>All clarify items were resolved on Requirements. Continue to Responses or go back if you need to queue more.</p>
+            <p>All clarify items were resolved on Requirements. Open Inbox &amp; grooming, or go back if you need to queue more.</p>
           </div>
         ) : (
           <div className="person-groups">

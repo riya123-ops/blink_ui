@@ -39,7 +39,7 @@ export const DEVELOPER_CAPABILITIES = {
     id: 'skipStepValidation',
     group: 'wizard',
     label: 'Skip step validation',
-    description: 'Save & Continue even when required fields on the current step are empty.',
+    description: 'Continue even when required fields on the current step are empty.',
   },
   autoEnsureProject: {
     id: 'autoEnsureProject',

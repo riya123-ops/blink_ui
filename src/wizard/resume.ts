@@ -17,6 +17,7 @@ interface RemoteProject {
 
 export const WIZARD_DRAFT_KEY = 'blink.wizard.v1'
 export const WIZARD_SESSION_STEP_KEY = 'blink.wizard.session.v1'
+export const OPEN_WELCOME_KEY = 'blink.openWelcome.v1'
 
 export interface WizardDraft {
   email: string
@@ -168,6 +169,26 @@ export function clearSessionStep(): void {
   sessionStorage.removeItem(WIZARD_SESSION_STEP_KEY)
 }
 
+/** After sign-in, open Welcome so Continue / Start over is always available. */
+export function markOpenWelcome(): void {
+  if (typeof sessionStorage === 'undefined') return
+  sessionStorage.setItem(OPEN_WELCOME_KEY, '1')
+}
+
+export function peekOpenWelcome(): boolean {
+  if (typeof sessionStorage === 'undefined') return false
+  try {
+    return sessionStorage.getItem(OPEN_WELCOME_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function consumeOpenWelcome(): void {
+  if (typeof sessionStorage === 'undefined') return
+  sessionStorage.removeItem(OPEN_WELCOME_KEY)
+}
+
 export function parkDraftForNextLogin(email: string | null | undefined): void {
   clearSessionStep()
   // Keep draft step/progress intact so the next login can offer Resume.
@@ -259,12 +280,13 @@ export function resumeTarget(draft: Pick<WizardDraft, 'step' | 'completedThrough
   return hasWizardProgress(draft) ? 'project-stakeholders' : 'welcome'
 }
 
-/** Pick the best step to open after refresh/login. */
+/** Pick the best step to open after refresh/login. Sign-in always lands on Welcome. */
 export function resolveBootStep(
   draft: Pick<WizardDraft, 'step' | 'completedThrough' | 'state' | 'freshStart'>,
   sessionStep: WizardStep | null,
   urlStep: WizardStep | null,
 ): WizardStep {
+  if (peekOpenWelcome()) return 'welcome'
   if (draft.freshStart && !draft.state.projectId) {
     return urlStep || sessionStep || draft.step || 'project-stakeholders'
   }

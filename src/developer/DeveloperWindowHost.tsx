@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { openDeveloperPopup } from './window'
 import './developer.css'
 
-/** Keeps Ctrl+Shift+D working; opener UI lives in the profile widget. */
+/** Keeps Ctrl+Shift+D working; profile widget only shows tools after developer mode is on. */
 export function DeveloperWindowHost() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

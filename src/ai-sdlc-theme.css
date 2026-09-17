@@ -238,7 +238,7 @@ body.is-resizing-sidebar .sidebar {
 @media (max-width: 768px) {
   .sidebar,
   .sidebar.is-collapsed {
-    width: 100% !important;
+    width: min(20rem, 88vw) !important;
   }
 
   .sidebar-resize-handle {
@@ -252,11 +252,20 @@ body.is-resizing-sidebar .sidebar {
   .sidebar-rail {
     display: none;
   }
+
+  .sidebar.is-collapsed .sidebar-brand {
+    display: flex;
+  }
+
+  .sidebar.is-collapsed .sidebar-chrome {
+    flex-direction: row;
+    align-items: center;
+  }
 }
 
-.sidebar-nav-wrap.has-account-chip .nav-card {
-  padding-bottom: 6.25rem;
-  scroll-padding-bottom: 6.25rem;
+.sidebar-nav-wrap.has-dev-chip .nav-card {
+  padding-bottom: 4.75rem;
+  scroll-padding-bottom: 4.75rem;
 }
 
 .sidebar-nav-wrap.has-account-panel .nav-card {
@@ -292,8 +301,14 @@ body.is-resizing-sidebar .sidebar {
 .account-float-collapsed {
   display: inline-flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0.4rem;
+  width: 100%;
+}
+
+.sidebar.is-collapsed .account-float-collapsed {
+  width: auto;
+  align-items: center;
 }
 
 .account-float-chip {
@@ -309,6 +324,40 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.account-float-chip.is-labeled {
+  width: auto;
+  height: auto;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.35rem;
+}
+
+.account-chip-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+
+.account-chip-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.account-chip-email {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-navy);
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-float-chip:hover {
@@ -544,10 +593,21 @@ body.is-resizing-sidebar .sidebar {
   color: var(--primary);
 }
 
+.account-float-signout.is-compact {
+  width: 100%;
+}
+
+.account-float-signout.is-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .main {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   width: auto;
   max-width: none;
 }
@@ -557,7 +617,9 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.7rem 0 0.85rem 1.5rem;
   scrollbar-gutter: auto;
   width: 100%;
   max-width: none;
@@ -565,17 +627,18 @@ body.is-resizing-sidebar .sidebar {
 
 .top-bar,
 .top-float {
-  position: absolute;
-  top: 0.75rem;
-  left: 0.85rem;
-  right: 0.35rem;
-  z-index: 28;
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: 6;
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 0;
-  padding: 0;
+  padding: 0.7rem 1rem 0.45rem 1.5rem;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -601,6 +664,7 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.1);
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  overflow: visible;
 }
 
 .top-bar-start,
@@ -621,6 +685,8 @@ body.is-resizing-sidebar .sidebar {
   margin-left: 0;
   flex-shrink: 0;
   padding: 0.28rem;
+  max-width: min(100%, 40rem);
+  overflow: visible;
 }
 
 .top-float-end .header-chat-btn,
@@ -649,7 +715,9 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.7rem 0 0.85rem 1.5rem;
   scrollbar-gutter: auto;
 }
 
@@ -669,19 +737,20 @@ body.is-resizing-sidebar .sidebar {
   min-height: 0;
 }
 
-/* Independent floating Back / Continue — no full-width bar */
+/* Docked Back / Continue — reserved strip under the scrollport, not an overlay */
 .action-bar,
 .action-float {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0.9rem;
-  z-index: 30;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 6;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding: 0 0.35rem 0 1rem;
+  padding: 0.5rem 1rem 0.85rem 1.5rem;
   pointer-events: none;
   background: none !important;
   border: none !important;
@@ -870,7 +939,8 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 22px 50px rgba(15, 23, 42, 0.1) !important;
 }
 
-.feature-bar {
+.feature-bar,
+.welcome-flow {
   margin-top: 2rem;
   gap: 0.85rem;
 }
@@ -1075,9 +1145,14 @@ body.is-resizing-sidebar .sidebar {
 }
 
 /* ── Screen headers ── */
-.screen-header h2 {
+.screen-header h2,
+.screen-ref .screen-header h2,
+.screen-project .screen-header h2,
+.sdlc-plan__hero h2,
+.gen-loading > h2 {
   font-size: 1.45rem;
   font-weight: 750;
+  letter-spacing: -0.035em;
   margin: 0 0 0.35rem;
 }
 
@@ -1174,12 +1249,12 @@ body.is-resizing-sidebar .sidebar {
 @media (max-width: 768px) {
   .top-bar,
   .top-float {
-    top: 0.55rem;
-    left: 0.55rem;
-    right: 0.55rem;
-    flex-wrap: wrap;
-    padding: 0;
-    gap: 0.45rem;
+    top: auto;
+    left: auto;
+    right: auto;
+    flex-wrap: nowrap;
+    padding: 0.5rem 0.85rem 0.35rem;
+    gap: 0.4rem;
   }
 
   .top-float-chip {
@@ -1188,17 +1263,18 @@ body.is-resizing-sidebar .sidebar {
 
   .action-bar,
   .action-float {
-    padding: 0 0.75rem;
-    bottom: 0.75rem;
+    padding: 0.45rem 0.85rem max(0.7rem, env(safe-area-inset-bottom));
+    left: auto;
+    right: auto;
+    bottom: auto;
   }
 
   .action-float-btn {
-    padding: 0.55rem 0.95rem !important;
+    padding: 0.55rem 0.7rem !important;
   }
 
   .content {
-    padding-left: 1rem;
-    padding-right: 0;
+    padding: 0.5rem 1rem 0.65rem;
   }
 
   .dev-window-opener {

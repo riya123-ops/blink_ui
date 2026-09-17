@@ -61,3 +61,49 @@ export async function verifyLoginOtp(email: string, otp: string, accessCode?: st
   }
   return response.json() as Promise<AuthSessionResponse>
 }
+
+const SEND_CODE_FAILED = 'We could not send the sign-in code. Try again in a moment.'
+
+function isInternalAuthDetail(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('smtp') ||
+    lower.includes('port 587') ||
+    lower.includes('port 465') ||
+    lower.includes('office 365') ||
+    lower.includes('blink_otp') ||
+    lower.includes('javamail') ||
+    lower.includes('mail.smtp') ||
+    lower.includes('mail server') ||
+    lower.includes('not configured') ||
+    lower.includes("couldn't connect") ||
+    lower.includes('connection refused')
+  )
+}
+
+/** Short copy for the login card. Logs transport/config details instead of rendering them. */
+export function toUserAuthError(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message.trim() : ''
+  if (!raw) return fallback
+  if (isInternalAuthDetail(raw)) {
+    console.warn('[login]', raw)
+    return fallback || SEND_CODE_FAILED
+  }
+  return raw
+}
+
+export function publicOtpSentMessage(email: string, revealed: boolean): string {
+  if (revealed) return 'Enter the 6-digit code shown below.'
+  return `We sent a 6-digit code to ${email}.`
+}
+
+/** Show the issued OTP only in developer mode, or Vite local when the API is in SMTP-off reveal. */
+export function shouldRevealLoginOtp(
+  code: string | null | undefined,
+  options: { otpReveal: boolean; developerEnabled: boolean; deliveryMode?: string },
+): boolean {
+  if (!code?.trim()) return false
+  if (options.developerEnabled) return true
+  const smtpOff = options.otpReveal || options.deliveryMode === 'local'
+  return Boolean(smtpOff && import.meta.env.DEV)
+}

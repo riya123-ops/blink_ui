@@ -245,6 +245,13 @@ export function WizardSidebar({
       aria-label="SDLC steps"
     >
       <div className="sidebar-chrome">
+        <div className="brand sidebar-brand">
+          <div className="sidebar-brand-row">
+            <TalentServLogo size="sm" />
+            <span className="brand-divider" />
+            <BlinkLogo size="sm" />
+          </div>
+        </div>
         <button
           type="button"
           className="sidebar-collapse-btn"
@@ -255,13 +262,6 @@ export function WizardSidebar({
         >
           {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
         </button>
-        <div className="brand sidebar-brand">
-          <div className="sidebar-brand-row">
-            <TalentServLogo size="sm" />
-            <span className="brand-divider" />
-            <BlinkLogo size="sm" />
-          </div>
-        </div>
       </div>
 
       <div

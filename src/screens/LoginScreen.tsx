@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, KeyRound, Mail, ShieldCheck } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
 import {
   fetchLoginConfig,
   publicOtpSentMessage,
@@ -82,10 +82,6 @@ export function LoginScreen() {
       setOtp(reveal && localCode ? localCode : '')
       setStep('otp')
       setResendIn(result.resendAfterSeconds || 45)
-      setNotice({
-        type: reveal ? 'info' : 'success',
-        message: publicOtpSentMessage(trimmed, reveal),
-      })
     } catch (err) {
       setNotice({
         type: 'error',
@@ -134,11 +130,12 @@ export function LoginScreen() {
             <h1>
               Sign in to <span className="gradient-text">Blink</span>
             </h1>
-            <p className="welcome-tagline">Sign in with your work email</p>
             <p className="welcome-desc">
-              {gateRequired
-                ? `Enter your @${LOGIN_ALLOWED_DOMAIN} email and access code. We'll send a 6-digit code to that inbox.`
-                : `We'll send a 6-digit code to your @${LOGIN_ALLOWED_DOMAIN} inbox.`}
+              {step === 'otp'
+                ? publicOtpSentMessage(email, showDeveloperCode)
+                : gateRequired
+                  ? `Enter your @${LOGIN_ALLOWED_DOMAIN} email and access code.`
+                  : `We'll send a 6-digit code to your @${LOGIN_ALLOWED_DOMAIN} inbox.`}
             </p>
           </div>
 
@@ -150,18 +147,6 @@ export function LoginScreen() {
               else void signInWithOtp()
             }}
           >
-            <div className="login-card-icon">
-              {step === 'email' ? <Mail size={26} strokeWidth={1.75} /> : <KeyRound size={26} strokeWidth={1.75} />}
-            </div>
-            <h2>{step === 'email' ? 'Work email' : 'Enter your code'}</h2>
-            <p className="login-card-copy">
-              {step === 'email'
-                ? 'Use your TalentServ work email to continue.'
-                : showDeveloperCode
-                  ? `Developer code for ${email}. This is not emailed.`
-                  : `Enter the 6-digit code we sent to ${email}.`}
-            </p>
-
             {notice && <div className={`status-banner ${notice.type}`}>{notice.message}</div>}
 
             {showDeveloperCode && issuedOtp && (
@@ -194,14 +179,8 @@ export function LoginScreen() {
                 placeholder={`you@${LOGIN_ALLOWED_DOMAIN}`}
                 value={email}
                 disabled={sending || verifying || emailLocked}
-                aria-describedby={emailLocked ? 'login-email-hint' : undefined}
                 onChange={(event) => setEmail(event.target.value)}
               />
-              {emailLocked && (
-                <span id="login-email-hint" className="login-field-hint">
-                  Locked while we wait for the code. Use Change if this isn't the right inbox.
-                </span>
-              )}
             </div>
 
             {gateRequired && (
@@ -259,9 +238,6 @@ export function LoginScreen() {
                   onClick={() => void sendCode()}
                 >
                   {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
-                </button>
-                <button type="button" className="ghost-btn" disabled={sending || verifying} onClick={backToEmail}>
-                  Use a different email
                 </button>
               </div>
             )}

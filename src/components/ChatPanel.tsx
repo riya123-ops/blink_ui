@@ -36,7 +36,11 @@ function suggestionsForStep(step: string): string[] {
     case 'integrations':
       return ['Which integrations do I need next?', 'How do I connect Jira?', 'Is GitHub required for repos?']
     case 'requirements':
-      return ['What should I paste for clarify?', 'When can I mark Jira later?', 'Summarize what clarify will ask']
+      return [
+        'What should I paste for clarify?',
+        'When can I mark Jira later?',
+        'Does this start the SDLC automatically?',
+      ]
     case 'stakeholder-qa':
       return [
         'Which questions are still pending?',
@@ -44,10 +48,8 @@ function suggestionsForStep(step: string): string[] {
         'What is still waiting on replies?',
         'How do I record an answer here?',
       ]
-    case 'sdlc-scope':
-      return ['What does /sdlc-start do?', 'When should I confirm product scope?', 'What happens after start?']
     case 'sdlc-plan':
-      return ['Why is classify blocked?', 'What is G-PLAN?', 'When do I confirm acceptance criteria?']
+      return ['Does classify run automatically?', 'What is G-PLAN?', 'When do I confirm acceptance criteria?']
     case 'project-shape':
       return ['Which topology fits this product?', 'What happens after I continue?', 'Can I change this after planning?']
     case 'repositories':

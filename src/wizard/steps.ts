@@ -8,7 +8,6 @@ import {
   Layers,
   Link2,
   MessageSquare,
-  Play,
   Rocket,
   Users,
 } from 'lucide-react'
@@ -32,7 +31,6 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#2563eb' },
   { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
-  { id: 'sdlc-scope', label: 'Scope & start', icon: Play, iconColor: '#0ea5e9' },
   { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
@@ -50,7 +48,7 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
   {
     id: 'scope',
     label: 'Scope',
-    stepIds: ['requirements', 'sdlc-scope'],
+    stepIds: ['requirements'],
   },
   {
     id: 'groom',
@@ -84,7 +82,7 @@ export function phaseForStep(step: WizardStep): PhaseDefinition {
   return WIZARD_PHASES.find((phase) => phase.stepIds.includes(step)) || WIZARD_PHASES[0]
 }
 
-/** Single progress line: "3 of 10" — no phase grouping. */
+/** Single progress line: "3 of 9" — no phase grouping. */
 export function phaseProgressLabel(step: WizardStep): string {
   const visible = WIZARD_STEPS.filter((s) => s.id !== 'welcome')
   const idx = visible.findIndex((s) => s.id === step)
@@ -168,8 +166,7 @@ export function primaryContinueLabel(
     case 'integrations':
       return 'Continue'
     case 'requirements':
-      return state.groomConfirmed ? 'Continue' : 'Save & Continue'
-    case 'sdlc-scope':
+      return state.groomConfirmed ? 'Continue to Q&A' : 'Save & Continue'
     case 'sdlc-plan':
       return 'Continue'
     case 'stakeholder-qa': {

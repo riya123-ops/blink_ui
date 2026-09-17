@@ -213,16 +213,35 @@ export async function fetchWorkspaceStatus(projectName: string, projectId?: stri
   const params = new URLSearchParams({ projectName })
   if (projectId) params.set('projectId', projectId)
   const url = apiUrl(`/projects/workspace-status?${params.toString()}`)
-  const response = await fetch(url, { cache: 'no-store' })
+  const response = await fetch(url, { cache: 'no-store', headers: authHeaders() })
   if (!response.ok) throw new Error(await readError(response))
-  return response.json() as Promise<{
+  const data = await response.json() as {
     workspaceKey?: string | null
     status?: 'preparing' | 'ready' | 'failed' | null
-    filesCopied: number
-    filesTotal: number
-    percent: number
-    exists: boolean
-  }>
+    workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
+    filesCopied?: number
+    filesTotal?: number
+    percent?: number
+    exists?: boolean
+  }
+  const status = data.status || data.workspaceStatus || null
+  const filesCopied = data.filesCopied ?? 0
+  const filesTotal = data.filesTotal ?? 0
+  const percent = typeof data.percent === 'number'
+    ? data.percent
+    : status === 'ready'
+      ? 100
+      : filesTotal > 0
+        ? Math.min(99, Math.round((filesCopied * 100) / filesTotal))
+        : 0
+  return {
+    workspaceKey: data.workspaceKey,
+    status,
+    filesCopied,
+    filesTotal,
+    percent,
+    exists: Boolean(data.exists || status === 'ready'),
+  }
 }
 
 export interface S3WorkspaceProjectDto {

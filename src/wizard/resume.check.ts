@@ -40,7 +40,8 @@ assert.equal(isWizardStep('sdlc-scope'), true)
 assert.equal(isWizardStep('sdlc-plan'), true)
 assert.equal(isWizardStep('sdlc-planning'), true)
 assert.equal(isWizardStep('nope'), false)
-assert.equal(normalizeWizardStep('sdlc-planning'), 'sdlc-scope')
+assert.equal(normalizeWizardStep('sdlc-scope'), 'requirements')
+assert.equal(normalizeWizardStep('sdlc-planning'), 'requirements')
 assert.equal(
   normalizeWizardStep('sdlc-planning', {
     productScope: { status: 'confirmed' },

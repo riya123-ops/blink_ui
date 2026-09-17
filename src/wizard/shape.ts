@@ -1,8 +1,8 @@
-import { STEP_ORDER, stepIndex } from './steps.ts'
+import { STEP_ORDER } from './steps.ts'
 import type { WizardState, WizardStep } from './types.ts'
 
 /** Saved drafts from before Shape moved ahead of Work plan. */
-export const WIZARD_LAYOUT_VERSION = 2
+export const WIZARD_LAYOUT_VERSION = 3
 
 export const WIZARD_STEPS_V1: WizardStep[] = [
   'welcome',
@@ -17,6 +17,25 @@ export const WIZARD_STEPS_V1: WizardStep[] = [
   'technology-per-repo',
   'generation',
 ]
+
+/** Saved drafts from before Scope & start folded into Requirements. */
+export const WIZARD_STEPS_V2: WizardStep[] = [
+  'welcome',
+  'project-stakeholders',
+  'integrations',
+  'requirements',
+  'sdlc-scope',
+  'stakeholder-qa',
+  'project-shape',
+  'repositories',
+  'technology-per-repo',
+  'sdlc-plan',
+  'generation',
+]
+
+function indexIn(order: readonly WizardStep[], step: WizardStep): number {
+  return order.indexOf(step)
+}
 
 export function shapeFingerprint(
   state: Pick<
@@ -132,22 +151,17 @@ export function shapePlanContext(state: WizardState) {
   }
 }
 
-export function remapWizardProgress(input: {
+function applyV1ToV2(input: {
   step: WizardStep
   completedThrough: number
   state: WizardState
 }): { step: WizardStep; completedThrough: number; state: WizardState } {
-  const version = input.state.wizardLayoutVersion ?? 0
-  if (version >= WIZARD_LAYOUT_VERSION) {
-    return input
-  }
-
   const oldCompleted = Math.max(0, Math.min(input.completedThrough, WIZARD_STEPS_V1.length - 1))
-  const generationIdx = stepIndex('generation')
-  const qaIdx = stepIndex('stakeholder-qa')
+  const generationIdx = indexIn(WIZARD_STEPS_V2, 'generation')
+  const qaIdx = indexIn(WIZARD_STEPS_V2, 'stakeholder-qa')
   let step = input.step
   let completedThrough = input.completedThrough
-  let state: WizardState = { ...input.state, wizardLayoutVersion: WIZARD_LAYOUT_VERSION }
+  let state: WizardState = { ...input.state, wizardLayoutVersion: 2 }
 
   if (state.generationComplete || step === 'generation') {
     if (oldCompleted >= 9) {
@@ -159,7 +173,10 @@ export function remapWizardProgress(input: {
     }
     return {
       step: state.generationComplete ? 'generation' : step,
-      completedThrough: Math.max(oldCompleted >= 9 ? generationIdx : qaIdx, completedThrough === 10 ? generationIdx : completedThrough),
+      completedThrough: Math.max(
+        oldCompleted >= 9 ? generationIdx : qaIdx,
+        completedThrough === 10 ? generationIdx : completedThrough,
+      ),
       state,
     }
   }
@@ -170,21 +187,21 @@ export function remapWizardProgress(input: {
       shapeAcknowledged: true,
       shapeDigest: state.shapeDigest || shapeFingerprint(state),
     }
-    completedThrough = stepIndex('sdlc-plan')
-    if (step === 'sdlc-plan' || STEP_ORDER.includes(step)) {
+    completedThrough = indexIn(WIZARD_STEPS_V2, 'sdlc-plan')
+    if (step === 'sdlc-plan' || WIZARD_STEPS_V2.includes(step)) {
       return { step, completedThrough, state }
     }
     return { step: 'sdlc-plan', completedThrough, state }
   }
 
   if (oldCompleted >= 8) {
-    completedThrough = stepIndex('repositories')
+    completedThrough = indexIn(WIZARD_STEPS_V2, 'repositories')
     if (step === 'sdlc-plan') step = 'technology-per-repo'
     return { step, completedThrough, state }
   }
 
   if (oldCompleted >= 7) {
-    completedThrough = stepIndex('project-shape')
+    completedThrough = indexIn(WIZARD_STEPS_V2, 'project-shape')
     if (step === 'sdlc-plan') step = 'repositories'
     return { step, completedThrough, state }
   }
@@ -196,4 +213,41 @@ export function remapWizardProgress(input: {
   }
 
   return { step, completedThrough: oldCompleted, state }
+}
+
+function applyV2ToV3(input: {
+  step: WizardStep
+  completedThrough: number
+  state: WizardState
+}): { step: WizardStep; completedThrough: number; state: WizardState } {
+  const step = input.step === 'sdlc-scope' ? 'requirements' : input.step
+  let completedThrough = input.completedThrough
+  if (completedThrough >= 4) completedThrough -= 1
+  completedThrough = Math.max(0, Math.min(completedThrough, STEP_ORDER.length - 1))
+  return {
+    step,
+    completedThrough,
+    state: { ...input.state, wizardLayoutVersion: WIZARD_LAYOUT_VERSION },
+  }
+}
+
+export function remapWizardProgress(input: {
+  step: WizardStep
+  completedThrough: number
+  state: WizardState
+}): { step: WizardStep; completedThrough: number; state: WizardState } {
+  const version = input.state.wizardLayoutVersion ?? 0
+  if (version >= WIZARD_LAYOUT_VERSION) {
+    if (input.step === 'sdlc-scope') return { ...input, step: 'requirements' }
+    return input
+  }
+
+  let next = { ...input, state: { ...input.state } }
+  if (version < 2) {
+    next = applyV1ToV2(next)
+  }
+  if ((next.state.wizardLayoutVersion ?? 0) < WIZARD_LAYOUT_VERSION) {
+    next = applyV2ToV3(next)
+  }
+  return next
 }

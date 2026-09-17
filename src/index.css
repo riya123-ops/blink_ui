@@ -47,8 +47,20 @@
   --sidebar-width: 272px;
   --radius: 12px;
   --radius-lg: 18px;
-  --font-display: "Outfit", Manrope, system-ui, sans-serif;
+  --font-display: "Outfit", "Manrope", system-ui, sans-serif;
   --font-ui: "Manrope", system-ui, -apple-system, sans-serif;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-black: 800;
+  --fs-hero: clamp(2.4rem, 4.2vw, 3.25rem);
+  --fs-page: 1.45rem;
+  --fs-card: 1.05rem;
+  --fs-copy: 0.9rem;
+  --fs-ui: 0.8125rem;
+  --fs-label: 0.75rem;
+  --fs-micro: 0.68rem;
   --action-dock-h: 3.5rem;
   --top-float-h: 2.75rem;
   --chat-width: 400px;
@@ -63,10 +75,11 @@ body,
 
 body {
   font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 400;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  font-size: 14px;
   letter-spacing: 0.005em;
   line-height: 1.5;
 }
@@ -99,17 +112,21 @@ body {
   border: 2px solid transparent;
 }
 
-h1, h2, h3 {
+h1, h2 {
   font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-navy);
 }
 
-::selection {
-  background: rgba(37, 99, 235, 0.16);
+h3, h4 {
+  font-family: var(--font-ui);
+  font-weight: 700;
   color: var(--text-navy);
 }
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -1350,7 +1367,7 @@ textarea::placeholder {
 
 .ide-soon {
   font-size: 0.65rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1384,7 +1401,7 @@ textarea::placeholder {
 
 .ide-card strong {
   font-size: 0.85rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .ide-desc {
@@ -1843,7 +1860,7 @@ textarea::placeholder {
 .sdlc-plan__hero h2 {
   margin: 0 0 0.4rem;
   font-size: 1.45rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.035em;
 }
 
@@ -2216,7 +2233,7 @@ textarea::placeholder {
 
 /* ── Reference-accurate screens ── */
 .screen-ref .screen-header h2 {
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .ref-card {
@@ -3891,7 +3908,7 @@ textarea::placeholder {
 .screen-header h2 {
   margin: 0 0 0.3rem;
   font-size: 1.45rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text-navy);
   background: none;
@@ -4169,7 +4186,7 @@ textarea::placeholder {
 .card-header h3,
 .card-title {
   font-size: 0.95rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
   text-transform: none;
   color: var(--text-navy);
@@ -4182,7 +4199,7 @@ textarea::placeholder {
 .screen-header h2 {
   font-family: var(--font-display);
   font-size: 1.45rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.035em;
   color: var(--text-navy);
 }
@@ -4285,7 +4302,7 @@ textarea::placeholder {
 }
 
 .project-card h3 {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -5037,7 +5054,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-weight: 650;
+  font-weight: 600;
   font-size: 0.92rem;
 }
 
@@ -5244,7 +5261,7 @@ textarea::placeholder {
 
 .jira-row-title {
   font-size: 0.88rem;
-  font-weight: 650;
+  font-weight: 600;
   color: #0f172a;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -5457,9 +5474,15 @@ textarea::placeholder {
 }
 
 .login-card h2 {
-  margin: 0 0 0.35rem;
-  font-size: 1.2rem;
-  color: var(--text-navy);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.project-card h3 {
+  font-family: var(--font-ui);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .login-card-copy {
@@ -6164,7 +6187,7 @@ textarea::placeholder {
 .response-card-question {
   margin: 0.85rem 0 0;
   font-size: 0.95rem;
-  font-weight: 650;
+  font-weight: 600;
   color: #0f172a;
   line-height: 1.45;
 }
@@ -6756,7 +6779,7 @@ textarea::placeholder {
 .project-people-head h3 {
   margin: 0;
   font-size: 1rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
@@ -6928,7 +6951,7 @@ textarea::placeholder {
   gap: 0.3rem;
   padding: 0.28rem 0.5rem;
   font-size: 0.72rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
   border-radius: 8px;
 }
@@ -6972,7 +6995,7 @@ textarea::placeholder {
 
 .chat-context-chip {
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-navy);
   background: rgba(18, 38, 58, 0.06);
   border: 1px solid rgba(18, 38, 58, 0.08);
@@ -7270,7 +7293,7 @@ textarea::placeholder {
   background: transparent;
   font: inherit;
   font-size: 0.72rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
   padding: 0.2rem 1.15rem 0.2rem 0.25rem;
   max-width: 9.5rem;
@@ -7354,7 +7377,7 @@ textarea::placeholder {
   padding: 0.4rem 0.75rem;
   font: inherit;
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -7652,7 +7675,7 @@ textarea::placeholder {
 
 .shape-repo-purpose {
   font-size: 0.72rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-navy);
 }
 
@@ -7771,7 +7794,7 @@ textarea::placeholder {
 .platform-panel .field-group > label,
 .platform-panel .field-group > span {
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.02em;
 }
@@ -7822,7 +7845,7 @@ textarea::placeholder {
   background: transparent;
   padding: 0.28rem 0.55rem;
   font-size: 0.68rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
   cursor: pointer;
 }
@@ -7891,7 +7914,7 @@ textarea::placeholder {
   top: 0.55rem;
   right: 0.55rem;
   font-size: 0.62rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--green-deep);
@@ -7981,7 +8004,7 @@ textarea::placeholder {
 
 .preview-meta dd {
   margin: 0;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-navy);
 }
 
@@ -8082,7 +8105,7 @@ textarea::placeholder {
   border: 1px solid rgba(122, 144, 168, 0.2);
   background: rgba(255, 255, 255, 0.65);
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
 }
 

@@ -318,6 +318,12 @@ export interface WizardState extends SetupForm {
   shipPlanAcknowledged?: boolean
   /** Human G-GROOM acknowledgement (not approve-gate). */
   groomAcknowledged?: boolean
+  /** Human review that topology, repositories, and stacks are ready for the work plan. */
+  shapeAcknowledged?: boolean
+  /** Fingerprint of the reviewed shape; plan is cleared when it changes. */
+  shapeDigest?: string | null
+  /** Wizard sidebar order version. 2 = Shape before Work plan. */
+  wizardLayoutVersion?: number
   /** After G-GROOM reject: revision required before a new ack. */
   groomRejectPending?: boolean
   /** Human confirmation of acceptance criteria after /create-spec. */
@@ -454,6 +460,9 @@ export const defaultWizardState: WizardState = {
   qaValidation: null,
   shipPlanAcknowledged: false,
   groomAcknowledged: false,
+  shapeAcknowledged: false,
+  shapeDigest: null,
+  wizardLayoutVersion: 2,
   groomRejectPending: false,
   acceptanceCriteriaAcknowledged: false,
   stakeholdersConfirmed: false,

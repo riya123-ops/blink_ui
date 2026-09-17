@@ -1,5 +1,5 @@
 import { sanitizeDownloadStructure } from '../wizard/defaults'
-import type { ProductScopeData } from '../wizard/types'
+import type { ProductScopeData, WizardState } from '../wizard/types'
 import { stripExcludedZipFolders } from './stripZipFolders'
 import { loadAuthSession } from '../auth/session'
 
@@ -1348,6 +1348,11 @@ export function technicalPlan(
     overlayFiles?: OverlayFilePayload[]
     issueId?: string
     actor?: string
+    topology?: string
+    repositoryModel?: string
+    architectureStyle?: string
+    repositories?: WizardState['repositories']
+    repoTechnologies?: WizardState['repoTechnologies']
   },
 ) {
   return postAdvisory(projectId, 'technical-plan', payload)

@@ -545,7 +545,7 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
           <p>
             Defaults follow Project Shape
             {state.topology ? ` (${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label})` : ''}.
-            Confirm each stack before Ship.
+            Confirm each stack, then review the setup before Work plan.
           </p>
         </div>
         {pending > 0 ? (
@@ -625,6 +625,27 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
           })}
         </div>
       )}
+
+      {techRows.length > 0 ? (
+        <section className="card shape-section" style={{ marginTop: '1rem' }}>
+          <div className="shape-section-head">
+            <h3 className="card-title">Setup review</h3>
+            <span className="shape-section-meta">Required before Work plan</span>
+          </div>
+          <p className="muted">
+            Topology, repositories, and stacks below are what classify / spec / technical-plan will
+            use. Changing them later clears the work plan, not scope or grooming.
+          </p>
+          <label className="checkbox-option" style={{ marginTop: '0.75rem' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(state.shapeAcknowledged)}
+              onChange={(e) => onUpdate({ shapeAcknowledged: e.target.checked })}
+            />
+            I have reviewed this setup and it is ready for the work plan.
+          </label>
+        </section>
+      ) : null}
     </div>
   )
 }

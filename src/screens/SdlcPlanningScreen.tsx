@@ -21,6 +21,7 @@ import {
   technicalPlan,
 } from '../api/blink'
 import type { WizardState } from '../wizard/types'
+import { shapePlanContext } from '../wizard/shape'
 
 interface Props {
   state: WizardState
@@ -143,6 +144,9 @@ function blockReason(id: StepId, state: WizardState): string | null {
     if (!scopeConfirmed(state)) return 'Confirm product scope before starting the SDLC chain.'
   }
   if (id === 'classify') {
+    if (!state.shapeAcknowledged) {
+      return 'Review Project Shape (topology, repositories, stack) before classify.'
+    }
     if (!state.groomAcknowledged) {
       return 'Acknowledge G-GROOM on Stakeholder Q&A before classify.'
     }
@@ -246,7 +250,7 @@ export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
       void postJiraGateEvidence(state.projectId, {
         issueKey,
         gate: 'G-PLAN',
-        message: 'Human acknowledgement of G-PLAN (not an approve-gate). Required before Shape & Ship.',
+        message: 'Human acknowledgement of G-PLAN (not an approve-gate). Required before Ship.',
       }).catch(() => undefined)
     }
     setLastChange('G-PLAN acknowledged by human (evidence posted; not an approve-gate).')
@@ -380,6 +384,7 @@ export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
         specification: state.specification,
         overlayFiles: state.scopeOverlays || [],
         issueId: state.sdlcStartIssueId || state.specification?.issueId || state.workClassification?.issueId,
+        ...shapePlanContext(state),
       })
       if (res.status !== 'ok') throw new Error(res.message || res.errors?.join('; ') || 'Technical plan failed')
       onUpdate({
@@ -416,7 +421,7 @@ export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
           <p className="muted">
             {phase === 'scope'
               ? 'Confirm product scope, then /sdlc-start. Stakeholder Q&A comes next — classify waits on G-GROOM.'
-              : 'Classify, specify, confirm acceptance criteria, then /technical-plan. G-PLAN is a human acknowledgement, not an approve-gate.'}
+              : 'Classify, specify, confirm acceptance criteria, then /technical-plan against the reviewed shape. G-PLAN is a human acknowledgement, not an approve-gate.'}
           </p>
         </div>
         <div className="sdlc-plan__meter" aria-label={`Planning progress ${progressPct} percent`}>
@@ -431,7 +436,7 @@ export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
             {complete
               ? phase === 'scope'
                 ? 'Ready for Stakeholder Q&A'
-                : 'Ready for Shape & Ship'
+                : 'Ready for Ship'
               : busy
                 ? 'Working…'
                 : nextId
@@ -451,12 +456,12 @@ export function SdlcPlanningScreen({ state, onUpdate, phase }: Props) {
       {lastChange && !error ? <p className="status-banner success">{lastChange}</p> : null}
       {complete && phase === 'scope' ? (
         <p className="status-banner success">
-          SDLC started. Continue to <strong>Stakeholder Q&A</strong>, then Work plan.
+          SDLC started. Continue to <strong>Stakeholder Q&A</strong>, then Project Shape, then Work plan.
         </p>
       ) : null}
       {complete && phase === 'plan' ? (
         <p className="status-banner success">
-          Work plan drafted. Acknowledge G-PLAN, then continue to <strong>Project Shape</strong>. Remotes are
+          Work plan drafted. Acknowledge G-PLAN, then continue to <strong>Ship</strong>. Remotes are
           created on Ship after <code>G-BOOTSTRAP</code>.
         </p>
       ) : null}
@@ -602,6 +607,7 @@ export function validateSdlcScope(state: WizardState): string | null {
 
 export function validateSdlcPlan(state: WizardState): string | null {
   if (!state.groomAcknowledged) return 'Acknowledge G-GROOM on Stakeholder Q&A before the work plan.'
+  if (!state.shapeAcknowledged) return 'Review Project Shape before the work plan.'
   if (!specReady(state)) return 'Create the specification before continuing.'
   if (!state.acceptanceCriteriaAcknowledged) return 'Confirm acceptance criteria before the technical plan.'
   if (!planReady(state)) return 'Complete the technical plan before continuing.'

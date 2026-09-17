@@ -34,10 +34,10 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
   { id: 'sdlc-scope', label: 'Scope & start', icon: Play, iconColor: '#0ea5e9' },
   { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
-  { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
   { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#2563eb' },
+  { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
   { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
 ]
 
@@ -58,14 +58,14 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
     stepIds: ['stakeholder-qa'],
   },
   {
-    id: 'plan',
-    label: 'Plan',
-    stepIds: ['sdlc-plan'],
-  },
-  {
     id: 'shape',
     label: 'Shape',
     stepIds: ['project-shape', 'repositories', 'technology-per-repo'],
+  },
+  {
+    id: 'plan',
+    label: 'Plan',
+    stepIds: ['sdlc-plan'],
   },
   {
     id: 'ship',
@@ -97,6 +97,7 @@ export function canNavigateToStep(
   completedThrough: number,
   groomingUnlocked = true,
   unrestricted = false,
+  shapeAcknowledged = false,
 ): boolean {
   if (unrestricted) return stepIndex(target) >= 0
   if (current === 'welcome') return target === 'welcome'
@@ -105,6 +106,8 @@ export function canNavigateToStep(
   if (targetIdx < 0) return false
   const reqIdx = stepIndex('requirements')
   if (targetIdx > reqIdx && !groomingUnlocked) return false
+  const planIdx = stepIndex('sdlc-plan')
+  if (targetIdx >= planIdx && !shapeAcknowledged) return false
   return targetIdx <= Math.max(completedThrough, currentIdx)
 }
 
@@ -116,7 +119,10 @@ export function stepAttention(
   current: WizardStep,
   completedThrough: number,
   generationComplete: boolean,
-  state: Pick<WizardState, 'questions' | 'responses' | 'groomConfirmed' | 'groomAcknowledged'>,
+  state: Pick<
+    WizardState,
+    'questions' | 'responses' | 'groomConfirmed' | 'groomAcknowledged' | 'shapeAcknowledged'
+  >,
 ): StepAttention {
   const idx = stepIndex(stepId)
   const generationIdx = stepIndex('generation')
@@ -124,6 +130,7 @@ export function stepAttention(
   if (skipped) return 'skipped'
   if (stepId === current) return 'active'
   if (idx <= completedThrough || (generationComplete && stepId === 'generation')) {
+    if (stepId === 'technology-per-repo' && !state.shapeAcknowledged) return 'attention'
     if (stepId === 'stakeholder-qa') {
       if (!state.groomAcknowledged) return 'attention'
       const outboundPending = state.questions.filter((q) => {
@@ -187,6 +194,7 @@ export function primaryContinueLabel(
     case 'repositories':
       return 'Continue'
     case 'project-shape':
+      return 'Continue'
     case 'technology-per-repo':
       return 'Continue'
     default:

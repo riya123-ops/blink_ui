@@ -271,6 +271,7 @@ export function WizardSidebar({
                     completedThrough,
                     groomingUnlocked,
                     unrestrictedNav,
+                    Boolean(state.shapeAcknowledged),
                   )
                   const Icon =
                     attention === 'done'
@@ -371,6 +372,7 @@ export function WizardSidebar({
               completedThrough,
               groomingUnlocked,
               unrestrictedNav,
+              Boolean(state.shapeAcknowledged),
             )
             const Icon =
               attention === 'done'

@@ -435,7 +435,7 @@ export function StakeholderResponsesScreen({
         <section className="card">
           <div className="empty-state-block">
             <h3>No responses to track</h3>
-            <p>There were no leftover clarifications. Acknowledge G-GROOM above, then continue to Work plan.</p>
+            <p>There were no leftover clarifications. Acknowledge G-GROOM above, then continue to Project Shape.</p>
           </div>
         </section>
       ) : (

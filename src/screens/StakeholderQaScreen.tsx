@@ -161,7 +161,7 @@ export function validateStakeholderQa(state: WizardState): string | null {
     return 'G-GROOM was rejected — run /grooming-revision, then acknowledge again.'
   }
   if (!state.groomAcknowledged) {
-    return 'Acknowledge G-GROOM before continuing to Work plan.'
+    return 'Acknowledge G-GROOM before continuing to Project Shape.'
   }
   return null
 }

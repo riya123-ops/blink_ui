@@ -1,4 +1,5 @@
 import { DEFAULT_INTEGRATIONS } from './defaults.ts'
+import { remapWizardProgress } from './shape.ts'
 import { STEP_ORDER, WIZARD_STEPS } from './steps.ts'
 import { defaultWizardState, type WizardState, type WizardStep } from './types.ts'
 
@@ -84,6 +85,7 @@ export function restoreWizardState(raw: unknown): WizardState {
       const { token: _token, ...rest } = saved
       return { ...item, ...rest, token: undefined }
     }),
+    wizardLayoutVersion: typeof parsed.wizardLayoutVersion === 'number' ? parsed.wizardLayoutVersion : 0,
   }
 }
 
@@ -113,11 +115,16 @@ export function loadWizardDraft(email: string): WizardDraft | null {
     if (!parsed?.email || parsed.email.toLowerCase() !== email.trim().toLowerCase()) return null
     const state = restoreWizardState(parsed.state)
     const step = isWizardStep(parsed.step) ? normalizeWizardStep(parsed.step, state) : 'welcome'
-    return {
-      email: parsed.email,
+    const remapped = remapWizardProgress({
       step,
       completedThrough: typeof parsed.completedThrough === 'number' ? parsed.completedThrough : 0,
       state,
+    })
+    return {
+      email: parsed.email,
+      step: remapped.step,
+      completedThrough: remapped.completedThrough,
+      state: remapped.state,
       updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
       freshStart: Boolean(parsed.freshStart),
     }
@@ -221,11 +228,16 @@ export function draftFromRemote(email: string, remote: RemoteProject): WizardDra
     : state.projectId
       ? 'project-stakeholders'
       : 'welcome'
-  return {
-    email: email.trim().toLowerCase(),
+  const remapped = remapWizardProgress({
     step,
     completedThrough: remote.wizardCompletedThrough ?? 0,
     state,
+  })
+  return {
+    email: email.trim().toLowerCase(),
+    step: remapped.step,
+    completedThrough: remapped.completedThrough,
+    state: remapped.state,
     updatedAt: parseRemoteUpdatedAt(remote.wizardUpdatedAt),
   }
 }

@@ -29,6 +29,7 @@ import {
   workspaceRootName,
 } from '../wizard/defaults'
 import type { WizardState, WizardStep } from '../wizard/types'
+import { shapePlanContext } from '../wizard/shape'
 
 const GENERATION_CHECKLIST = [
   'Project structure created',
@@ -163,6 +164,7 @@ export function ShipScreen({
         specification: state.specification,
         overlayFiles: state.scopeOverlays || [],
         issueId: state.specification?.issueId || state.workClassification?.issueId,
+        ...shapePlanContext(state),
       })
       if (res.status !== 'ok') {
         throw new Error(res.message || res.errors?.join('; ') || 'Refresh /technical-plan failed')

@@ -51,10 +51,14 @@ export function allowedStep(
   completedThrough: number,
   groomingUnlocked: boolean,
   unrestricted: boolean,
+  shapeAcknowledged = false,
 ): WizardStep {
   if (!requested) return current
+  if (!unrestricted && requested === 'sdlc-plan' && !shapeAcknowledged) {
+    return 'project-shape'
+  }
   if (requested === current) return current
-  if (canNavigateToStep(requested, current, completedThrough, groomingUnlocked, unrestricted)) {
+  if (canNavigateToStep(requested, current, completedThrough, groomingUnlocked, unrestricted, shapeAcknowledged)) {
     return requested
   }
   if (stepIndex(requested) <= Math.max(completedThrough, stepIndex(current))) {

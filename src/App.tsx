@@ -37,6 +37,13 @@ import {
 } from './wizard/questions'
 import { roleLabel } from './wizard/stakeholders'
 import { primaryContinueLabel, phaseProgressLabel, stepIndex } from './wizard/steps'
+import {
+  acknowledgeShapePatch,
+  validateProjectShape,
+  validateRepositories,
+  validateShapeReview,
+  withShapeInvalidation,
+} from './wizard/shape'
 import { buildDownloadStructure, defaultRepositories, NEXT_SDLC_COMMAND } from './wizard/defaults'
 import { mergeSavedIntegrations } from './wizard/mergeIntegrations'
 import {
@@ -131,6 +138,7 @@ export default function App() {
     boot.completedThrough,
     groomingComplete(boot.state),
     false,
+    Boolean(boot.state.shapeAcknowledged),
   )
   const [state, setState] = useState<WizardState>(boot.state)
   const [step, setStep] = useState<WizardStep>(bootStep)
@@ -172,7 +180,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useChatPanelOpen()
 
   const patch = useCallback((updates: Partial<WizardState>) => {
-    setState((prev) => ({ ...prev, ...updates }))
+    setState((prev) => ({ ...prev, ...withShapeInvalidation(prev, updates) }))
   }, [])
 
   const validateCurrentStep = useCallback((): string | null => {
@@ -187,6 +195,12 @@ export default function App() {
         return validateSdlcScope(state)
       case 'stakeholder-qa':
         return validateStakeholderQa(state)
+      case 'project-shape':
+        return validateProjectShape(state)
+      case 'repositories':
+        return validateRepositories(state)
+      case 'technology-per-repo':
+        return validateShapeReview(state)
       case 'sdlc-plan':
         return validateSdlcPlan(state)
       default:
@@ -364,13 +378,21 @@ export default function App() {
 
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
-      if (isWizardHistoryState(event.state)) {
-        setStep(normalizeWizardStep(event.state.step, stateRef.current))
-        return
-      }
-      const fromUrl = stepFromLocation()
-      if (fromUrl) {
-        setStep(normalizeWizardStep(fromUrl, stateRef.current))
+      const raw = isWizardHistoryState(event.state)
+        ? event.state.step
+        : stepFromLocation()
+      if (raw) {
+        const next = normalizeWizardStep(raw, stateRef.current)
+        setStep(
+          allowedStep(
+            next,
+            next,
+            completedRef.current,
+            groomingComplete(stateRef.current),
+            false,
+            Boolean(stateRef.current.shapeAcknowledged),
+          ),
+        )
         return
       }
       const idx = stepIndex(stepRef.current)
@@ -475,7 +497,7 @@ export default function App() {
           const next = resolveBootStep(local, loadSessionStep(), stepFromLocation())
           if (next !== 'welcome' && stepRef.current === 'welcome') {
             goToStep(
-              allowedStep(next, next, local.completedThrough, groomingComplete(local.state), false),
+              allowedStep(next, next, local.completedThrough, groomingComplete(local.state), false, Boolean(local.state.shapeAcknowledged)),
               'replace',
             )
             seedWizardHistory(next, true)
@@ -499,6 +521,7 @@ export default function App() {
           remoteDraft.completedThrough,
           groomingComplete(remoteDraft.state),
           false,
+          Boolean(remoteDraft.state.shapeAcknowledged),
         )
         goToStep(nextStep, 'replace')
         seedWizardHistory(nextStep, true)
@@ -769,6 +792,9 @@ export default function App() {
         return
       }
       // Physical GitHub create is deferred until Ship after G-PLAN / G-BOOTSTRAP.
+      setStatus(null)
+    } else if (step === 'technology-per-repo') {
+      patch(acknowledgeShapePatch(state))
       setStatus(null)
     } else if (step === 'requirements') {
       setStatus(null)

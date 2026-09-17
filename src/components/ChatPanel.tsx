@@ -48,6 +48,12 @@ function suggestionsForStep(step: string): string[] {
       return ['What does /sdlc-start do?', 'When should I confirm product scope?', 'What happens after start?']
     case 'sdlc-plan':
       return ['Why is classify blocked?', 'What is G-PLAN?', 'When do I confirm acceptance criteria?']
+    case 'project-shape':
+      return ['Which topology fits this product?', 'What happens after I continue?', 'Can I change this after planning?']
+    case 'repositories':
+      return ['How many repos do I need?', 'When are GitHub remotes created?', 'Should this be a monorepo?']
+    case 'technology-per-repo':
+      return ['What does setup review mean?', 'Why confirm each stack?', 'Does this affect the work plan?']
     default:
       return ['What should I do on this step?', 'Summarize my project so far', 'What is blocking me from continuing?']
   }

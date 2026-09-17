@@ -5,7 +5,7 @@ import {
   saveAuthSession,
   type AuthSession,
 } from './session'
-import { parkDraftForNextLogin } from '../wizard/resume'
+import { parkDraftForNextLogin, markOpenWelcome, clearSessionStep } from '../wizard/resume'
 import { writeStepUrl } from '../wizard/history'
 
 interface AuthContextValue {
@@ -23,6 +23,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       signIn: (next) => {
+        markOpenWelcome()
+        clearSessionStep()
+        writeStepUrl('welcome', 'replace')
         saveAuthSession(next)
         setSession(next)
       },

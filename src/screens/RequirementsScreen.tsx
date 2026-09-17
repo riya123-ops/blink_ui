@@ -208,8 +208,8 @@ export function RequirementsScreen({
 
           {hasPaste && (
             <div className="card-footer-actions right">
-              <button type="button" className="primary-btn" onClick={() => setStage('clarify')}>
-                Continue to Clarify
+              <button type="button" className="secondary-btn" onClick={() => setStage('clarify')}>
+                Clarify wording
               </button>
             </div>
           )}

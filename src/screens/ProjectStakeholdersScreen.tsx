@@ -150,7 +150,7 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
   return (
     <div className="screen screen-project">
       <div className="screen-header">
-        <h2>Project</h2>
+        <h2>Project & Stakeholders</h2>
         <p>Name it and who should be in the loop. Continue runs /configure-stakeholders then /confirm-stakeholders (freshness attestation — not an approve-gate).</p>
       </div>
 

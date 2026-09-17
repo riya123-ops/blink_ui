@@ -5,6 +5,7 @@ import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
 import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
+import { SessionControls } from './components/SessionControls'
 import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
 import {
@@ -76,6 +77,8 @@ import {
   saveSessionStep,
   serializeWizardState,
   stepLabel,
+  consumeOpenWelcome,
+  peekOpenWelcome,
   canOfferResume,
 } from './wizard/resume'
 
@@ -143,6 +146,10 @@ export default function App() {
   const [step, setStep] = useState<WizardStep>(bootStep)
   const [completedThrough, setCompletedThrough] = useState(boot.completedThrough)
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
+
+  useEffect(() => {
+    if (step !== 'welcome') consumeOpenWelcome()
+  }, [step])
 
   useEffect(() => {
     if (!status || status.type === 'error') return
@@ -491,15 +498,6 @@ export default function App() {
         const remoteDraft = draftFromRemote(email, remote)
         const preferLocal = local.updatedAt >= remoteDraft.updatedAt && hasWizardProgress(local)
         if (preferLocal) {
-          // Local draft already booted; ensure we are not stuck on welcome.
-          const next = resolveBootStep(local, loadSessionStep(), stepFromLocation())
-          if (next !== 'welcome' && stepRef.current === 'welcome') {
-            goToStep(
-              allowedStep(next, next, local.completedThrough, groomingComplete(local.state), false, Boolean(local.state.shapeAcknowledged)),
-              'replace',
-            )
-            seedWizardHistory(next, true)
-          }
           return
         }
         if (!hasWizardProgress(remoteDraft)) return
@@ -513,6 +511,9 @@ export default function App() {
           updatedAt: Math.max(remoteDraft.updatedAt, Date.now()),
           freshStart: false,
         })
+        if (peekOpenWelcome() || stepRef.current === 'welcome') {
+          return
+        }
         const nextStep = allowedStep(
           resolveBootStep(remoteDraft, loadSessionStep(), stepFromLocation()),
           remoteDraft.step,
@@ -2211,9 +2212,10 @@ export default function App() {
                 className={`header-chat-btn${chatOpen ? ' is-active' : ''}`}
                 onClick={() => setChatOpen(!chatOpen)}
                 title="Blink Chat"
+                aria-label="Blink Chat"
               >
                 <MessageSquare size={16} />
-                Blink Chat
+                <span className="header-btn-label">Blink Chat</span>
               </button>
               {showQuickDownload && (
                 <button
@@ -2221,11 +2223,13 @@ export default function App() {
                   className="header-download-btn"
                   disabled={loading || grooming}
                   onClick={handleQuickDownload}
+                  aria-label="Download Project"
                 >
                   <Download size={16} />
-                  Download Project
+                  <span className="header-btn-label">Download Project</span>
                 </button>
               )}
+              <SessionControls compact />
             </div>
           </header>
         )}

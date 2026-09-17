@@ -7,6 +7,7 @@ import {
   isWizardStep,
   normalizeWizardStep,
   parseRemoteUpdatedAt,
+  resolveBootStep,
   restoreWizardState,
   serializeWizardState,
 } from './resume.ts'
@@ -52,5 +53,26 @@ assert.equal(
 assert.equal(normalizeWizardStep('ide-and-tools'), 'project-shape')
 assert.equal(normalizeWizardStep('review-resolve'), 'generation')
 assert.ok(parseRemoteUpdatedAt('2026-09-11T10:00:00') > 0)
+
+assert.equal(
+  resolveBootStep(
+    { step: 'welcome', completedThrough: 0, state: defaultWizardState },
+    null,
+    null,
+  ),
+  'welcome',
+)
+assert.equal(
+  resolveBootStep(
+    {
+      step: 'integrations',
+      completedThrough: 2,
+      state: { ...defaultWizardState, projectName: 'Fitoyo' },
+    },
+    null,
+    null,
+  ),
+  'integrations',
+)
 
 console.log('resume.check.ts: ok')

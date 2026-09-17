@@ -28,9 +28,21 @@ body {
   background: var(--bg);
 }
 
-h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
+h1, h2,
+.screen-header h2,
+.welcome-headline h1,
+.sdlc-plan__hero h2,
+.login-card h2 {
   font-family: var(--font-display);
-  letter-spacing: -0.035em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-navy);
+}
+
+h3, h4 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--text-navy);
 }
 
@@ -104,11 +116,17 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 .sidebar-chrome {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0 0.1rem 0.55rem;
+  gap: 0.4rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0 0.15rem 0.55rem;
   flex-shrink: 0;
   position: relative;
   z-index: 3;
+}
+
+.sidebar-chrome .brand {
+  margin-bottom: 0;
 }
 
 .sidebar-brand {
@@ -118,14 +136,24 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 }
 
 .sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   min-width: 0;
+  flex-wrap: nowrap;
   overflow: hidden;
 }
 
 .sidebar-brand .talentserv-logo,
 .sidebar-brand .blink-logo {
-  max-width: 96px !important;
-  max-height: 28px !important;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: 92px !important;
+  height: 22px !important;
+  max-height: 22px !important;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .sidebar-collapse-btn {
@@ -135,14 +163,14 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  order: 0;
+  margin-left: auto;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.9);
   color: var(--muted);
   cursor: pointer;
   position: relative;
-  z-index: 4;
+  z-index: 21;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -153,23 +181,52 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 }
 
 .sidebar.is-collapsed {
-  padding-left: 0.45rem;
-  padding-right: 0.45rem;
+  padding: 0.7rem 0.35rem 0.65rem;
+  overflow: hidden;
 }
 
 .sidebar.is-collapsed .sidebar-chrome {
   flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   gap: 0.45rem;
-  padding-bottom: 0.35rem;
+  padding: 0 0 0.45rem;
 }
 
 .sidebar.is-collapsed .sidebar-brand {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow: visible;
+  margin: 0;
+}
+
+.sidebar.is-collapsed .sidebar-brand-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: visible;
+}
+
+.sidebar.is-collapsed .sidebar-brand-row .brand-divider {
   display: none;
+}
+
+.sidebar.is-collapsed .sidebar-brand .talentserv-logo,
+.sidebar.is-collapsed .sidebar-brand .blink-logo {
+  flex: none;
+  width: 40px !important;
+  max-width: 40px !important;
+  height: 18px !important;
+  max-height: 18px !important;
+  object-position: center;
 }
 
 .sidebar.is-collapsed .sidebar-collapse-btn {
   width: 36px;
   height: 36px;
+  margin: 0;
   border-radius: 12px;
 }
 
@@ -218,7 +275,7 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
 .sidebar-resize-handle {
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   width: 6px;
   height: 100%;
   cursor: ew-resize;
@@ -226,19 +283,32 @@ h1, h2, h3, .screen-header h2, .welcome-headline h1, .login-card h2 {
   background: transparent;
 }
 
+.sidebar.is-collapsed .sidebar-resize-handle {
+  width: 4px;
+}
+
 .sidebar-resize-handle:hover,
 .sidebar.is-collapsed .sidebar-resize-handle:hover {
   background: rgba(37, 99, 235, 0.28);
+}
+
+body.is-resizing-sidebar {
+  cursor: ew-resize;
+  user-select: none;
 }
 
 body.is-resizing-sidebar .sidebar {
   transition: none;
 }
 
+body.is-resizing-sidebar .sidebar-brand-row {
+  pointer-events: none;
+}
+
 @media (max-width: 768px) {
   .sidebar,
   .sidebar.is-collapsed {
-    width: 100% !important;
+    width: min(20rem, 88vw) !important;
   }
 
   .sidebar-resize-handle {
@@ -252,11 +322,38 @@ body.is-resizing-sidebar .sidebar {
   .sidebar-rail {
     display: none;
   }
+
+  .sidebar.is-collapsed .sidebar-brand {
+    display: flex;
+  }
+
+  .sidebar.is-collapsed .sidebar-brand-row {
+    display: flex;
+    flex-direction: row;
+    gap: 0.45rem;
+  }
+
+  .sidebar.is-collapsed .sidebar-brand .talentserv-logo,
+  .sidebar.is-collapsed .sidebar-brand .blink-logo {
+    width: auto !important;
+    max-width: 92px !important;
+    height: 22px !important;
+    max-height: 22px !important;
+  }
+
+  .sidebar.is-collapsed .sidebar-chrome {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .sidebar.is-collapsed .sidebar-collapse-btn {
+    display: none;
+  }
 }
 
-.sidebar-nav-wrap.has-account-chip .nav-card {
-  padding-bottom: 6.25rem;
-  scroll-padding-bottom: 6.25rem;
+.sidebar-nav-wrap.has-dev-chip .nav-card {
+  padding-bottom: 4.75rem;
+  scroll-padding-bottom: 4.75rem;
 }
 
 .sidebar-nav-wrap.has-account-panel .nav-card {
@@ -292,8 +389,14 @@ body.is-resizing-sidebar .sidebar {
 .account-float-collapsed {
   display: inline-flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0.4rem;
+  width: 100%;
+}
+
+.sidebar.is-collapsed .account-float-collapsed {
+  width: auto;
+  align-items: center;
 }
 
 .account-float-chip {
@@ -309,6 +412,40 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.account-float-chip.is-labeled {
+  width: auto;
+  height: auto;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.35rem;
+}
+
+.account-chip-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+
+.account-chip-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.account-chip-email {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-navy);
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-float-chip:hover {
@@ -396,7 +533,7 @@ body.is-resizing-sidebar .sidebar {
   background: linear-gradient(135deg, #2563eb, #6366f1);
   color: #fff;
   font-size: 0.68rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
@@ -454,7 +591,7 @@ body.is-resizing-sidebar .sidebar {
 
 .account-float-label {
   font-size: 0.62rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -463,7 +600,7 @@ body.is-resizing-sidebar .sidebar {
 .account-float-email {
   display: block;
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.35;
   color: var(--text-navy);
   overflow-wrap: anywhere;
@@ -544,10 +681,21 @@ body.is-resizing-sidebar .sidebar {
   color: var(--primary);
 }
 
+.account-float-signout.is-compact {
+  width: 100%;
+}
+
+.account-float-signout.is-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .main {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   width: auto;
   max-width: none;
 }
@@ -557,7 +705,9 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.7rem 0 0.85rem 1.5rem;
   scrollbar-gutter: auto;
   width: 100%;
   max-width: none;
@@ -565,17 +715,18 @@ body.is-resizing-sidebar .sidebar {
 
 .top-bar,
 .top-float {
-  position: absolute;
-  top: 0.75rem;
-  left: 0.85rem;
-  right: 0.35rem;
-  z-index: 28;
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: 6;
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 0;
-  padding: 0;
+  padding: 0.7rem 1rem 0.45rem 1.5rem;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -584,7 +735,7 @@ body.is-resizing-sidebar .sidebar {
   -webkit-backdrop-filter: none;
   color: var(--muted);
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: 600;
   pointer-events: none;
 }
 
@@ -601,6 +752,7 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.1);
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  overflow: visible;
 }
 
 .top-bar-start,
@@ -621,6 +773,8 @@ body.is-resizing-sidebar .sidebar {
   margin-left: 0;
   flex-shrink: 0;
   padding: 0.28rem;
+  max-width: min(100%, 40rem);
+  overflow: visible;
 }
 
 .top-float-end .header-chat-btn,
@@ -649,7 +803,9 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .content {
-  padding: calc(var(--top-float-h) + 0.85rem) 0 calc(var(--action-dock-h) + 0.85rem) 1.5rem;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.7rem 0 0.85rem 1.5rem;
   scrollbar-gutter: auto;
 }
 
@@ -669,19 +825,20 @@ body.is-resizing-sidebar .sidebar {
   min-height: 0;
 }
 
-/* Independent floating Back / Continue — no full-width bar */
+/* Docked Back / Continue — reserved strip under the scrollport, not an overlay */
 .action-bar,
 .action-float {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0.9rem;
-  z-index: 30;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 6;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding: 0 0.35rem 0 1rem;
+  padding: 0.5rem 1rem 0.85rem 1.5rem;
   pointer-events: none;
   background: none !important;
   border: none !important;
@@ -845,16 +1002,18 @@ body.is-resizing-sidebar .sidebar {
 }
 
 .welcome-tagline {
-  font-size: 0.8rem !important;
-  font-weight: 700 !important;
+  font-family: var(--font-ui) !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
   color: var(--muted) !important;
 }
 
 .welcome-desc {
-  font-size: 1.02rem !important;
-  line-height: 1.65 !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  line-height: 1.55 !important;
   max-width: 34rem !important;
   margin-left: auto !important;
   margin-right: auto !important;
@@ -870,7 +1029,8 @@ body.is-resizing-sidebar .sidebar {
   box-shadow: 0 22px 50px rgba(15, 23, 42, 0.1) !important;
 }
 
-.feature-bar {
+.feature-bar,
+.welcome-flow {
   margin-top: 2rem;
   gap: 0.85rem;
 }
@@ -1028,17 +1188,21 @@ body.is-resizing-sidebar .sidebar {
 
 /* ── Welcome / login ── */
 .welcome-headline h1 {
-  font-size: clamp(2.5rem, 4.5vw, 3.4rem);
+  font-size: var(--fs-hero, clamp(2.4rem, 4.2vw, 3.25rem));
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 1.08;
 }
 
 .welcome-headline p,
-.login-card-copy {
+.login-card-copy,
+.welcome-desc,
+.screen-header p {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.55;
   color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.6;
-  max-width: 36rem;
 }
 
 .welcome-headline .accent,
@@ -1058,7 +1222,7 @@ body.is-resizing-sidebar .sidebar {
 
 .login-card {
   width: min(420px, 100%);
-  padding: 2rem 1.85rem 1.75rem;
+  padding: 1.5rem 1.5rem 1.85rem;
 }
 
 .login-card-icon {
@@ -1075,16 +1239,24 @@ body.is-resizing-sidebar .sidebar {
 }
 
 /* ── Screen headers ── */
-.screen-header h2 {
-  font-size: 1.45rem;
-  font-weight: 750;
+.screen-header h2,
+.screen-ref .screen-header h2,
+.screen-project .screen-header h2,
+.sdlc-plan__hero h2,
+.gen-loading > h2 {
+  font-size: var(--fs-page, 1.45rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
   margin: 0 0 0.35rem;
 }
 
 .screen-header p {
+  font-family: var(--font-ui);
   color: var(--muted);
   font-size: 0.9rem;
-  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.55;
   margin: 0 0 1.1rem;
   max-width: 42rem;
 }
@@ -1099,7 +1271,7 @@ body.is-resizing-sidebar .sidebar {
 
 .chat-panel-title strong {
   font-family: var(--font-display);
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .chat-composer {
@@ -1134,7 +1306,7 @@ body.is-resizing-sidebar .sidebar {
 .ghost-btn {
   border-radius: 10px;
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .ghost-btn:hover {
@@ -1162,7 +1334,7 @@ body.is-resizing-sidebar .sidebar {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-size: 0.65rem;
-  font-weight: 750;
+  font-weight: 700;
   color: var(--muted);
 }
 
@@ -1174,12 +1346,12 @@ body.is-resizing-sidebar .sidebar {
 @media (max-width: 768px) {
   .top-bar,
   .top-float {
-    top: 0.55rem;
-    left: 0.55rem;
-    right: 0.55rem;
-    flex-wrap: wrap;
-    padding: 0;
-    gap: 0.45rem;
+    top: auto;
+    left: auto;
+    right: auto;
+    flex-wrap: nowrap;
+    padding: 0.5rem 0.85rem 0.35rem;
+    gap: 0.4rem;
   }
 
   .top-float-chip {
@@ -1188,17 +1360,18 @@ body.is-resizing-sidebar .sidebar {
 
   .action-bar,
   .action-float {
-    padding: 0 0.75rem;
-    bottom: 0.75rem;
+    padding: 0.45rem 0.85rem max(0.7rem, env(safe-area-inset-bottom));
+    left: auto;
+    right: auto;
+    bottom: auto;
   }
 
   .action-float-btn {
-    padding: 0.55rem 0.95rem !important;
+    padding: 0.55rem 0.7rem !important;
   }
 
   .content {
-    padding-left: 1rem;
-    padding-right: 0;
+    padding: 0.5rem 1rem 0.65rem;
   }
 
   .dev-window-opener {

@@ -35,16 +35,10 @@ function toRoleDef(role: StakeholderRoleDef): StakeholderRoleDef {
   }
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
-}
-
 export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
   const [roles, setRoles] = useState<StakeholderRoleDef[]>(STAKEHOLDER_ROLES)
   const [catalogQuiet, setCatalogQuiet] = useState<string | null>('Loading directory…')
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null)
   const dirtyRef = useRef(false)
   const catalogLoadedRef = useRef(state.stakeholdersCatalogLoaded)
   const assignmentsRef = useRef(state.stakeholderAssignments)
@@ -94,6 +88,15 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
     }
   }, [onUpdate])
 
+  useEffect(() => {
+    if (!removeTarget) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRemoveTarget(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [removeTarget])
+
   const updateField = <K extends keyof WizardState>(key: K, value: WizardState[K]) => {
     let patch: Partial<WizardState> = { [key]: value }
     if (key === 'projectName' && typeof value === 'string') {
@@ -137,11 +140,19 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
     })
   }
 
-  const removeRow = (id: string) => {
+  const requestRemove = (id: string) => {
+    const row = state.stakeholderAssignments.find((a) => a.id === id)
+    const label = row?.personName.trim() || (row ? roleLabel(row.roleId) : 'this stakeholder')
+    setRemoveTarget({ id, label })
+  }
+
+  const confirmRemove = () => {
+    if (!removeTarget) return
     dirtyRef.current = true
     onUpdate({
-      stakeholderAssignments: state.stakeholderAssignments.filter((a) => a.id !== id),
+      stakeholderAssignments: state.stakeholderAssignments.filter((a) => a.id !== removeTarget.id),
     })
+    setRemoveTarget(null)
   }
 
   const showNameCount = state.projectName.length >= NAME_COUNT_SHOW_AT
@@ -150,8 +161,8 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
   return (
     <div className="screen screen-project">
       <div className="screen-header">
-        <h2>Project</h2>
-        <p>Name it and who should be in the loop. Continue runs /configure-stakeholders then /confirm-stakeholders (freshness attestation — not an approve-gate).</p>
+        <h2>Project & Stakeholders</h2>
+        <p>Name the project and add the stakeholders who should be in the loop.</p>
       </div>
 
       {state.stakeholdersConfirmed ? (
@@ -194,7 +205,7 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
       )}
 
       <section className="card project-setup-card">
-        <div className="field-group project-name-field">
+        <div className="field-group">
           <div className="field-label-row">
             <label htmlFor="projectName">Project name</label>
             {showNameCount ? (
@@ -208,7 +219,6 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
           </div>
           <input
             id="projectName"
-            className="project-name-input"
             placeholder="e.g. Banking Application"
             value={state.projectName}
             maxLength={PROJECT_NAME_MAX}
@@ -240,34 +250,24 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
           />
         </div>
 
-        <div className="project-people-block">
-          <div className="project-people-head">
-            <div>
-              <h3>People</h3>
-              <p className="sub">Roles decide who gets clarify questions later.</p>
-            </div>
-            <button type="button" className="secondary-btn project-add-person" onClick={addRow}>
-              <Plus size={14} /> Add person
+        <div className="field-group stakeholder-field">
+          <div className="field-label-row">
+            <label id="stakeholders-label">Stakeholders</label>
+            <button type="button" className="text-btn stakeholder-add" onClick={addRow}>
+              <Plus size={14} /> Add stakeholder
             </button>
           </div>
 
-          {catalogQuiet ? <p className="field-hint quiet-hint">{catalogQuiet}</p> : null}
+          {catalogQuiet ? <p className="quiet-hint">{catalogQuiet}</p> : null}
 
           {state.stakeholderAssignments.length === 0 ? (
-            <div className="empty-state-block compact">
-              <h3>No one yet</h3>
-              <p>Add at least one person so Blink knows who to ask.</p>
-            </div>
+            <p className="stakeholder-empty">Add at least one stakeholder so Blink knows who to ask.</p>
           ) : (
-            <ul className="person-roster">
-              {state.stakeholderAssignments.map((row) => (
-                <li key={row.id} className="person-roster-item">
-                  <span className="person-avatar" aria-hidden>
-                    {initials(row.personName)}
-                  </span>
-                  <div className="person-roster-fields">
+            <div className="stakeholder-roster" role="group" aria-labelledby="stakeholders-label">
+              <ul className="stakeholder-roster-list">
+                {state.stakeholderAssignments.map((row) => (
+                  <li key={row.id} className="stakeholder-roster-item">
                     <input
-                      className="person-name-input"
                       placeholder="Full name"
                       value={row.personName}
                       aria-label={`Name for ${roleLabel(row.roleId)}`}
@@ -275,16 +275,14 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
                     />
                     <input
                       type="email"
-                      className="person-email-input"
                       placeholder="email@example.com"
                       value={row.personEmail}
                       aria-label={`Email for ${roleLabel(row.roleId)}`}
                       onChange={(e) => updateRow(row.id, 'personEmail', e.target.value)}
                     />
                     <select
-                      className="person-role-select"
                       value={row.roleId}
-                      aria-label="Role"
+                      aria-label={`Role for ${row.personName || 'stakeholder'}`}
                       onChange={(e) => updateRow(row.id, 'roleId', e.target.value)}
                     >
                       {roles.map((r) => (
@@ -293,22 +291,48 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-btn person-remove"
-                    onClick={() => removeRow(row.id)}
-                    title="Remove"
-                    aria-label={`Remove ${row.personName || roleLabel(row.roleId)}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+                    <button
+                      type="button"
+                      className="icon-btn stakeholder-remove"
+                      onClick={() => requestRemove(row.id)}
+                      title="Remove"
+                      aria-label={`Remove ${row.personName || roleLabel(row.roleId)}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       </section>
+
+      {removeTarget && (
+        <div className="modal-backdrop" onClick={() => setRemoveTarget(null)}>
+          <div
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="remove-stakeholder-title"
+            aria-describedby="remove-stakeholder-copy"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="remove-stakeholder-title">Remove stakeholder?</h3>
+            <p id="remove-stakeholder-copy">
+              Remove {removeTarget.label} from this project? You can add them again later.
+            </p>
+            <div className="confirm-dialog-actions">
+              <button type="button" className="secondary-btn" autoFocus onClick={() => setRemoveTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className="danger-btn" onClick={confirmRemove}>
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -322,8 +346,8 @@ export function validateProjectStakeholders(state: WizardState): string | null {
   if (state.description.length > PROJECT_DESCRIPTION_MAX) {
     return `Project description can be at most ${PROJECT_DESCRIPTION_MAX.toLocaleString()} characters.`
   }
-  if (state.stakeholderAssignments.length === 0) return 'Add at least one person.'
+  if (state.stakeholderAssignments.length === 0) return 'Add at least one stakeholder.'
   const missing = state.stakeholderAssignments.find((a) => !a.personEmail.trim() || !a.personName.trim())
-  if (missing) return 'Every person must have a name and email.'
+  if (missing) return 'Every stakeholder must have a name and email.'
   return null
 }

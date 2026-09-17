@@ -247,7 +247,7 @@ export function ScopeStartStatus({
             <strong>Scope locked · SDLC started</strong>
             <p>
               {state.sdlcStartIssueId ? `Issue ${state.sdlcStartIssueId}. ` : ''}
-              Continue when you are ready for Stakeholder Q&A.
+              You can move on to Stakeholder Q&A.
             </p>
           </>
         ) : running ? (
@@ -274,7 +274,7 @@ export function ScopeStartStatus({
       </div>
       {error && !running ? (
         <button type="button" className="secondary-btn" onClick={() => void runAutoScope()}>
-          Retry
+          {scopeConfirmed(state) && !state.sdlcStartIssueId ? 'Start SDLC' : 'Confirm scope'}
         </button>
       ) : null}
     </section>
@@ -690,7 +690,11 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
             disabled={!state.projectId}
             onClick={() => void (autoPlanDraft ? runAutoWorkDraft() : runAutoTechPlan())}
           >
-            Retry
+            {nextId === 'spec'
+              ? 'Create specification'
+              : nextId === 'plan'
+                ? 'Create technical plan'
+                : 'Classify work'}
           </button>
         </div>
       ) : null}

@@ -27,7 +27,7 @@ export interface PhaseDefinition {
 }
 
 export const WIZARD_STEPS: StepDefinition[] = [
-  { id: 'welcome', label: 'Welcome', icon: Home, iconColor: '#2563eb' },
+  { id: 'welcome', label: 'Home', icon: Home, iconColor: '#2563eb' },
   { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#2563eb' },
   { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
@@ -86,7 +86,7 @@ export function phaseForStep(step: WizardStep): PhaseDefinition {
 export function phaseProgressLabel(step: WizardStep): string {
   const visible = WIZARD_STEPS.filter((s) => s.id !== 'welcome')
   const idx = visible.findIndex((s) => s.id === step)
-  if (idx < 0) return WIZARD_STEPS.find((s) => s.id === step)?.label || 'Welcome'
+  if (idx < 0) return WIZARD_STEPS.find((s) => s.id === step)?.label || 'Home'
   return `${idx + 1} of ${visible.length}`
 }
 
@@ -99,6 +99,7 @@ export function canNavigateToStep(
   shapeAcknowledged = false,
 ): boolean {
   if (unrestricted) return stepIndex(target) >= 0
+  if (target === 'welcome') return true
   if (current === 'welcome') return target === 'welcome'
   const targetIdx = stepIndex(target)
   const currentIdx = stepIndex(current)
@@ -124,6 +125,7 @@ export function stepAttention(
   >,
 ): StepAttention {
   const idx = stepIndex(stepId)
+  if (stepId === 'welcome') return current === 'welcome' ? 'active' : 'idle'
   const generationIdx = stepIndex('generation')
   const skipped = generationComplete && idx > completedThrough && idx < generationIdx
   if (skipped) return 'skipped'
@@ -153,49 +155,13 @@ export function stepAttention(
   return 'idle'
 }
 
+/** Floating footer only — in-page actions must not reuse this word. */
 export function primaryContinueLabel(
-  step: WizardStep,
-  state: Pick<WizardState, 'questions' | 'groomConfirmed' | 'repositories' | 'responses'>,
+  _step: WizardStep,
+  _state: Pick<WizardState, 'questions' | 'groomConfirmed' | 'repositories' | 'responses'>,
   busy: { saving?: boolean; creatingRepos?: boolean },
 ): string {
   if (busy.creatingRepos) return 'Creating on GitHub…'
   if (busy.saving) return 'Saving…'
-  switch (step) {
-    case 'project-stakeholders':
-      return 'Continue'
-    case 'integrations':
-      return 'Continue'
-    case 'requirements':
-      return state.groomConfirmed ? 'Continue to Q&A' : 'Save & Continue'
-    case 'sdlc-plan':
-      return 'Continue'
-    case 'stakeholder-qa': {
-      const outboundPending = state.questions.filter((q) => {
-        const emailed = q.sent
-        const jiraDone =
-          (q.jiraCommentStatus === 'posted' || q.jiraCommentStatus === 'replied') && Boolean(q.jiraCommentId)
-        const answered = state.responses.find((r) => r.questionId === q.id)?.status === 'answered'
-        return !(emailed || jiraDone || answered)
-      })
-      const answerPending = state.questions
-        .filter((q) => q.mandatory)
-        .filter((q) => {
-          const response = state.responses.find((r) => r.questionId === q.id)
-          const text = response?.response?.trim() || q.jiraReplyBody?.trim()
-          return !(response?.status === 'answered' && text)
-        })
-      if (state.questions.length === 0) return 'Continue — nothing left'
-      if (outboundPending.length > 0) return 'Continue when outbound is done'
-      if (answerPending.length > 0) return 'Continue when mandatory answered'
-      return 'Continue'
-    }
-    case 'repositories':
-      return 'Continue'
-    case 'project-shape':
-      return 'Continue'
-    case 'technology-per-repo':
-      return 'Continue'
-    default:
-      return 'Save & Continue'
-  }
+  return 'Continue'
 }

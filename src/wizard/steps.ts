@@ -84,11 +84,12 @@ export function phaseForStep(step: WizardStep): PhaseDefinition {
   return WIZARD_PHASES.find((phase) => phase.stepIds.includes(step)) || WIZARD_PHASES[0]
 }
 
-/** Single progress line: "Project setup · 2 of 3" — replaces global STEP X OF 14. */
+/** Single progress line: "3 of 10" — no phase grouping. */
 export function phaseProgressLabel(step: WizardStep): string {
-  const phase = phaseForStep(step)
-  const indexInPhase = phase.stepIds.indexOf(step) + 1
-  return `${phase.label} · ${indexInPhase} of ${phase.stepIds.length}`
+  const visible = WIZARD_STEPS.filter((s) => s.id !== 'welcome')
+  const idx = visible.findIndex((s) => s.id === step)
+  if (idx < 0) return WIZARD_STEPS.find((s) => s.id === step)?.label || 'Welcome'
+  return `${idx + 1} of ${visible.length}`
 }
 
 export function canNavigateToStep(

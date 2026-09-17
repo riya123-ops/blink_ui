@@ -23,6 +23,9 @@ import type { IntegrationItem } from '../wizard/defaults'
 import { DEFAULT_INTEGRATIONS } from '../wizard/defaults'
 import { mergeSavedIntegrations } from '../wizard/mergeIntegrations'
 import type { WizardState } from '../wizard/types'
+import { isJiraReady, jiraConnection, pendingJiraTicketCount } from '../wizard/jiraTickets'
+import type { JiraPublishState } from '../wizard/thinking'
+import { JiraPublishStatus } from './JiraScopePanel'
 import { IntegrationLogo } from './IntegrationLogo'
 import { subscribeOauthResult, type OauthResult } from '../oauth/channel'
 import {
@@ -37,6 +40,7 @@ interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
   onEnsureProject?: () => Promise<{ id: string; created: boolean }>
+  jiraPublish?: JiraPublishState | null
 }
 
 interface ConnectForm {
@@ -157,7 +161,7 @@ function formFromItem(item: IntegrationItem, jira?: IntegrationItem): ConnectFor
   }
 }
 
-export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) {
+export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPublish = null }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectForm>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
@@ -876,6 +880,13 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject }: Props) 
       </div>
 
       {error && !active && <p className="connect-error integrations-page-error">{error}</p>}
+
+      <JiraPublishStatus
+        publish={jiraPublish}
+        jiraReady={isJiraReady(state)}
+        pendingCount={pendingJiraTicketCount(state)}
+        projectKey={jiraConnection(state)?.projectKey}
+      />
 
       <div className="integrations-layout">
         <section className="card ref-card integrations-connect-panel">

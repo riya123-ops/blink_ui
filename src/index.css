@@ -5019,6 +5019,67 @@ textarea::placeholder {
   line-height: 1.45;
 }
 
+.thinking-trace {
+  margin: 0 0 1rem;
+  border: 1px solid var(--glass-border, #e5e7eb);
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.thinking-trace.is-active {
+  background: #f8fafc;
+  border-color: #dbe3ee;
+}
+
+.thinking-trace__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.85rem;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.thinking-trace__sparkle {
+  animation: thinking-sparkle 1.4s ease-in-out infinite;
+}
+
+@keyframes thinking-sparkle {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.thinking-trace__dots {
+  color: #94a3b8;
+  letter-spacing: 0.08em;
+}
+
+.thinking-trace__chevron {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.thinking-trace__chevron.open {
+  transform: rotate(180deg);
+}
+
+.thinking-trace__body {
+  margin: 0;
+  padding: 0 0.95rem 0.85rem;
+  color: #64748b;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.84rem;
+  font-style: italic;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .groom-band {
   margin: 0.75rem 0 0;
   padding: 0.75rem 0.9rem 0.9rem;
@@ -5204,6 +5265,43 @@ textarea::placeholder {
 .jira-chip.story { background: #dcfce7; color: #166534; }
 .jira-chip.project { background: #e0f2fe; color: #075985; }
 .jira-chip.muted { background: #f1f5f9; color: #64748b; }
+
+.jira-ticket-badge--pending {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.jira-publish-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.jira-publish-status.is-active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.jira-publish-status.is-done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.jira-publish-status.is-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
 
 .jira-scope-empty {
   display: flex;

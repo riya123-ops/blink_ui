@@ -761,6 +761,7 @@ export interface CreateJiraIssuesPayload {
   stories?: {
     id?: string
     epicId?: string
+    epicKey?: string
     title: string
     objective?: string
     asA?: string
@@ -805,6 +806,88 @@ export async function createJiraIssues(payload: CreateJiraIssuesPayload): Promis
     errors: raw.errors,
     issues,
   }
+}
+
+export async function streamCreateJiraIssues(
+  payload: CreateJiraIssuesPayload,
+  handlers: {
+    onStart?: (total: number, projectKey: string) => void
+    onItem?: (issue: JiraCreatedIssueResult) => void
+  },
+  signal?: AbortSignal,
+): Promise<CreateJiraIssuesResult> {
+  const url = apiUrl('/integrations/jira/issues')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(true),
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  })
+  const contentType = response.headers.get('content-type') || ''
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  if (!contentType.includes('text/event-stream') || !response.body) {
+    const raw = (await response.json()) as CreateJiraIssuesResult & {
+      created?: Array<JiraCreatedIssueResult & { id?: string; url?: string | null }>
+    }
+    const rows = raw.issues?.length ? raw.issues : raw.created || []
+    return {
+      status: raw.status,
+      message: raw.message,
+      errors: raw.errors,
+      issues: rows.map((row) => ({
+        ...row,
+        sourceId: row.sourceId || row.id,
+        jiraUrl: row.jiraUrl || row.url || null,
+      })),
+    }
+  }
+
+  let result: CreateJiraIssuesResult = { status: 'ok', message: '', issues: [] }
+  await readSse(response.body, (event, data) => {
+    let parsed: Record<string, unknown> = {}
+    try {
+      parsed = JSON.parse(data) as Record<string, unknown>
+    } catch {
+      return
+    }
+    if (event === 'start') {
+      const total = typeof parsed.total === 'number' ? parsed.total : 0
+      const projectKey = typeof parsed.projectKey === 'string' ? parsed.projectKey : ''
+      handlers.onStart?.(total, projectKey)
+      return
+    }
+    if (event === 'item') {
+      const row = parsed as JiraCreatedIssueResult & { id?: string; url?: string | null }
+      const issue = {
+        ...row,
+        sourceId: row.sourceId || row.id,
+        jiraUrl: row.jiraUrl || row.url || null,
+      }
+      result.issues = [...result.issues, issue]
+      handlers.onItem?.(issue)
+      return
+    }
+    if (event === 'done') {
+      const raw = parsed as unknown as CreateJiraIssuesResult & {
+        created?: Array<JiraCreatedIssueResult & { id?: string; url?: string | null }>
+      }
+      const rows = raw.issues?.length ? raw.issues : raw.created || result.issues
+      result = {
+        status: raw.status || result.status,
+        message: raw.message || result.message,
+        errors: raw.errors,
+        issues: rows.map((row) => ({
+          ...row,
+          sourceId: row.sourceId || row.id,
+          jiraUrl: row.jiraUrl || row.url || null,
+        })),
+      }
+    }
+  })
+  return result
 }
 
 export interface CreateJiraCommentPayload {
@@ -1212,6 +1295,45 @@ export async function clarifyRequirement(options: {
   }
 }
 
+export async function streamClarifyRequirement(
+  options: {
+    projectId?: string | null
+    projectName?: string
+    requirementText: string
+    answers?: { questionId: string; optionId: string; optionLabel?: string; otherText?: string }[]
+  },
+  handlers: { onThinking?: (text: string) => void } = {},
+  signal?: AbortSignal,
+): Promise<GroomClarifyResult> {
+  const answers = options.answers?.filter(
+    (item) => item.optionId !== 'other' || Boolean(item.otherText?.trim()),
+  )
+  const body = {
+    projectId: options.projectId || undefined,
+    projectName: options.projectName || undefined,
+    requirementText: options.requirementText,
+    answers: answers?.length ? answers : undefined,
+  }
+  try {
+    const done = await postSseJson<GroomClarifyResult>(
+      '/grooming/clarify',
+      body,
+      { onThinking: handlers.onThinking },
+      signal,
+    )
+    return {
+      ...done,
+      questions: normalizeGroomQuestions(done.questions),
+      requirementDraft: done.requirementDraft ?? '',
+      originalRequirement: done.originalRequirement ?? options.requirementText,
+      message: done.message ?? '',
+      status: done.status ?? 'error',
+    }
+  } catch {
+    return clarifyRequirement(options)
+  }
+}
+
 export interface OverlayFilePayload {
   path: string
   content: string
@@ -1251,6 +1373,34 @@ export async function planProductScope(
   })
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<PlanProductScopeResponse>
+}
+
+export async function streamPlanProductScope(
+  projectId: string | null | undefined,
+  payload: {
+    projectName?: string
+    requirementText: string
+    actor?: string
+  },
+  handlers: { onThinking?: (text: string) => void },
+  signal?: AbortSignal,
+): Promise<PlanProductScopeResponse> {
+  const path = projectId ? `/projects/${projectId}/plan-product-scope` : `/projects/plan-product-scope`
+  try {
+    return await postSseJson<PlanProductScopeResponse>(
+      path,
+      {
+        projectId: projectId || undefined,
+        projectName: payload.projectName,
+        requirementText: payload.requirementText,
+        actor: payload.actor || 'operator',
+      },
+      { onThinking: handlers.onThinking },
+      signal,
+    )
+  } catch {
+    return planProductScope(projectId, payload)
+  }
 }
 
 export interface AdvisoryAgentResponse {
@@ -1609,6 +1759,85 @@ type SseHandlers = {
   onToken: (text: string) => void
   onDone: (message: ChatMessageDto, turnId: string) => void
   onError?: (message: string) => void
+}
+
+async function readSse(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: string, data: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        await reader.cancel()
+        break
+      }
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      buffer = consumeSseBuffer(buffer, { onEvent })
+    }
+    buffer += decoder.decode()
+    consumeSseBuffer(buffer, { onEvent })
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') return
+    throw error
+  }
+}
+
+async function postSseJson<T>(
+  path: string,
+  body: unknown,
+  handlers: { onThinking?: (text: string) => void },
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: {
+      ...authHeaders(true),
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+  const contentType = response.headers.get('content-type') || ''
+  if (!response.ok) {
+    throw new Error(await readError(response))
+  }
+  if (!contentType.includes('text/event-stream') || !response.body) {
+    return (await response.json()) as T
+  }
+  let donePayload: T | null = null
+  let streamError: string | null = null
+  await readSse(
+    response.body,
+    (event, data) => {
+      let parsed: Record<string, unknown> = {}
+      try {
+        parsed = JSON.parse(data) as Record<string, unknown>
+      } catch {
+        return
+      }
+      if (event === 'thinking') {
+        const text = typeof parsed.text === 'string' ? parsed.text : ''
+        if (text) handlers.onThinking?.(text)
+        return
+      }
+      if (event === 'error') {
+        streamError = typeof parsed.message === 'string' ? parsed.message : streamError
+        return
+      }
+      if (event === 'done') {
+        donePayload = parsed as T
+      }
+    },
+    signal,
+  )
+  if (donePayload) return donePayload
+  throw new Error(streamError || 'The agent stream ended before it finished.')
 }
 
 /** Parse SSE frames correctly across TCP chunks (multi-line data, event reset on blank line). */

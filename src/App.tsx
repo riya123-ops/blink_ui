@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, clarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, streamClarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -54,7 +54,18 @@ import {
   type WizardStep,
 } from './wizard/types'
 import { assignQuestionBands, groomingComplete, unansweredRequired } from './wizard/grooming'
-import { createJiraIssuesFromState, isJiraReady, planScopeFromWording } from './wizard/jiraTickets'
+import {
+  beginJiraCreate,
+  createJiraIssuesFromState,
+  endJiraCreate,
+  isJiraReady,
+  isTicketsPipelineBusy,
+  jiraConnection,
+  mergeJiraCreatedIssues,
+  pendingJiraTicketCount,
+  planScopeFromWording,
+} from './wizard/jiraTickets'
+import { type JiraPublishState, shouldAutoCreateJira } from './wizard/thinking'
 import { autoMapQuestionsToJira } from './wizard/jiraMatch'
 import {
   allowedStep,
@@ -152,6 +163,9 @@ export default function App() {
 
   const [loading, setLoading] = useState(false)
   const [grooming, setGrooming] = useState(false)
+  const [jiraPublish, setJiraPublish] = useState<JiraPublishState | null>(null)
+  const jiraAutoDigestRef = useRef('')
+  const groomAskInFlightRef = useRef(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [postingJira, setPostingJira] = useState(false)
@@ -823,7 +837,7 @@ export default function App() {
         questionsSent: false,
       }
       const alreadyPlanned = Boolean(state.productScope?.epics?.length)
-      if (!alreadyPlanned && wording.trim()) {
+      if (!alreadyPlanned && wording.trim() && !isTicketsPipelineBusy()) {
         setSaving(true)
         try {
           const scopePatch = await planScopeFromWording(state, wording)
@@ -867,16 +881,17 @@ export default function App() {
   }, [step, goToStep])
 
   const handleGroomAsk = useCallback(async () => {
-    if (state.groomQuestions.length) return
+    if (groomAskInFlightRef.current || state.groomQuestions.length) return
     const text = (state.groomOriginal || state.requirementsText).trim()
     if (!text) {
       setStatus({ type: 'error', message: 'Paste a short description first.' })
       return
     }
+    groomAskInFlightRef.current = true
     setGrooming(true)
     setStatus(null)
     try {
-      const result = await clarifyRequirement({
+      const result = await streamClarifyRequirement({
         projectId: state.projectId,
         projectName: state.projectName,
         requirementText: text,
@@ -914,6 +929,7 @@ export default function App() {
       })
       setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not reach the grooming helper.' })
     } finally {
+      groomAskInFlightRef.current = false
       setGrooming(false)
     }
   }, [state.groomQuestions.length, state.groomOriginal, state.requirementsText, state.projectId, state.projectName, patch])
@@ -1000,7 +1016,7 @@ export default function App() {
       setGrooming(true)
       setStatus(null)
       try {
-        const result = await clarifyRequirement({
+        const result = await streamClarifyRequirement({
           projectId: state.projectId,
           projectName: state.projectName,
           requirementText: original || draft,
@@ -1037,49 +1053,102 @@ export default function App() {
       })),
       questionsSent: false,
     }
-    setSaving(true)
-    setStatus({ type: 'info', message: 'Planning epics and stories from the cleared wording…' })
-    try {
-      const scopePatch = await planScopeFromWording({ ...state, ...basePatch }, draft)
-      const planned = { ...state, ...basePatch, ...scopePatch }
-      let createdPatch: Partial<WizardState> = {}
-      let extra = ''
-      if (isJiraReady(planned) && !(state.jiraCreatedIssues || []).some((item) => item.status === 'created')) {
-        setStatus({ type: 'info', message: 'Creating Jira tickets…' })
-        try {
-          const result = await createJiraIssuesFromState(planned)
-          createdPatch = { jiraCreatedIssues: result.issues }
-          const createdCount = (result.issues || []).filter((item) => item.status === 'created').length
-          extra =
-            result.status === 'error'
-              ? ` Jira create failed: ${result.message}`
-              : ` Created ${createdCount} Jira item${createdCount === 1 ? '' : 's'}.`
-        } catch (err) {
-          extra = ` Jira create failed: ${err instanceof Error ? err.message : 'Could not create Jira issues.'}`
-        }
-      } else if (!isJiraReady(planned)) {
-        extra = ' Connect Atlassian on Integrations to create these tickets.'
-      }
-      patch({ ...basePatch, ...scopePatch, ...createdPatch })
-      setStatus({
-        type: extra.includes('failed') ? 'error' : 'success',
-        message: `Requirement wording saved.${extra}`,
-      })
-    } catch (e) {
-      patch(basePatch)
-      setStatus({
-        type: 'error',
-        message: e instanceof Error ? e.message : 'Could not plan Jira tickets from the cleared wording.',
-      })
-    } finally {
-      setSaving(false)
-    }
+    patch(basePatch)
+    setStatus({ type: 'success', message: 'Requirement wording saved. Tickets will plan next.' })
   }, [state, patch])
 
   const handleGroomStartOver = useCallback(() => {
+    groomAskInFlightRef.current = false
     patch(clearGroomingPatch())
     setStatus(null)
   }, [patch])
+
+  useEffect(() => {
+    const jira = jiraConnection(state)
+    const jiraReady = isJiraReady(state)
+    const pending = pendingJiraTicketCount(state)
+    if (!shouldAutoCreateJira({ jiraReady, pendingCount: pending, failed: false })) return
+    const scopeKey = [
+      ...(state.productScope?.epics || []).map((epic) => epic.id),
+      ...(state.productScope?.stories || []).map((story) => story.id),
+    ].join('|')
+    const digest = `${state.projectId}:${jira?.projectKey}:${scopeKey}`
+    if (jiraAutoDigestRef.current === digest) return
+    if (!beginJiraCreate()) return
+    jiraAutoDigestRef.current = digest
+    const alreadyLinked = (state.jiraCreatedIssues || []).filter((item) => item.status === 'created').length
+    const placeholders = [...(state.productScope?.epics || []), ...(state.productScope?.stories || [])]
+      .filter((item) => item.id && !(state.jiraCreatedIssues || []).some((row) => row.sourceId === item.id && row.status === 'created'))
+      .map((item) => ({ sourceId: item.id, status: 'creating' as const }))
+    setJiraPublish({
+      active: true,
+      total: alreadyLinked + pending,
+      linked: alreadyLinked,
+      failed: 0,
+      message: `Creating ${pending} draft ticket(s) in Jira…`,
+    })
+    setStatus({ type: 'info', message: `Creating ${pending} draft ticket(s) in Jira…` })
+    setState((prev) => ({
+      ...prev,
+      jiraCreatedIssues: mergeJiraCreatedIssues(prev.jiraCreatedIssues, placeholders),
+    }))
+    const snapshot = state
+    void (async () => {
+      try {
+        const result = await createJiraIssuesFromState(snapshot, {
+          pendingOnly: true,
+          onItem: (issue) => {
+            setState((prev) => ({
+              ...prev,
+              jiraCreatedIssues: mergeJiraCreatedIssues(prev.jiraCreatedIssues, [issue]),
+            }))
+            setJiraPublish((prev) => {
+              if (!prev) return prev
+              const linked = prev.linked + (issue.status === 'created' ? 1 : 0)
+              const failed = prev.failed + (issue.status === 'failed' ? 1 : 0)
+              return {
+                ...prev,
+                linked,
+                failed,
+                message: `Creating in Jira — ${linked} of ${prev.total} linked`,
+              }
+            })
+            setStatus({ type: 'info', message: `Creating in Jira — updating ticket ${issue.jiraKey || issue.sourceId || ''}` })
+          },
+        })
+        setState((prev) => ({
+          ...prev,
+          jiraCreatedIssues: mergeJiraCreatedIssues(prev.jiraCreatedIssues, result.issues),
+        }))
+        const linked = result.issues.filter((item) => item.status === 'created').length
+        const failed = result.issues.filter((item) => item.status === 'failed').length
+        setJiraPublish({
+          active: false,
+          total: alreadyLinked + pending,
+          linked: alreadyLinked + linked,
+          failed,
+          message: result.message,
+        })
+        setStatus({
+          type: failed && linked === 0 ? 'error' : 'success',
+          message: result.message,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Could not create Jira issues.'
+        if (/connect atlassian/i.test(message)) jiraAutoDigestRef.current = ''
+        setJiraPublish({
+          active: false,
+          total: alreadyLinked + pending,
+          linked: alreadyLinked,
+          failed: pending,
+          message,
+        })
+        setStatus({ type: 'error', message })
+      } finally {
+        endJiraCreate()
+      }
+    })()
+  }, [state])
 
   const applySendResults = useCallback(
     (results: { question_id: string; status: string; message: string }[], deliveryMode: string, _outboxDir: string | null) => {
@@ -2003,6 +2072,7 @@ export default function App() {
             state={state}
             onUpdate={patch}
             onEnsureProject={autoEnsureProject ? ensureDraftProject : undefined}
+            jiraPublish={jiraPublish}
           />
         )
       case 'repositories':
@@ -2024,6 +2094,7 @@ export default function App() {
               patch(resetGroom ? { ...clearGroomingPatch(), ...updates } : updates)
             }}
             grooming={grooming || saving}
+            jiraPublish={jiraPublish}
             onAsk={() => void handleGroomAsk()}
             onPick={handleGroomPick}
             onOther={handleGroomOther}

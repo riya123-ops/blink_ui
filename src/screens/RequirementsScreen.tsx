@@ -5,6 +5,8 @@ import { GroomingPanel } from './GroomRequirementScreen'
 import { JiraScopePanel } from './JiraScopePanel'
 import { ScopeStartStatus, validateSdlcScope } from './SdlcPlanningScreen'
 import { unansweredRequired } from '../wizard/grooming'
+import { shouldAutoStartClarify } from '../wizard/thinking'
+import type { JiraPublishState } from '../wizard/thinking'
 
 type ReqStage = 'capture' | 'clarify' | 'tickets'
 
@@ -12,6 +14,7 @@ interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
   grooming?: boolean
+  jiraPublish?: JiraPublishState | null
   onAsk?: () => void
   onPick?: (questionId: string, optionId: string, optionLabel: string) => void
   onOther?: (questionId: string, text: string) => void
@@ -48,6 +51,7 @@ export function RequirementsScreen({
   state,
   onUpdate,
   grooming,
+  jiraPublish,
   onAsk,
   onPick,
   onOther,
@@ -71,6 +75,21 @@ export function RequirementsScreen({
   useEffect(() => {
     setStage(autoStage)
   }, [autoStage])
+
+  useEffect(() => {
+    if (stage !== 'clarify') return
+    if (!onAsk || grooming) return
+    if (
+      !shouldAutoStartClarify({
+        hasPaste,
+        questionCount: state.groomQuestions.length,
+        groomStatus: state.groomStatus,
+      })
+    ) {
+      return
+    }
+    onAsk()
+  }, [stage, hasPaste, grooming, onAsk, state.groomQuestions.length, state.groomStatus])
 
   useEffect(() => {
     if (state.requirementFileName && state.requirementsText.trim()) {
@@ -208,7 +227,22 @@ export function RequirementsScreen({
 
           {hasPaste && (
             <div className="card-footer-actions right">
-              <button type="button" className="primary-btn" onClick={() => setStage('clarify')}>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  setStage('clarify')
+                  if (
+                    shouldAutoStartClarify({
+                      hasPaste,
+                      questionCount: state.groomQuestions.length,
+                      groomStatus: state.groomStatus,
+                    })
+                  ) {
+                    onAsk?.()
+                  }
+                }}
+              >
                 Continue to Clarify
               </button>
             </div>
@@ -313,6 +347,7 @@ export function RequirementsScreen({
                 state={state}
                 onUpdate={onUpdate}
                 sourceText={state.groomDraft || state.requirementsText}
+                jiraPublish={jiraPublish}
               />
               <ScopeStartStatus state={state} onUpdate={onUpdate} />
               {!state.integrations.find((i) => i.id === 'jira')?.connected && onNavigate ? (
@@ -326,7 +361,7 @@ export function RequirementsScreen({
             </>
           ) : (
             <p className="empty-state">
-              Finish Clarify and click Use this wording before creating tickets.
+              Finish Clarify and click Use this wording. Tickets then plan on their own.
               <button type="button" className="secondary-btn" style={{ marginLeft: '0.75rem' }} onClick={() => setStage('clarify')}>
                 Go to Clarify
               </button>
@@ -347,7 +382,7 @@ export function validateRequirements(state: WizardState): string | null {
   }
   if (!state.groomConfirmed) {
     if (!state.groomQuestions.length && state.groomStatus !== 'draft_ready' && state.groomStatus !== 'error') {
-      return 'Open Clarify, click Make it clearer, and answer the required questions.'
+      return 'Continue to Clarify so Blink can start the questions, then answer the required ones.'
     }
     const missing = unansweredRequired(state)
     if (missing.length) {

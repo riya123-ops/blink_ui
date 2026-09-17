@@ -256,7 +256,6 @@ function Band({
 export function GroomingPanel({
   state,
   loading,
-  onAsk,
   onPick,
   onOther,
   onToggleOther,
@@ -285,19 +284,13 @@ export function GroomingPanel({
       <div className="groom-panel-intro">
         <h3>Make it clearer</h3>
         <p>
-          One round of choices on this page. Each question is tagged to a role member. Answer Need clarification
-          here, or select Jira later to skip and ask on a ticket after epics/stories exist.
+          One round of choices on this page. Blink starts reading as soon as you open Clarify. Answer Need
+          clarification here, or select Jira later to skip and ask on a ticket after epics/stories exist.
         </p>
       </div>
 
-      {!asked && (
-        <div className="card-footer-actions">
-          <button type="button" className="primary-btn" disabled={loading} onClick={onAsk}>
-            {loading ? 'Reading your wording…' : 'Make it clearer'}
-            <Sparkles size={16} />
-          </button>
-        </div>
-      )}
+      {!asked && loading ? <p className="muted">Reading the requirement…</p> : null}
+      {asked && loading ? <p className="muted">Updating the wording…</p> : null}
 
       {state.groomMessage && asked && <p className="muted">{state.groomMessage}</p>}
 

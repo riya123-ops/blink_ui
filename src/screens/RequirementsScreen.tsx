@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CloudUpload, FileUp, GitBranch, Link2 } from 'lucide-react'
+import { Check, CloudUpload, FileText, X } from 'lucide-react'
 import type { WizardState, WizardStep } from '../wizard/types'
 import { GroomingPanel } from './GroomRequirementScreen'
 import { JiraScopePanel } from './JiraScopePanel'
@@ -9,6 +9,8 @@ import { shouldAutoStartClarify } from '../wizard/thinking'
 import type { JiraPublishState } from '../wizard/thinking'
 
 type ReqStage = 'capture' | 'clarify' | 'tickets'
+
+const REQ_FILE_TYPES = ['.pdf', '.doc', '.docx', '.txt', '.md']
 
 interface Props {
   state: WizardState
@@ -24,8 +26,18 @@ interface Props {
   onNavigate?: (step: WizardStep) => void
 }
 
-function handleFile(file: File | undefined, onUpdate: Props['onUpdate']) {
+function isAllowedRequirementFile(name: string) {
+  const lower = name.toLowerCase()
+  return REQ_FILE_TYPES.some((ext) => lower.endsWith(ext))
+}
+
+function handleFile(file: File | undefined, onUpdate: Props['onUpdate'], onError: (message: string | null) => void) {
   if (!file) return
+  if (!isAllowedRequirementFile(file.name)) {
+    onError('Use a PDF, Word, TXT, or Markdown file.')
+    return
+  }
+  onError(null)
   onUpdate({ requirementFileName: file.name, requirementFile: file, requirementsText: '' })
 }
 
@@ -47,6 +59,12 @@ function deriveStage(state: WizardState): ReqStage {
   return 'capture'
 }
 
+function sourceMode(gitUrl: string, zipName: string | null): WizardState['existingSourceMode'] {
+  if (gitUrl.trim()) return 'git'
+  if (zipName) return 'zip'
+  return 'none'
+}
+
 export function RequirementsScreen({
   state,
   onUpdate,
@@ -62,7 +80,8 @@ export function RequirementsScreen({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const zipInputRef = useRef<HTMLInputElement>(null)
-  const pasteRef = useRef<HTMLTextAreaElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
   const hasUploadedFile = Boolean(state.requirementFileName)
   const hasPaste = Boolean(state.requirementsText.trim())
   const pasteLocked =
@@ -97,216 +116,256 @@ export function RequirementsScreen({
     }
   }, [state.requirementFileName, state.requirementsText, onUpdate])
 
-  useEffect(() => {
-    const el = pasteRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [state.requirementsText, hasUploadedFile])
-
-  const stages: { id: ReqStage; label: string; hint: string; enabled: boolean }[] = [
-    { id: 'capture', label: '1. Capture', hint: 'Upload or paste', enabled: true },
+  const stages: { id: ReqStage; label: string; enabled: boolean; done: boolean }[] = [
+    { id: 'capture', label: 'Capture', enabled: true, done: hasPaste || hasUploadedFile },
     {
       id: 'clarify',
-      label: '2. Clarify',
-      hint: 'Answer or Jira later',
+      label: 'Clarify',
       enabled: hasPaste || state.groomQuestions.length > 0,
+      done: state.groomConfirmed,
     },
     {
       id: 'tickets',
-      label: '3. Tickets',
-      hint: 'Epics & stories',
+      label: 'Tickets',
       enabled: state.groomConfirmed || Boolean(state.requirementFileName && !hasPaste),
+      done: Boolean(state.jiraCreatedIssues?.some((item) => item.status === 'created')),
     },
   ]
 
+  function goToClarify() {
+    setStage('clarify')
+    if (
+      shouldAutoStartClarify({
+        hasPaste,
+        questionCount: state.groomQuestions.length,
+        groomStatus: state.groomStatus,
+      })
+    ) {
+      onAsk?.()
+    }
+  }
+
+  const canGroom =
+    hasPaste && onAsk && onPick && onOther && onToggleOther && onUseWording && onStartOver
+  const jiraConnected = Boolean(state.integrations.find((item) => item.id === 'jira')?.connected)
+  const confirmedText = state.groomDraft || state.requirementsText
+
   return (
-    <div className="screen screen-ref">
+    <div className="screen screen-ref screen-requirements">
       <div className="screen-header">
         <h2>Requirements</h2>
-        <p>Capture what you are building, then clarify any gaps.</p>
+        <p>Add the requirement, clarify gaps, then create Jira tickets.</p>
       </div>
 
-      <div className="req-stage-tabs" role="tablist" aria-label="Requirements stages">
-        {stages.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={stage === item.id}
-            className={`req-stage-tab${stage === item.id ? ' active' : ''}`}
-            disabled={!item.enabled}
-            onClick={() => item.enabled && setStage(item.id)}
-          >
-            <strong>{item.label}</strong>
-            <span>{item.hint}</span>
-          </button>
-        ))}
-      </div>
+      <ol className="req-stepper" aria-label="Requirements steps">
+        {stages.map((item, index) => {
+          const active = stage === item.id
+          return (
+            <li key={item.id} className={active ? 'is-active' : item.done ? 'is-done' : ''}>
+              <button
+                type="button"
+                aria-current={active ? 'step' : undefined}
+                disabled={!item.enabled}
+                onClick={() => item.enabled && setStage(item.id)}
+              >
+                <span className="req-step-index" aria-hidden="true">
+                  {item.done && !active ? <Check size={12} strokeWidth={2.5} /> : index + 1}
+                </span>
+                <span className="req-step-label">{item.label}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
 
       {stage === 'capture' && (
-        <section className="card ref-card">
-          <div
-            className="req-dropzone"
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault()
-              handleFile(e.dataTransfer.files[0], onUpdate)
-            }}
-          >
-            <CloudUpload size={36} strokeWidth={1.5} />
-            <p className="dropzone-title">Drag &amp; drop your requirement document here</p>
-            <p className="dropzone-sub">PDF, DOCX, TXT, MD supported</p>
-            <button
-              type="button"
-              className="browse-btn"
-              onClick={(e) => {
-                e.stopPropagation()
-                fileInputRef.current?.click()
-              }}
-            >
-              Browse Files
-            </button>
-            {state.requirementFileName && (
-              <span className="file-badge">
-                {state.requirementFileName}
+        <section className="card ref-card req-capture-card">
+          <div className="req-section-head">
+            <h3>Requirement</h3>
+            <p>Upload a document or paste the text. One source is enough.</p>
+          </div>
+
+          {hasUploadedFile ? (
+            <div className="req-file-row">
+              <FileText size={18} aria-hidden />
+              <div className="req-file-meta">
+                <strong>{state.requirementFileName}</strong>
+                <span>Ready to use for tickets</span>
+              </div>
+              {!pasteLocked && (
                 <button
                   type="button"
-                  className="file-badge-clear"
-                  aria-label="Remove file"
-                  onClick={(e) => {
-                    e.stopPropagation()
+                  className="ghost-btn req-file-remove"
+                  onClick={() => {
+                    setFileError(null)
                     clearFile(onUpdate, fileInputRef)
                   }}
                 >
-                  ×
+                  Remove
                 </button>
-              </span>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx,.txt,.md"
-              hidden
-              onChange={(e) => handleFile(e.target.files?.[0], onUpdate)}
-            />
-          </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={`req-dropzone${dragging ? ' is-dragging' : ''}`}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setDragging(true)
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                setDragging(false)
+                handleFile(event.dataTransfer.files[0], onUpdate, setFileError)
+              }}
+            >
+              <CloudUpload size={28} strokeWidth={1.6} />
+              <span className="dropzone-title">Drop a requirement file here</span>
+              <span className="dropzone-sub">PDF, Word, TXT, or Markdown — or click to browse</span>
+            </button>
+          )}
+          {fileError ? (
+            <p className="field-hint req-file-error" role="alert">
+              {fileError}
+            </p>
+          ) : null}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={REQ_FILE_TYPES.join(',')}
+            hidden
+            onChange={(event) => handleFile(event.target.files?.[0], onUpdate, setFileError)}
+          />
 
           {!hasUploadedFile && (
-            <>
-              <div className="or-divider">
-                <span>OR</span>
+            <div className="field-group">
+              <label htmlFor="requirementsText">Paste requirements</label>
+              {pasteLocked ? (
+                <p className="field-hint">
+                  Text is locked while you answer questions. Start over on Clarify if you need to change it.
+                </p>
+              ) : null}
+              <textarea
+                id="requirementsText"
+                className={`req-textarea${pasteLocked ? ' locked' : ''}`}
+                rows={6}
+                placeholder="Describe what you are building…"
+                value={state.requirementsText}
+                readOnly={pasteLocked}
+                onChange={(event) =>
+                  onUpdate({
+                    requirementsText: event.target.value,
+                    requirementFileName: null,
+                    requirementFile: null,
+                  })
+                }
+              />
+            </div>
+          )}
+
+          {hasUploadedFile && !pasteLocked && (
+            <button type="button" className="text-btn" onClick={() => {
+              setFileError(null)
+              clearFile(onUpdate, fileInputRef)
+            }}>
+              Use pasted text instead
+            </button>
+          )}
+
+          <div className="req-existing">
+            <div className="req-section-head">
+              <h3>
+                Existing application <span className="optional-tag">Optional</span>
+              </h3>
+              <p>Add a Git URL or a project ZIP if this work is for an app you already have.</p>
+            </div>
+            <div className="req-existing-grid">
+              <div className="field-group">
+                <label htmlFor="gitRepositoryUrl">Git repository</label>
+                <input
+                  id="gitRepositoryUrl"
+                  className="full-input"
+                  placeholder="https://github.com/org/repo"
+                  value={state.gitRepositoryUrl}
+                  onChange={(event) =>
+                    onUpdate({
+                      gitRepositoryUrl: event.target.value,
+                      existingSourceMode: sourceMode(event.target.value, state.sourceZipName),
+                    })
+                  }
+                />
               </div>
               <div className="field-group">
-                <label htmlFor="requirementsText">Paste Requirements</label>
-                <p className="field-hint">
-                  {pasteLocked
-                    ? 'Your paste is locked while you answer. Start over if you need to change it.'
-                    : 'Use this only if you don’t have a requirement document to upload.'}
-                </p>
-                <textarea
-                  ref={pasteRef}
-                  id="requirementsText"
-                  className={`req-textarea${pasteLocked ? ' locked' : ''}`}
-                  rows={8}
-                  placeholder="Paste your requirements here…"
-                  value={state.requirementsText}
-                  readOnly={pasteLocked}
-                  onChange={(e) =>
-                    onUpdate({
-                      requirementsText: e.target.value,
-                      requirementFileName: null,
-                      requirementFile: null,
-                    })
-                  }
-                />
+                <label htmlFor="sourceZip">Project ZIP</label>
+                <div className="req-zip-row">
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => zipInputRef.current?.click()}
+                  >
+                    {state.sourceZipName ? 'Replace ZIP' : 'Choose ZIP'}
+                  </button>
+                  {state.sourceZipName ? (
+                    <span className="req-file-chip">
+                      {state.sourceZipName}
+                      <button
+                        type="button"
+                        className="req-file-chip-clear"
+                        aria-label="Remove ZIP"
+                        onClick={() => {
+                          if (zipInputRef.current) zipInputRef.current.value = ''
+                          onUpdate({
+                            sourceZipName: null,
+                            existingSourceMode: sourceMode(state.gitRepositoryUrl, null),
+                          })
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ) : null}
+                  <input
+                    id="sourceZip"
+                    ref={zipInputRef}
+                    type="file"
+                    accept=".zip"
+                    hidden
+                    onChange={(event) => {
+                      const name = event.target.files?.[0]?.name ?? null
+                      onUpdate({
+                        sourceZipName: name,
+                        existingSourceMode: sourceMode(state.gitRepositoryUrl, name),
+                      })
+                    }}
+                  />
+                </div>
               </div>
-            </>
-          )}
+            </div>
+          </div>
 
-          {hasPaste && (
+          {(hasPaste || hasUploadedFile) && (
             <div className="card-footer-actions right">
-              <button
-                type="button"
-                className="primary-btn"
-                onClick={() => {
-                  setStage('clarify')
-                  if (
-                    shouldAutoStartClarify({
-                      hasPaste,
-                      questionCount: state.groomQuestions.length,
-                      groomStatus: state.groomStatus,
-                    })
-                  ) {
-                    onAsk?.()
-                  }
-                }}
-              >
-                Continue to Clarify
-              </button>
+              {hasUploadedFile && !hasPaste ? (
+                <button type="button" className="primary-btn" onClick={() => setStage('tickets')}>
+                  Continue to tickets
+                </button>
+              ) : (
+                <button type="button" className="primary-btn" onClick={goToClarify} disabled={!hasPaste}>
+                  Continue to clarify
+                </button>
+              )}
             </div>
           )}
-
-          <details className="req-optional-source">
-            <summary>
-              Existing application <span className="optional-tag">Optional</span>
-            </summary>
-            <div className="source-cards ref">
-              <button
-                type="button"
-                className={`source-card ${state.existingSourceMode === 'zip' ? 'active' : ''}`}
-                onClick={() => onUpdate({ existingSourceMode: 'zip' })}
-              >
-                <FileUp size={22} />
-                <strong>Upload ZIP</strong>
-                <span>Existing project archive</span>
-              </button>
-              <button
-                type="button"
-                className={`source-card ${state.existingSourceMode === 'git' ? 'active' : ''}`}
-                onClick={() => onUpdate({ existingSourceMode: 'git' })}
-              >
-                <GitBranch size={22} />
-                <strong>Git Repository</strong>
-                <span>GitHub / GitLab</span>
-              </button>
-              <button type="button" className="source-card disabled" disabled title="Coming soon">
-                <Link2 size={22} />
-                <strong>Connect Repository</strong>
-                <span>Azure / Bitbucket</span>
-              </button>
-            </div>
-            {state.existingSourceMode === 'zip' && (
-              <div className="upload-zone compact" onClick={() => zipInputRef.current?.click()}>
-                <span>{state.sourceZipName ?? 'Click to upload project ZIP'}</span>
-                <input
-                  ref={zipInputRef}
-                  type="file"
-                  accept=".zip"
-                  hidden
-                  onChange={(e) => onUpdate({ sourceZipName: e.target.files?.[0]?.name ?? null })}
-                />
-              </div>
-            )}
-            {state.existingSourceMode === 'git' && (
-              <input
-                className="full-input"
-                placeholder="https://github.com/org/repo"
-                value={state.gitRepositoryUrl}
-                onChange={(e) => onUpdate({ gitRepositoryUrl: e.target.value })}
-              />
-            )}
-          </details>
         </section>
       )}
 
-      {stage === 'clarify' && hasPaste && onAsk && onPick && onOther && onToggleOther && onUseWording && onStartOver && (
-        <section className="card ref-card">
+      {stage === 'clarify' && canGroom && (
+        <section className="card ref-card req-clarify-card">
           <GroomingPanel
             state={state}
             loading={Boolean(grooming)}
-            onAsk={onAsk}
             onPick={onPick}
             onOther={onOther}
             onToggleOther={onToggleOther}
@@ -319,55 +378,66 @@ export function RequirementsScreen({
         </section>
       )}
 
-      {stage === 'clarify' && !hasPaste && (
+      {stage === 'clarify' && !canGroom && (
         <section className="card ref-card">
-          <p className="empty-state">
-            Paste a short description on Capture first, then return here for one round of choices.
-            {onNavigate ? null : null}
-          </p>
-          <button type="button" className="secondary-btn" onClick={() => setStage('capture')}>
-            Back to Capture
-          </button>
+          <div className="empty-state-block">
+            <h3>No requirement text yet</h3>
+            <p>Paste a description on Capture first. Blink uses that text to ask clarifying questions.</p>
+            <button type="button" className="secondary-btn" onClick={() => setStage('capture')}>
+              Back to Capture
+            </button>
+          </div>
         </section>
       )}
 
       {stage === 'tickets' && (
-        <section className="card ref-card">
+        <div className="req-tickets">
           {state.groomConfirmed || state.requirementFileName ? (
             <>
-              {(state.groomDraft || state.requirementsText) && (
-                <div className="groom-compare">
-                  <div>
-                    <h4>Cleared wording</h4>
-                    <pre className="groom-draft">{state.groomDraft || state.requirementsText}</pre>
+              {confirmedText ? (
+                <section className="card ref-card req-wording-card">
+                  <div className="req-section-head">
+                    <h3>Confirmed wording</h3>
+                    <p>This is the text Blink uses to plan epics and stories.</p>
                   </div>
-                </div>
+                  <pre className="groom-draft">{confirmedText}</pre>
+                </section>
+              ) : (
+                <section className="card ref-card req-wording-card">
+                  <div className="req-section-head">
+                    <h3>Uploaded document</h3>
+                    <p>{state.requirementFileName} will be used as the requirement source.</p>
+                  </div>
+                </section>
               )}
               <JiraScopePanel
                 state={state}
                 onUpdate={onUpdate}
-                sourceText={state.groomDraft || state.requirementsText}
+                sourceText={confirmedText}
                 jiraPublish={jiraPublish}
               />
               <ScopeStartStatus state={state} onUpdate={onUpdate} />
-              {!state.integrations.find((i) => i.id === 'jira')?.connected && onNavigate ? (
+              {!jiraConnected && onNavigate ? (
                 <p className="groom-blocker-hint">
-                  Connect Atlassian first ·{' '}
-                  <button type="button" className="link-btn" onClick={() => onNavigate('integrations')}>
+                  Connect Atlassian to create tickets.{' '}
+                  <button type="button" className="text-btn" onClick={() => onNavigate('integrations')}>
                     Open Integrations
                   </button>
                 </p>
               ) : null}
             </>
           ) : (
-            <p className="empty-state">
-              Finish Clarify and click Use this wording. Tickets then plan on their own.
-              <button type="button" className="secondary-btn" style={{ marginLeft: '0.75rem' }} onClick={() => setStage('clarify')}>
-                Go to Clarify
-              </button>
-            </p>
+            <section className="card ref-card">
+              <div className="empty-state-block">
+                <h3>Finish clarifying first</h3>
+                <p>Answer the required questions, then use the cleared wording so tickets can be planned.</p>
+                <button type="button" className="secondary-btn" onClick={() => setStage('clarify')}>
+                  Go to Clarify
+                </button>
+              </div>
+            </section>
           )}
-        </section>
+        </div>
       )}
     </div>
   )

@@ -1260,7 +1260,6 @@ body.is-resizing-sidebar .sidebar-brand-row {
 
 .integration-card,
 .stakeholder-card,
-.req-dropzone,
 .review-issue-card {
   border-radius: var(--radius-lg) !important;
   border: 1px solid var(--glass-border) !important;

@@ -18,7 +18,6 @@ import {
 interface Props {
   state: WizardState
   loading: boolean
-  onAsk: () => void
   onPick: (questionId: string, optionId: string, optionLabel: string) => void
   onOther: (questionId: string, text: string) => void
   onToggleOther: (questionId: string, checked: boolean) => void
@@ -27,6 +26,20 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
   onNavigate?: (step: WizardStep) => void
   showJiraPanel?: boolean
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
+function avatarTone(name: string): number {
+  const seed = name.trim() || '?'
+  let hash = 0
+  for (let i = 0; i < seed.length; i += 1) hash = (hash + seed.charCodeAt(i)) % 6
+  return hash
 }
 
 function QuestionCard({
@@ -84,11 +97,36 @@ function QuestionCard({
       </legend>
       {question.subtitle ? <p className="groom-question-subtitle">{question.subtitle}</p> : null}
 
-      <div className="groom-assignee-row">
-        <label className="groom-role-field">
+      <div className={`groom-assignee${assignee.assigned ? '' : ' is-unassigned'}`}>
+        <span
+          className={`stakeholder-avatar tone-${avatarTone(assignee.assigned ? assignee.name : roleLabel(roleId))}`}
+          aria-hidden="true"
+        >
+          {initials(assignee.assigned ? assignee.name : roleLabel(roleId))}
+        </span>
+        <div className="groom-assignee-who">
+          <strong>{assignee.assigned ? assignee.name : 'Not assigned'}</strong>
+          {assignee.assigned ? (
+            <span>{assignee.email}</span>
+          ) : (
+            <span>
+              Assign this role first
+              {onNavigate ? (
+                <>
+                  {' · '}
+                  <button type="button" className="text-btn" onClick={() => onNavigate('project-stakeholders')}>
+                    Open stakeholders
+                  </button>
+                </>
+              ) : null}
+            </span>
+          )}
+        </div>
+        <label className="groom-assignee-role">
           <span>Role</span>
           <select
             value={roleId}
+            aria-label="Question owner role"
             onChange={(event) => patchQuestion({ ownerRole: event.target.value })}
           >
             {STAKEHOLDER_ROLES.map((role) => (
@@ -98,47 +136,28 @@ function QuestionCard({
             ))}
           </select>
         </label>
-        <div className={`groom-person-chip${assignee.assigned ? '' : ' is-unassigned'}`}>
-          <strong>{assignee.name}</strong>
-          {assignee.assigned ? (
-            <span>{assignee.email}</span>
-          ) : (
-            <span>
-              Assign {roleLabel(roleId)} before Email/Jira later
-              {onNavigate ? (
-                <>
-                  {' · '}
-                  <button type="button" className="link-btn" onClick={() => onNavigate('project-stakeholders')}>
-                    Open Project & Stakeholders
-                  </button>
-                </>
-              ) : null}
-            </span>
-          )}
+        <div className="groom-queue-row">
+          <label className={`groom-queue-toggle${question.queueEmail ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
+            <input
+              type="checkbox"
+              checked={Boolean(question.queueEmail)}
+              disabled={!assignee.assigned}
+              onChange={(event) => patchQuestion({ queueEmail: event.target.checked })}
+            />
+            <Mail size={13} />
+            Email later
+          </label>
+          <label className={`groom-queue-toggle${question.queueJira ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
+            <input
+              type="checkbox"
+              checked={Boolean(question.queueJira)}
+              disabled={!assignee.assigned}
+              onChange={(event) => patchQuestion({ queueJira: event.target.checked })}
+            />
+            <MessageSquare size={13} />
+            Jira later
+          </label>
         </div>
-      </div>
-
-      <div className="groom-queue-row">
-        <label className={`groom-queue-toggle${question.queueEmail ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
-          <input
-            type="checkbox"
-            checked={Boolean(question.queueEmail)}
-            disabled={!assignee.assigned}
-            onChange={(event) => patchQuestion({ queueEmail: event.target.checked })}
-          />
-          <Mail size={13} />
-          Email later
-        </label>
-        <label className={`groom-queue-toggle${question.queueJira ? ' on' : ''}${!assignee.assigned ? ' disabled' : ''}`}>
-          <input
-            type="checkbox"
-            checked={Boolean(question.queueJira)}
-            disabled={!assignee.assigned}
-            onChange={(event) => patchQuestion({ queueJira: event.target.checked })}
-          />
-          <MessageSquare size={13} />
-          Jira later
-        </label>
       </div>
       {isDeferredToJira(question) ? (
         <p className="groom-defer-hint">
@@ -282,24 +301,22 @@ export function GroomingPanel({
   return (
     <div className="groom-panel">
       <div className="groom-panel-intro">
-        <h3>Make it clearer</h3>
-        <p>
-          One round of choices on this page. Blink starts reading as soon as you open Clarify. Answer Need
-          clarification here, or select Jira later to skip and ask on a ticket after epics/stories exist.
-        </p>
+        <div>
+          <h3>Make it clearer</h3>
+          <p>Answer required questions, or mark Jira later to follow up after tickets exist.</p>
+        </div>
+        {asked && questions.length > 0 ? (
+          <p className="groom-progress">
+            {requiredResolved}/{required.length} required
+            {optional.length > 0 ? ` · ${optionalResolved}/${optional.length} optional` : ''}
+          </p>
+        ) : null}
       </div>
 
       {!asked && loading ? <p className="muted">Reading the requirement…</p> : null}
       {asked && loading ? <p className="muted">Updating the wording…</p> : null}
 
       {state.groomMessage && asked && <p className="muted">{state.groomMessage}</p>}
-
-      {asked && questions.length > 0 && (
-        <p className="groom-progress">
-          {requiredResolved}/{required.length} required
-          {optional.length > 0 ? ` · ${optionalResolved}/${optional.length} optional` : ''}
-        </p>
-      )}
 
       {GROOM_BANDS.map((band) => (
         <Band

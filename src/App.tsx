@@ -83,6 +83,7 @@ import {
   loadSessionStep,
   normalizeWizardStep,
   resumeTarget,
+  persistedWizardStep,
   resolveBootStep,
   saveWizardDraft,
   saveSessionStep,
@@ -156,6 +157,9 @@ export default function App() {
   const [state, setState] = useState<WizardState>(boot.state)
   const [step, setStep] = useState<WizardStep>(bootStep)
   const [completedThrough, setCompletedThrough] = useState(boot.completedThrough)
+  const lastWorkingRef = useRef<WizardStep>(
+    persistedWizardStep(boot.step, boot.completedThrough, boot.state),
+  )
   const [status, setStatus] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
 
   useEffect(() => {
@@ -194,6 +198,11 @@ export default function App() {
   stepRef.current = step
   stateRef.current = state
   completedRef.current = completedThrough
+  if (step !== 'welcome') {
+    const currentIdx = STEP_ORDER.indexOf(step)
+    const savedIdx = STEP_ORDER.indexOf(lastWorkingRef.current)
+    if (savedIdx < 1 || currentIdx >= savedIdx) lastWorkingRef.current = step
+  }
   const skipStepValidation = useDeveloperCapability('skipStepValidation')
   const autoEnsureProject = useDeveloperCapability('autoEnsureProject')
   const unrestrictedNav = useDeveloperCapability('unrestrictedStepNav')
@@ -238,6 +247,10 @@ export default function App() {
     })),
   }), [state.projectType, state.projectName, state.description, state.stakeholderAssignments])
 
+  const wizardBookmark = useCallback((): WizardStep => {
+    return persistedWizardStep(lastWorkingRef.current, completedRef.current, stateRef.current)
+  }, [])
+
   const persistProject = useCallback(async (opts?: { draft?: boolean }): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
@@ -249,7 +262,7 @@ export default function App() {
     const payloadStr = JSON.stringify(payload)
     const withWizard: ProjectPayload = {
       ...payload,
-      wizardStep: stepRef.current,
+      wizardStep: wizardBookmark(),
       wizardCompletedThrough: completedRef.current,
       wizardState: serializeWizardState(state),
     }
@@ -331,8 +344,8 @@ export default function App() {
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
-    if (governanceStatus === 'preparing' || governanceStatus === 'ready' || governanceStatus === 'failed') {
-      setGovernancePrep(governanceStatus)
+    if (governanceStatus === 'preparing') {
+      setGovernancePrep('preparing')
     }
     return {
       id,
@@ -341,7 +354,7 @@ export default function App() {
       nextCommand: nextCommand || undefined,
       governanceStatus,
     }
-  }, [projectPayload, state, folderPrep, governancePrep, patch])
+  }, [projectPayload, state, folderPrep, governancePrep, patch, wizardBookmark])
 
   const ensureDraftProject = useCallback(async (): Promise<{ id: string; created: boolean }> => {
     if (state.projectId) {
@@ -378,6 +391,7 @@ export default function App() {
     }
     setState(fresh)
     setCompletedThrough(0)
+    lastWorkingRef.current = 'project-stakeholders'
     if (session?.email) {
       saveWizardDraft(session.email, {
         step: 'project-stakeholders',
@@ -434,14 +448,14 @@ export default function App() {
   useEffect(() => {
     if (!session?.email) return
     saveWizardDraft(session.email, {
-      step,
+      step: wizardBookmark(),
       completedThrough,
       state,
       updatedAt: Date.now(),
       freshStart: freshStartRef.current && !state.projectId,
     })
     saveSessionStep(step)
-  }, [session?.email, step, completedThrough, state])
+  }, [session?.email, step, completedThrough, state, wizardBookmark])
 
   useEffect(() => {
     if (!session?.email || !state.projectId) return
@@ -449,20 +463,20 @@ export default function App() {
       const payload = withDraftProjectPayload(projectPayload())
       void saveProject({
         ...payload,
-        wizardStep: step,
+        wizardStep: wizardBookmark(),
         wizardCompletedThrough: completedThrough,
         wizardState: serializeWizardState(state),
       }, state.projectId).catch(() => undefined)
     }, 900)
     return () => window.clearTimeout(timer)
-  }, [session?.email, state, step, completedThrough, projectPayload])
+  }, [session?.email, state, step, completedThrough, projectPayload, wizardBookmark])
 
   // Flush draft + best-effort server save before tab close/refresh.
   useEffect(() => {
     if (!session?.email) return
     const flush = () => {
       saveWizardDraft(session.email, {
-        step: stepRef.current,
+        step: wizardBookmark(),
         completedThrough: completedRef.current,
         state,
         updatedAt: Date.now(),
@@ -473,7 +487,7 @@ export default function App() {
       const payload = withDraftProjectPayload(projectPayload())
       const body = JSON.stringify({
         ...payload,
-        wizardStep: stepRef.current,
+        wizardStep: wizardBookmark(),
         wizardCompletedThrough: completedRef.current,
         wizardState: serializeWizardState(state),
       })
@@ -496,7 +510,7 @@ export default function App() {
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)
     }
-  }, [session?.email, session?.token, state, projectPayload])
+  }, [session?.email, session?.token, state, projectPayload, wizardBookmark])
 
   useEffect(() => {
     if (!session?.email || skipRemoteResumeRef.current) return
@@ -518,6 +532,11 @@ export default function App() {
         skipRemoteResumeRef.current = true
         setState(remoteDraft.state)
         setCompletedThrough(remoteDraft.completedThrough)
+        lastWorkingRef.current = persistedWizardStep(
+          remoteDraft.step,
+          remoteDraft.completedThrough,
+          remoteDraft.state,
+        )
         saveWizardDraft(email, {
           step: remoteDraft.step,
           completedThrough: remoteDraft.completedThrough,
@@ -645,27 +664,15 @@ export default function App() {
             nextSdlcCommand: progress.nextCommand || state.nextSdlcCommand,
             governanceStatus: 'ready',
           })
-          setGovernancePrep('ready')
-          if (warnings.length > 0) {
-            setStatus({
-              type: 'info',
-              message: `Stakeholder governance note: ${warnings[0]}`,
-            })
-          } else {
-            setStatus({ type: 'success', message: progress.message || 'Stakeholder roles are configured.' })
-          }
+          setGovernancePrep('idle')
           return
         }
         if (status === 'failed') {
           patch({ governanceStatus: 'failed' })
-          setGovernancePrep('failed')
-          setStatus({
-            type: 'info',
-            message: progress.message || 'Could not finish stakeholder checks. You can keep going.',
-          })
+          setGovernancePrep('idle')
         }
       } catch {
-        /* keep the preparing note until a later poll succeeds */
+        /* keep polling until a later check succeeds */
       }
     }
     void check()
@@ -675,12 +682,6 @@ export default function App() {
       window.clearInterval(timer)
     }
   }, [governancePrep, state.projectId, state.nextSdlcCommand, patch])
-
-  useEffect(() => {
-    if (governancePrep !== 'ready' && governancePrep !== 'failed') return
-    const timer = window.setTimeout(() => setGovernancePrep('idle'), 8000)
-    return () => window.clearTimeout(timer)
-  }, [governancePrep])
 
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     if (creatingReposRef.current) return false
@@ -780,28 +781,10 @@ export default function App() {
         setStatus(null)
       }
       try {
-        const saved = await persistProject({
+        await persistProject({
           draft: skipStepValidation && (!state.projectName.trim() || !state.description.trim()),
         })
-        if (saved.sodWarnings && saved.sodWarnings.length > 0) {
-          setStatus({
-            type: 'info',
-            message: `Project & stakeholders configured with governance note: ${saved.sodWarnings[0]}`,
-          })
-        } else if (!alreadyPersisted) {
-          const folderBusy = saved.workspaceStatus === 'preparing'
-          const governanceBusy = saved.governanceStatus === 'preparing'
-          setStatus({
-            type: folderBusy || governanceBusy ? 'info' : 'success',
-            message: governanceBusy && folderBusy
-              ? 'Saved. Preparing your project folder and checking stakeholder roles — you can keep going.'
-              : governanceBusy
-                ? 'Saved. Checking stakeholder roles — you can keep going.'
-                : folderBusy
-                  ? 'Saved. We are preparing your project folder — you can keep going.'
-                  : 'Project & stakeholders configured successfully.',
-          })
-        }
+        setStatus(null)
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
@@ -2053,14 +2036,14 @@ export default function App() {
               canOfferResume({ step, completedThrough, state, freshStart: freshStartRef.current })
                 ? {
                     projectName: state.projectName.trim() || 'your project',
-                    stepLabel: stepLabel(resumeTarget({ step: 'welcome', completedThrough, state })),
+                    stepLabel: stepLabel(resumeTarget({ step: lastWorkingRef.current, completedThrough, state })),
                   }
                 : null
             }
             onContinue={(type) => startFresh(type)}
             onResume={() => {
               setStatus(null)
-              goToStep(resumeTarget({ step: 'welcome', completedThrough, state }))
+              goToStep(resumeTarget({ step: lastWorkingRef.current, completedThrough, state }))
             }}
             onStartNew={() => startFresh('new')}
           />
@@ -2195,87 +2178,13 @@ export default function App() {
       )}
 
       <div className={`main${isWelcome ? ' main-welcome' : ''}${isSuccessScreen ? ' main-success' : ''}`}>
-        {(!isSuccessScreen || folderPrep === 'preparing' || governancePrep === 'preparing') && !isWelcome && (
+        {(!isSuccessScreen || folderPrep === 'preparing') && !isWelcome && (
           <header className="top-float" aria-label="Step actions">
+            <div className="top-float-row">
             <div className="top-float-chip top-float-start">
               <span className="step-indicator">
                 {phaseProgressLabel(step)}
               </span>
-              <div className="prep-stack">
-              {folderPrep === 'preparing' && (
-                <div className={`folder-prep${folderProgress.total === 0 ? ' is-waiting' : ''}`}>
-                  <div className="folder-prep-copy">
-                    <span>Preparing your project folder</span>
-                    <strong>
-                      {folderProgress.percent}%
-                      {folderProgress.total > 0
-                        ? ` · ${folderProgress.copied.toLocaleString()} / ${folderProgress.total.toLocaleString()}`
-                        : ''}
-                    </strong>
-                  </div>
-                  <div
-                    className="folder-prep-bar"
-                    role="progressbar"
-                    aria-label="Project folder progress"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={folderProgress.percent}
-                  >
-                    <span className="folder-prep-bar-fill" style={{ width: `${folderProgress.percent}%` }} />
-                  </div>
-                </div>
-              )}
-              {folderPrep === 'ready' && (
-                <div className="folder-prep is-ready">
-                  <div className="folder-prep-copy">
-                    <span>Your project folder is ready.</span>
-                    <strong>100%</strong>
-                  </div>
-                  <div className="folder-prep-bar" role="progressbar" aria-valuenow={100} aria-valuemin={0} aria-valuemax={100}>
-                    <span className="folder-prep-bar-fill" style={{ width: '100%' }} />
-                  </div>
-                </div>
-              )}
-              {folderPrep === 'failed' && (
-                <span className="folder-prep is-failed">We will finish your project folder when you download.</span>
-              )}
-              {governancePrep === 'preparing' && (
-                <div className="folder-prep is-waiting">
-                  <div className="folder-prep-copy">
-                    <span>Checking stakeholder roles</span>
-                    <strong>In progress</strong>
-                  </div>
-                  <div
-                    className="folder-prep-bar"
-                    role="progressbar"
-                    aria-label="Stakeholder governance progress"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={35}
-                  >
-                    <span className="folder-prep-bar-fill" />
-                  </div>
-                </div>
-              )}
-              {governancePrep === 'ready' && (
-                <div className={`folder-prep ${state.sodWarnings.length ? 'is-note' : 'is-ready'}`}>
-                  <div className="folder-prep-copy">
-                    <span>
-                      {state.sodWarnings.length
-                        ? 'Stakeholder governance note is ready on Project & Stakeholders.'
-                        : 'Stakeholder roles are configured.'}
-                    </span>
-                    <strong>Done</strong>
-                  </div>
-                  <div className="folder-prep-bar" role="progressbar" aria-valuenow={100} aria-valuemin={0} aria-valuemax={100}>
-                    <span className="folder-prep-bar-fill" style={{ width: '100%' }} />
-                  </div>
-                </div>
-              )}
-              {governancePrep === 'failed' && (
-                <span className="folder-prep is-failed">Could not finish stakeholder checks. You can keep going.</span>
-              )}
-              </div>
             </div>
             <div className="top-float-chip top-float-end">
               <button
@@ -2302,6 +2211,44 @@ export default function App() {
               )}
               <SessionControls compact />
             </div>
+            </div>
+            {folderPrep !== 'idle' && (
+              <div className={`header-progress${folderPrep === 'ready' ? ' is-ready' : ''}${folderPrep === 'failed' ? ' is-failed' : ''}${folderPrep === 'preparing' && folderProgress.total === 0 ? ' is-waiting' : ''}`}>
+                <div className="header-progress-copy">
+                  <span>
+                    {folderPrep === 'preparing'
+                      ? 'Preparing project folder'
+                      : folderPrep === 'ready'
+                        ? 'Project folder is ready'
+                        : 'Folder will finish when you download'}
+                  </span>
+                  {folderPrep !== 'failed' && (
+                    <strong>
+                      {folderPrep === 'ready'
+                        ? '100%'
+                        : folderProgress.total > 0
+                          ? `${folderProgress.percent}%`
+                          : 'Working'}
+                    </strong>
+                  )}
+                </div>
+                {folderPrep !== 'failed' && (
+                  <div
+                    className="header-progress-bar"
+                    role="progressbar"
+                    aria-label="Project folder progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={folderPrep === 'ready' ? 100 : folderProgress.percent}
+                  >
+                    <span
+                      className="header-progress-fill"
+                      style={folderPrep === 'ready' ? { width: '100%' } : folderProgress.total > 0 ? { width: `${folderProgress.percent}%` } : undefined}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </header>
         )}
 

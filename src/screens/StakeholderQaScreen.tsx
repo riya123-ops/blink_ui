@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { HelpCircle, Inbox, Send } from 'lucide-react'
+import { Inbox, Send } from 'lucide-react'
 import {
   StakeholderQuestionsScreen,
   jiraCommentForQuestion,
@@ -78,14 +78,8 @@ export function StakeholderQaScreen(props: Props) {
   return (
     <div className="screen stakeholder-qa">
       <div className="screen-header">
-        <h2>
-          <HelpCircle size={22} style={{ verticalAlign: 'middle', marginRight: 8 }} />
-          Stakeholder Q&amp;A
-        </h2>
-        <p>
-          Ask leftover clarifications, collect replies, and resolve answers. When nothing is left to choose, the
-          grooming loop runs in the background — then acknowledge G-GROOM.
-        </p>
+        <h2>Stakeholder Q&amp;A</h2>
+        <p>Send questions, collect replies, and resolve answers.</p>
       </div>
 
       <div className="qa-summary-strip">

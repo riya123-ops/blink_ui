@@ -110,10 +110,7 @@ export function ProjectShapeScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Project Shape</h2>
-        <p>
-          Pick how the product is structured. Suggested repositories update live
-          {state.repositoriesTouched ? ' — locked after you edited Repositories' : ''}.
-        </p>
+        <p>Choose how the product is structured.</p>
       </div>
 
       <div className="shape-layout">
@@ -366,10 +363,7 @@ export function RepositoriesScreen({
       <div className="screen-header screen-header-row">
         <div>
           <h2>Repositories</h2>
-          <p>
-            Names follow <strong>{state.projectName || 'your project'}</strong> and your Project Shape.
-            Remotes are created on <strong>Ship</strong> after G-BOOTSTRAP — not on Continue.
-          </p>
+          <p>Name the repos for this project. Remotes are created on Ship.</p>
         </div>
         <div className="screen-header-actions">
           <button type="button" className="ghost-btn" onClick={restoreFromShape}>
@@ -541,12 +535,8 @@ export function TechnologyPerRepoScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen shape-screen">
       <div className="screen-header screen-header-row">
         <div>
-          <h2>Technology (Per Repository)</h2>
-          <p>
-            Defaults follow Project Shape
-            {state.topology ? ` (${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label})` : ''}.
-            Confirm each stack, then review the setup before Work plan.
-          </p>
+          <h2>Technology</h2>
+          <p>Confirm the stack for each repository.</p>
         </div>
         {pending > 0 ? (
           <button type="button" className="primary-btn" onClick={confirmAll}>
@@ -664,7 +654,7 @@ export function IdeAndToolsScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen shape-screen">
       <div className="screen-header">
         <h2>IDE and Tools</h2>
-        <p>Choose where engineers will run Blink commands and agents for this project.</p>
+        <p>Choose where the team will work on this project.</p>
       </div>
       <section className="card shape-section">
         <div className="shape-section-head">
@@ -729,10 +719,7 @@ export function PlatformDeliveryScreen({ state, onUpdate }: ScreenProps) {
     <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Platform &amp; Delivery</h2>
-        <p>
-          Runtime and delivery options follow your cloud choice
-          {state.topology ? ` · ${TOPOLOGY_OPTIONS.find((t) => t.id === state.topology)?.label}` : ''}.
-        </p>
+        <p>Choose cloud and how you will deliver.</p>
       </div>
 
       <section className="card shape-section">
@@ -883,7 +870,7 @@ export function ReviewResolveScreen({
     <div className="screen shape-screen">
       <div className="screen-header">
         <h2>Review &amp; Resolve</h2>
-        <p>Check decisions across shape, stack, and delivery before preview.</p>
+        <p>Check shape, stack, and delivery before you continue.</p>
       </div>
 
       <div className="review-status-bar">
@@ -987,8 +974,8 @@ export function ProjectPreviewScreen({ state, onGenerate, loading }: { state: Wi
   return (
     <div className="screen shape-screen">
       <div className="screen-header">
-        <h2>Generated Project Preview</h2>
-        <p>Confirm what Blink will generate from your shape through delivery choices.</p>
+        <h2>Preview</h2>
+        <p>Confirm what will be generated.</p>
       </div>
 
       <div className="preview-hero card">
@@ -1121,7 +1108,10 @@ export function GenerationDownloadScreen({
   if (!state.generationComplete) {
     return (
       <div className="screen screen-ref">
-        <div className="screen-header"><h2>Generation / Download</h2></div>
+        <div className="screen-header">
+          <h2>Generation</h2>
+          <p>Generate and download the workspace.</p>
+        </div>
         <section className="card ref-card"><p>Click Download Project to generate and download the workspace.</p></section>
       </div>
     )

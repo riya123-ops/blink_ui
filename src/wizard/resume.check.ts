@@ -9,9 +9,11 @@ import {
   parseRemoteUpdatedAt,
   resolveBootStep,
   restoreWizardState,
+  resumeTarget,
   serializeWizardState,
 } from './resume.ts'
 import { defaultWizardState } from './types.ts'
+import { STEP_ORDER } from './steps.ts'
 
 const saved = serializeWizardState({
   ...defaultWizardState,
@@ -73,6 +75,48 @@ assert.equal(
     null,
   ),
   'integrations',
+)
+
+assert.equal(
+  resumeTarget({
+    step: 'integrations',
+    completedThrough: 1,
+    state: { ...defaultWizardState, projectName: 'Fitoyo' },
+  }),
+  'integrations',
+)
+assert.equal(
+  resumeTarget({
+    step: 'welcome',
+    completedThrough: STEP_ORDER.indexOf('project-stakeholders'),
+    state: { ...defaultWizardState, projectName: 'Fitoyo' },
+  }),
+  'integrations',
+)
+assert.equal(
+  resumeTarget({
+    step: 'welcome',
+    completedThrough: 0,
+    state: { ...defaultWizardState, projectName: 'Fitoyo' },
+  }),
+  'project-stakeholders',
+)
+assert.equal(
+  resumeTarget({
+    step: 'welcome',
+    completedThrough: 0,
+    state: defaultWizardState,
+  }),
+  'welcome',
+)
+
+assert.equal(
+  resumeTarget({
+    step: 'project-stakeholders',
+    completedThrough: STEP_ORDER.indexOf('requirements'),
+    state: { ...defaultWizardState, projectName: 'Fitoyo' },
+  }),
+  'stakeholder-qa',
 )
 
 console.log('resume.check.ts: ok')

@@ -168,9 +168,7 @@ export function StakeholderQuestionsScreen({
       {!embedded ? (
         <div className="screen-header">
           <h2>Questions for Stakeholders</h2>
-          <p>
-            Leftover clarify items, grouped by person. One email per person; Jira comments land on auto-mapped tickets.
-          </p>
+          <p>Leftover questions, grouped by person.</p>
         </div>
       ) : null}
 

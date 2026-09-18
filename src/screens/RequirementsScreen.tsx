@@ -124,7 +124,7 @@ export function RequirementsScreen({
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Requirements</h2>
-        <p>Capture wording, clarify gaps, then create tickets. Blink locks scope and starts the SDLC here — no extra tab.</p>
+        <p>Capture what you are building, then clarify any gaps.</p>
       </div>
 
       <div className="req-stage-tabs" role="tablist" aria-label="Requirements stages">

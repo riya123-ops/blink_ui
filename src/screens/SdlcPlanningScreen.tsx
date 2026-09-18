@@ -333,8 +333,6 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
 
   const requirementText = requirementTextOf(state)
   const nextId = nextStepId(state)
-  const doneCount = WORK_PLAN_STEPS.filter((s) => stepDone(s.id, state)).length
-  const progressPct = Math.round((doneCount / WORK_PLAN_STEPS.length) * 100)
   const complete = nextId === null
   const blockedMsg = nextId ? blockReason(nextId, state) : null
   const hasPlan = planReady(state)
@@ -521,37 +519,16 @@ export function SdlcPlanningScreen({ state, onUpdate }: Props) {
 
   return (
     <div className="sdlc-plan">
-      <header className="sdlc-plan__hero">
-        <div className="sdlc-plan__hero-copy">
-          <p className="sdlc-plan__eyebrow">Review</p>
-          <h2>Work plan</h2>
-          <p className="muted">
-            {autoPlanDraft
-              ? 'Blink is classifying the work and drafting the spec. Confirm acceptance criteria when that finishes.'
-              : autoPlanTech
-                ? 'Blink is writing the technical plan against the reviewed shape. Acknowledge G-PLAN when it is ready.'
-                : 'Blink drafts classify, spec, and the technical plan in the background. You confirm acceptance criteria and acknowledge G-PLAN.'}
-          </p>
-        </div>
-        <div className="sdlc-plan__meter" aria-label={`Planning progress ${progressPct} percent`}>
-          <div className="sdlc-plan__meter-ring">
-            <strong>{doneCount}</strong>
-            <span>of {WORK_PLAN_STEPS.length}</span>
-          </div>
-          <div className="sdlc-plan__meter-bar">
-            <span style={{ width: `${progressPct}%` }} />
-          </div>
-          <p className="sdlc-plan__meter-label">
-            {complete
-              ? 'Ready for Ship'
-              : busy
-                ? 'Working…'
-                : nextId
-                  ? `Next: ${WORK_PLAN_STEPS.find((s) => s.id === nextId)?.command}`
-                  : 'Waiting'}
-          </p>
-        </div>
-      </header>
+      <div className="screen-header">
+        <h2>Work plan</h2>
+        <p>
+          {autoPlanDraft
+            ? 'Drafting the spec. Confirm acceptance criteria when it is ready.'
+            : autoPlanTech
+              ? 'Writing the technical plan. Review it when it is ready.'
+              : 'Review the spec and technical plan, then continue to Ship.'}
+        </p>
+      </div>
 
       {blockedMsg && !busy ? (
         <p className="status-banner info">

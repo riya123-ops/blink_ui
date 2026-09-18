@@ -34,7 +34,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
   { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
-  { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#2563eb' },
+  { id: 'technology-per-repo', label: 'Technology', icon: Cpu, iconColor: '#2563eb' },
   { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
   { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
 ]

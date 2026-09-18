@@ -707,7 +707,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
 .content {
   flex: 1 1 0;
   min-height: 0;
-  padding: 0.7rem 0 0.85rem 1.5rem;
+  padding: 0.7rem 1.5rem 0.85rem 1.5rem;
   scrollbar-gutter: auto;
   width: 100%;
   max-width: none;
@@ -722,11 +722,12 @@ body.is-resizing-sidebar .sidebar-brand-row {
   z-index: 6;
   flex-shrink: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.45rem;
   min-height: 0;
-  padding: 0.7rem 1rem 0.45rem 1.5rem;
+  padding: 0.7rem 1.5rem 0.45rem 1.5rem;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -737,6 +738,65 @@ body.is-resizing-sidebar .sidebar-brand-row {
   font-size: 0.74rem;
   font-weight: 600;
   pointer-events: none;
+}
+
+.top-float-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.header-progress {
+  width: 100%;
+  max-width: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  pointer-events: none;
+}
+
+.header-progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.header-progress-copy strong {
+  color: var(--text-navy);
+  font-variant-numeric: tabular-nums;
+}
+
+.header-progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  overflow: hidden;
+}
+
+.header-progress-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  transition: width 0.35s ease;
+}
+
+.header-progress.is-waiting .header-progress-fill {
+  animation: folder-prep-slide 1.2s ease-in-out infinite;
+}
+
+.header-progress.is-ready .header-progress-copy {
+  color: var(--ts-green-deep, #087a38);
+}
+
+.header-progress.is-failed .header-progress-copy {
+  color: #b45309;
 }
 
 .top-float-chip {
@@ -805,7 +865,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
 .content {
   flex: 1 1 0;
   min-height: 0;
-  padding: 0.7rem 0 0.85rem 1.5rem;
+  padding: 0.7rem 1.5rem 0.85rem 1.5rem;
   scrollbar-gutter: auto;
 }
 
@@ -815,7 +875,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
 }
 
 .content-fill {
-  padding-right: 0;
+  padding-right: 1.5rem;
 }
 
 .content-welcome {
@@ -838,7 +898,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 1rem 0.85rem 1.5rem;
+  padding: 0.5rem 1.5rem 0.85rem 1.5rem;
   pointer-events: none;
   background: none !important;
   border: none !important;
@@ -1103,6 +1163,33 @@ body.is-resizing-sidebar .sidebar-brand-row {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
+.project-setup-card input,
+.project-setup-card textarea,
+.project-setup-card select {
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: var(--text-navy);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.project-setup-card input,
+.project-setup-card select {
+  height: 40px;
+  border-radius: 10px;
+}
+
+.project-setup-card select {
+  background-color: rgba(255, 255, 255, 0.85);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1.5 1.5 6 6 10.5 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 12px;
+}
+
 /* ── Choice cards (IDE / topology / cloud) ── */
 .ide-card,
 .topology-card,
@@ -1195,8 +1282,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
 
 .welcome-headline p,
 .login-card-copy,
-.welcome-desc,
-.screen-header p {
+.welcome-desc {
   font-family: var(--font-ui);
   font-size: 0.9rem;
   font-weight: 500;
@@ -1244,21 +1330,47 @@ body.is-resizing-sidebar .sidebar-brand-row {
 .screen-project .screen-header h2,
 .sdlc-plan__hero h2,
 .gen-loading > h2 {
-  font-size: var(--fs-page, 1.45rem);
+  font-size: var(--fs-page, 1.35rem);
   font-weight: 700;
   letter-spacing: -0.03em;
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.3rem;
 }
 
 .screen-header p {
   font-family: var(--font-ui);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 500;
   letter-spacing: 0;
-  line-height: 1.55;
-  margin: 0 0 1.1rem;
-  max-width: 42rem;
+  line-height: 1.45;
+  margin: 0;
+  max-width: none;
+}
+
+.screen-note {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.05);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  color: var(--text-navy);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.screen-note.is-warn {
+  background: rgba(180, 83, 9, 0.07);
+  border-color: rgba(180, 83, 9, 0.18);
+}
+
+.screen-header-row {
+  align-items: flex-start;
+}
+
+.screen-header-row > div:first-child {
+  min-width: 0;
+  flex: 1;
 }
 
 /* ── Chat ── */

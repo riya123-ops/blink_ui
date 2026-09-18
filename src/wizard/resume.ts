@@ -125,7 +125,7 @@ export function loadWizardDraft(email: string): WizardDraft | null {
     })
     return {
       email: parsed.email,
-      step: remapped.step,
+      step: persistedWizardStep(remapped.step, remapped.completedThrough, remapped.state),
       completedThrough: remapped.completedThrough,
       state: remapped.state,
       updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
@@ -198,7 +198,7 @@ export function parkDraftForNextLogin(email: string | null | undefined): void {
   if (!draft || !hasWizardProgress(draft)) return
   // Ensure draft remains keyed to this email for the next session.
   saveWizardDraft(email, {
-    step: draft.step,
+    step: persistedWizardStep(draft.step, draft.completedThrough, draft.state),
     completedThrough: draft.completedThrough,
     state: draft.state,
     updatedAt: draft.updatedAt,
@@ -258,7 +258,7 @@ export function draftFromRemote(email: string, remote: RemoteProject): WizardDra
   })
   return {
     email: email.trim().toLowerCase(),
-    step: remapped.step,
+    step: persistedWizardStep(remapped.step, remapped.completedThrough, remapped.state),
     completedThrough: remapped.completedThrough,
     state: remapped.state,
     updatedAt: parseRemoteUpdatedAt(remote.wizardUpdatedAt),
@@ -272,12 +272,33 @@ export function canOfferResume(draft: Pick<WizardDraft, 'step' | 'state' | 'comp
   return named || draft.completedThrough > 0 || hasWizardProgress(draft)
 }
 
+/**
+ * Continue from Home follows progress, not a later click on an earlier step.
+ * Resume at the furthest of: last working screen, or the next step after the
+ * last green (completedThrough).
+ */
 export function resumeTarget(draft: Pick<WizardDraft, 'step' | 'completedThrough' | 'state'>): WizardStep {
-  if (draft.step !== 'welcome') return normalizeWizardStep(draft.step, draft.state)
-  if (draft.completedThrough > 0) {
-    return STEP_ORDER[Math.min(draft.completedThrough, STEP_ORDER.length - 1)]
+  const saved = normalizeWizardStep(draft.step, draft.state)
+  if (!hasWizardProgress(draft) && draft.completedThrough <= 0) {
+    return saved === 'welcome' ? 'welcome' : saved
   }
-  return hasWizardProgress(draft) ? 'project-stakeholders' : 'welcome'
+  const savedIdx = saved === 'welcome' ? 0 : Math.max(0, STEP_ORDER.indexOf(saved))
+  const frontierIdx =
+    draft.completedThrough > 0
+      ? Math.min(draft.completedThrough + 1, STEP_ORDER.length - 1)
+      : STEP_ORDER.indexOf('project-stakeholders')
+  const idx = Math.max(savedIdx, frontierIdx, STEP_ORDER.indexOf('project-stakeholders'))
+  const next = STEP_ORDER[Math.min(idx, STEP_ORDER.length - 1)]
+  return next === 'welcome' ? 'project-stakeholders' : next
+}
+
+/** Persist this as wizardStep — never Home when a working screen exists. */
+export function persistedWizardStep(
+  uiStep: WizardStep,
+  completedThrough: number,
+  state: WizardState,
+): WizardStep {
+  return resumeTarget({ step: uiStep, completedThrough, state })
 }
 
 /** Pick the best step to open after refresh/login. Sign-in always lands on Welcome. */

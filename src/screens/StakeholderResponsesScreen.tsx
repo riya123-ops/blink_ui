@@ -491,10 +491,7 @@ export function StakeholderResponsesScreen({
       {!embedded ? (
         <div className="screen-header">
           <h2>Stakeholder Responses</h2>
-          <p>
-            Each clarification is a parent thread. Child replies stay nested for context. Summarize the discussion, then
-            resolve one answer Blink can continue with. When nothing is left to choose, grooming runs in the background.
-          </p>
+          <p>Read replies and resolve one answer Blink can continue with.</p>
         </div>
       ) : null}
 

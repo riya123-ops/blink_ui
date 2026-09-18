@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { ExternalLink, RefreshCw, Sparkles, X } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { ExternalLink, RefreshCw, X } from 'lucide-react'
 import {
   connectIntegration,
   exchangeFigmaOAuth,
@@ -23,7 +23,7 @@ import type { IntegrationItem } from '../wizard/defaults'
 import { DEFAULT_INTEGRATIONS } from '../wizard/defaults'
 import { mergeSavedIntegrations } from '../wizard/mergeIntegrations'
 import type { WizardState } from '../wizard/types'
-import { isJiraReady, jiraConnection, pendingJiraTicketCount } from '../wizard/jiraTickets'
+import { isJiraReady, jiraConnection } from '../wizard/jiraTickets'
 import type { JiraPublishState } from '../wizard/thinking'
 import { JiraPublishStatus } from './JiraScopePanel'
 import { IntegrationLogo } from './IntegrationLogo'
@@ -70,48 +70,43 @@ const GUIDES: Record<
   { tokenLabel: string; tokenUrl: string; steps: string[] }
 > = {
   github: {
-    tokenLabel: 'Personal access token',
+    tokenLabel: 'Access token',
     tokenUrl: 'https://github.com/settings/tokens/new?scopes=repo,read:org&description=BLINK',
     steps: [
-      'Prefer Connect with GitHub. Use a personal access token below if the popup or OAuth app is unavailable.',
-      'Create a classic PAT with repo and read:org, or a fine-grained token that can create repositories.',
-      'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set GITHUB_PERSONAL_ACCESS_TOKEN for Cursor MCP.',
+      'Sign in with GitHub, or paste an access token if sign-in is blocked.',
+      'The token needs permission to create repositories.',
     ],
   },
   figma: {
-    tokenLabel: 'Personal access token',
+    tokenLabel: 'Access token',
     tokenUrl: 'https://www.figma.com/developers/api#access-tokens',
     steps: [
-      'Prefer Connect with Figma. Use a personal access token below if the popup or OAuth app is unavailable.',
-      'Create a Figma PAT from your account settings, then pick a team (or paste a team URL).',
-      'After you download the zip, copy automation_sdlc/.env.mcp.example to .env.mcp and set FIGMA_ACCESS_TOKEN for Cursor MCP.',
+      'Sign in with Figma, or paste an access token if sign-in is blocked.',
+      'Then pick a team, or paste a team URL.',
     ],
   },
   jira: {
-    tokenLabel: 'Atlassian API token',
+    tokenLabel: 'API token',
     tokenUrl: 'https://id.atlassian.com/manage-profile/security/api-tokens',
     steps: [
-      'Create an API token from your Atlassian account.',
-      'Enter your Cloud site, for example https://your-team.atlassian.net.',
-      'Use the same email you sign in to Jira with.',
+      'Sign in with Atlassian, or paste an API token if sign-in is blocked.',
+      'Enter your Cloud site, then pick the Jira project for tickets.',
     ],
   },
   confluence: {
-    tokenLabel: 'Atlassian API token',
+    tokenLabel: 'API token',
     tokenUrl: 'https://id.atlassian.com/manage-profile/security/api-tokens',
     steps: [
-      'Create an API token from your Atlassian account (same token as Jira).',
-      'Enter your Cloud site, for example https://your-team.atlassian.net.',
-      'Space key is optional if you only want to verify the account.',
+      'Use the same Atlassian site and token as Jira.',
+      'Space key is optional.',
     ],
   },
   bitbucket: {
     tokenLabel: 'App password',
     tokenUrl: 'https://bitbucket.org/account/settings/app-passwords/',
     steps: [
-      'Open Bitbucket → Personal settings → App passwords.',
-      'Create a password with Account: Read, Workspaces: Read, and Repositories: Read.',
-      'Enter your Bitbucket username and workspace slug.',
+      'Create an app password with access to account, workspaces, and repositories.',
+      'Enter your Bitbucket username and workspace.',
     ],
   },
 }
@@ -127,7 +122,7 @@ const DISPLAY_CARDS = [
     id: 'atlassian',
     openId: 'jira' as const,
     label: 'Atlassian',
-    purpose: 'Jira for issues · Confluence for documentation',
+    purpose: 'Jira issues and Confluence docs',
   },
   {
     id: 'figma',
@@ -171,6 +166,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
   const [oauthResume, setOauthResume] = useState<{ provider: 'github' | 'jira' | 'figma'; url: string } | null>(null)
   const [projects, setProjects] = useState<JiraProjectItem[]>([])
   const [githubOrgs, setGithubOrgs] = useState<GithubOrgItem[]>([])
+  const [figmaTeams, setFigmaTeams] = useState<GithubOrgItem[]>([])
   const [discoveringProjects, setDiscoveringProjects] = useState(false)
   const [discoveringOrgs, setDiscoveringOrgs] = useState(false)
   const [isCustomProjectKey, setIsCustomProjectKey] = useState(false)
@@ -333,7 +329,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
             githubOrgRef.current || undefined,
           )
           const teams = res.organizations || []
-          setGithubOrgs(teams)
+          setFigmaTeams(teams)
           setProjects(res.projects || [])
           setSelectedProjectName(res.projectName || '')
           setForm((prev) => ({
@@ -419,14 +415,6 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
     }
   }, [completeOauth])
 
-  const connectedCount = useMemo(() => {
-    return DISPLAY_CARDS.filter((card) =>
-      card.openId === 'jira'
-        ? Boolean(jira?.connected || confluence?.connected)
-        : Boolean(state.integrations.find((item) => item.id === card.openId)?.connected),
-    ).length
-  }, [state.integrations, jira?.connected, confluence?.connected])
-
   const openConnect = (item: IntegrationItem) => {
     setError(null)
     setOauthNotice(null)
@@ -468,22 +456,38 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
       }
     }
 
-    if (item.id === 'github' || item.id === 'figma') {
+    if (item.id === 'github') {
       const existingOrgs = item.availableOrganizations || []
       setGithubOrgs(existingOrgs)
-      setProjects(item.availableProjects || [])
-      setSelectedProjectName(item.projectName || '')
       if (item.connected && existingOrgs.length === 0 && state.projectId) {
-        const loader = item.id === 'figma' ? fetchFigmaTeams : fetchGithubOrgs
-        void loader({ projectId: state.projectId })
+        void fetchGithubOrgs({ projectId: state.projectId })
           .then((list) => {
             if (list.length > 0) {
               setGithubOrgs(list)
-              patchItem(item.id, { availableOrganizations: list })
+              patchItem('github', { availableOrganizations: list })
             }
           })
           .catch(() => {
-            // ignore initial silent auto-refresh
+            /* ignore initial silent auto-refresh */
+          })
+      }
+    }
+
+    if (item.id === 'figma') {
+      const existingTeams = item.availableOrganizations || []
+      setFigmaTeams(existingTeams)
+      setProjects(item.availableProjects || [])
+      setSelectedProjectName(item.projectName || '')
+      if (item.connected && existingTeams.length === 0 && state.projectId) {
+        void fetchFigmaTeams({ projectId: state.projectId })
+          .then((list) => {
+            if (list.length > 0) {
+              setFigmaTeams(list)
+              patchItem('figma', { availableOrganizations: list })
+            }
+          })
+          .catch(() => {
+            /* ignore initial silent auto-refresh */
           })
       }
     }
@@ -710,7 +714,8 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
     try {
       const projectId = await requireStoredProject()
       const list = active.id === 'figma' ? await fetchFigmaTeams({ projectId }) : await fetchGithubOrgs({ projectId })
-      setGithubOrgs(list)
+      if (active.id === 'figma') setFigmaTeams(list)
+      else setGithubOrgs(list)
       patchItem(active.id, { availableOrganizations: list })
     } catch (err) {
       setError(err instanceof Error ? err.message : active.id === 'figma' ? 'Could not fetch Figma teams.' : 'Could not fetch GitHub organizations.')
@@ -766,8 +771,8 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
     if ((active.id === 'github' || active.id === 'figma') && !form.token.trim() && !active.connected) {
       setError(
         active.id === 'figma'
-          ? 'Paste a Figma personal access token, or use Connect with Figma.'
-          : 'Paste a GitHub personal access token, or use Connect with GitHub.',
+          ? 'Paste a Figma access token, or continue with Figma.'
+          : 'Paste a GitHub access token, or continue with GitHub.',
       )
       return
     }
@@ -811,8 +816,11 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
       const projName = selectedProjectName || result.projectName
       const finalProjects = result.projects && result.projects.length > 0 ? result.projects : projects
       const orgs = result.organizations || []
-      if ((active.id === 'github' || active.id === 'figma') && orgs.length > 0) {
+      if (active.id === 'github' && orgs.length > 0) {
         setGithubOrgs(orgs)
+      }
+      if (active.id === 'figma' && orgs.length > 0) {
+        setFigmaTeams(orgs)
       }
       if (active.id === 'figma' && finalProjects.length > 0) {
         setProjects(finalProjects)
@@ -873,98 +881,66 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
     <div className="screen screen-ref">
       <div className="screen-header">
         <h2>Integrations</h2>
-        <p>
-          Sign in to GitHub to create repositories, Atlassian for Jira tickets and Confluence docs, and Figma for
-          design files. Blink creates epics and stories after you clear the requirement wording on the next step.
+        <p>Connect GitHub, Atlassian, Figma, and Bitbucket.</p>
+      </div>
+
+      {error && !active && (
+        <p className="status-banner error" role="alert">
+          {error}
         </p>
-      </div>
+      )}
 
-      {error && !active && <p className="connect-error integrations-page-error">{error}</p>}
+      {(jiraPublish?.active || jiraPublish?.message) && (
+        <JiraPublishStatus
+          publish={jiraPublish}
+          jiraReady={isJiraReady(state)}
+          pendingCount={0}
+          projectKey={jiraConnection(state)?.projectKey}
+        />
+      )}
 
-      <JiraPublishStatus
-        publish={jiraPublish}
-        jiraReady={isJiraReady(state)}
-        pendingCount={pendingJiraTicketCount(state)}
-        projectKey={jiraConnection(state)?.projectKey}
-      />
-
-      <div className="integrations-layout">
-        <section className="card ref-card integrations-connect-panel">
-          <div className="integrations-panel-head">
-            <h3>Connected tools</h3>
-            <span className="integrations-count">{connectedCount} of {DISPLAY_CARDS.length}</span>
-          </div>
-          <ol className="connect-howto">
-            <li>Connect GitHub by signing in, or with a personal access token if the popup fails.</li>
-            <li>Connect Atlassian for Jira issues and Confluence documentation, then pick the Jira project for tickets.</li>
-            <li>Connect Figma by signing in, then pick a team (or paste a team URL).</li>
-            <li>Tickets are created after you answer the requirement questions on the next step.</li>
-            <li>
-              After you download the zip, put GitHub/Jira/Figma tokens in <code>automation_sdlc/.env.mcp</code>. Blink never
-              writes credentials into the workspace kit.
-            </li>
-          </ol>
-          <div className="integration-grid ref">
-            {DISPLAY_CARDS.map((card) => {
-              const providers = card.openId === 'jira' ? [jira, confluence] : [state.integrations.find((item) => item.id === card.openId)]
-              const primary = card.openId === 'jira' ? jira : state.integrations.find((item) => item.id === card.openId)
-              const connected = providers.some((item) => item?.connected)
-              const status =
-                card.openId === 'jira'
-                  ? [
-                      jira?.connected && jira.account
-                        ? `${jira.account}${jira.projectKey ? ` • ${jira.projectKey}` : ''}`
-                        : null,
-                      confluence?.connected ? 'Confluence' : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-                  : primary?.connected && primary.account
-                    ? `${primary.account}${primary.organization ? ` • ${primary.organization}` : ''}`
-                    : ''
-              return (
-                <article
-                  key={card.id}
-                  className={`integration-card ref ${connected ? 'connected' : ''}`}
-                  onClick={() => primary && openConnect(primary)}
-                >
-                  <IntegrationLogo id={card.id} label={card.label} />
-                  <div className="int-body">
-                    <strong>{card.label}</strong>
-                    <span className="int-purpose">{connected && status ? status : card.purpose}</span>
-                  </div>
-                  {connected ? (
-                    <div className="int-card-actions">
-                      <span className="connected-label">✓ Connected</span>
-                      <button
-                        type="button"
-                        className="text-btn"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (primary) openConnect(primary)
-                        }}
-                      >
-                        Manage
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="primary-btn int-connect-btn"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        if (primary) openConnect(primary)
-                      }}
-                    >
-                      Connect
-                    </button>
-                  )}
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      </div>
+      <section className="card ref-card integrations-connect-panel">
+        <div className="integration-grid ref">
+          {DISPLAY_CARDS.map((card) => {
+            const providers = card.openId === 'jira' ? [jira, confluence] : [state.integrations.find((item) => item.id === card.openId)]
+            const primary = card.openId === 'jira' ? jira : state.integrations.find((item) => item.id === card.openId)
+            const connected = providers.some((item) => item?.connected)
+            const status =
+              card.openId === 'jira'
+                ? [
+                    jira?.connected && jira.account
+                      ? `${jira.account}${jira.projectKey ? ` • ${jira.projectKey}` : ''}`
+                      : null,
+                    confluence?.connected ? 'Confluence' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : primary?.connected && primary.account
+                  ? `${primary.account}${primary.organization ? ` • ${primary.organization}` : ''}`
+                  : ''
+            return (
+              <article key={card.id} className={`integration-card ref ${connected ? 'connected' : ''}`}>
+                <IntegrationLogo id={card.id} label={card.label} />
+                <div className="int-body">
+                  <strong>{card.label}</strong>
+                  <span className="int-purpose">{card.purpose}</span>
+                  {connected && status ? <span className="int-account">{status}</span> : null}
+                </div>
+                <div className="int-card-actions">
+                  {connected ? <span className="connected-label">Connected</span> : null}
+                  <button
+                    type="button"
+                    className={connected ? 'secondary-btn' : 'primary-btn'}
+                    onClick={() => primary && openConnect(primary)}
+                  >
+                    {connected ? 'Manage' : 'Connect'}
+                  </button>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
 
       {active && guide && (
         <div
@@ -983,14 +959,14 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
             <header className="connect-modal-header">
               <div>
                 <h3 id="connect-title">
-                  <IntegrationLogo id={active.id} label={active.id === 'jira' || active.id === 'confluence' ? 'Atlassian' : active.label} />{' '}
+                  <IntegrationLogo id={active.id} label={active.id === 'jira' || active.id === 'confluence' ? 'Atlassian' : active.label} />
                   Connect {active.id === 'jira' || active.id === 'confluence' ? 'Atlassian' : active.label}
                 </h3>
                 <p>{purposeFor(active.id)}</p>
               </div>
               <button
                 type="button"
-                className="icon-btn"
+                className="icon-btn connect-close"
                 aria-label="Close"
                 disabled={saving || oauthLoading}
                 onClick={() => setActiveId(null)}
@@ -999,28 +975,23 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
               </button>
             </header>
 
-            {/* GitHub 1-Click OAuth */}
             {active.id === 'github' && !active.connected && (
-              <div className="jira-oauth-card github-oauth-card">
-                <div className="jira-oauth-header">
-                  <span className="jira-badge github-badge">Recommended</span>
+              <div className="oauth-card">
+                <div className="oauth-card-head">
                   <strong>Sign in with GitHub</strong>
                 </div>
-                <p className="jira-oauth-desc">
-                  Sign in with your GitHub account. Blink opens a sign-in window; if your browser blocks it, continue from the prompt below.
-                </p>
+                <p className="oauth-card-copy">Opens a GitHub window. If your browser blocks it, use the prompt below.</p>
                 <button
                   type="button"
                   className="oauth-btn github"
                   disabled={saving || oauthLoading}
                   onClick={() => void handleStartGithubOAuth()}
                 >
-                  <Sparkles size={14} />
-                  {oauthLoading ? 'Connecting to GitHub…' : 'Connect with GitHub'}
+                  {oauthLoading ? 'Connecting…' : 'Continue with GitHub'}
                 </button>
                 {oauthResume?.provider === 'github' && (
                   <div className="oauth-blocked">
-                    <p>Your browser blocked the GitHub sign-in window.</p>
+                    <p>Your browser blocked the GitHub window.</p>
                     <button type="button" className="oauth-btn github" onClick={handleResumeOauth}>
                       Continue with GitHub
                     </button>
@@ -1043,28 +1014,22 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
             )}
 
             {active.id === 'figma' && !active.connected && (
-              <div className="jira-oauth-card figma-oauth-card">
-                <div className="jira-oauth-header">
-                  <span className="jira-badge figma-badge">Recommended</span>
+              <div className="oauth-card">
+                <div className="oauth-card-head">
                   <strong>Sign in with Figma</strong>
                 </div>
-                <p className="jira-oauth-desc">
-                  Sign in with your Figma account. The Figma app must enable
-                  current_user:read, file_content:read, and file_metadata:read — extra
-                  requested scopes cause “Invalid scopes for app”. PAT fallback is below.
-                </p>
+                <p className="oauth-card-copy">Opens a Figma window. If your browser blocks it, use the prompt below.</p>
                 <button
                   type="button"
                   className="oauth-btn figma"
                   disabled={saving || oauthLoading}
                   onClick={() => void handleStartFigmaOAuth()}
                 >
-                  <Sparkles size={14} />
-                  {oauthLoading ? 'Connecting to Figma…' : 'Connect with Figma'}
+                  {oauthLoading ? 'Connecting…' : 'Continue with Figma'}
                 </button>
                 {oauthResume?.provider === 'figma' && (
                   <div className="oauth-blocked">
-                    <p>Your browser blocked the Figma sign-in window.</p>
+                    <p>Your browser blocked the Figma window.</p>
                     <button type="button" className="oauth-btn figma" onClick={handleResumeOauth}>
                       Continue with Figma
                     </button>
@@ -1086,28 +1051,23 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
               </div>
             )}
 
-            {/* Jira 1-Click OAuth Option */}
             {active.id === 'jira' && !active.connected && (
-              <div className="jira-oauth-card">
-                <div className="jira-oauth-header">
-                  <span className="jira-badge">Recommended</span>
-                  <strong>1-Click Atlassian OAuth (3LO)</strong>
+              <div className="oauth-card">
+                <div className="oauth-card-head">
+                  <strong>Sign in with Atlassian</strong>
                 </div>
-                <p className="jira-oauth-desc">
-                  Authorize Jira for tickets and the same Atlassian site for Confluence documentation.
-                </p>
+                <p className="oauth-card-copy">Connects Jira tickets and Confluence docs on the same site.</p>
                 <button
                   type="button"
                   className="oauth-btn"
                   disabled={saving || oauthLoading}
                   onClick={() => void handleStartOAuth()}
                 >
-                  <Sparkles size={14} />
-                  {oauthLoading ? 'Connecting to Atlassian…' : 'Connect with Atlassian'}
+                  {oauthLoading ? 'Connecting…' : 'Continue with Atlassian'}
                 </button>
                 {oauthResume?.provider === 'jira' && (
                   <div className="oauth-blocked">
-                    <p>Your browser blocked the Atlassian sign-in window.</p>
+                    <p>Your browser blocked the Atlassian window.</p>
                     <button type="button" className="oauth-btn" onClick={handleResumeOauth}>
                       Continue with Atlassian
                     </button>
@@ -1129,38 +1089,32 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
               </div>
             )}
 
-            {active.id === 'jira' && !active.connected && (
+            {(active.id === 'jira' || active.id === 'github' || active.id === 'figma') && !active.connected && (
               <div className="connect-divider">
-                <span>or connect with API token</span>
+                <span>or use an access token</span>
               </div>
             )}
 
-            {active.id === 'github' && !active.connected && (
-              <div className="connect-divider">
-                <span>or connect with a personal access token</span>
-              </div>
+            {active.id === 'bitbucket' && (
+              <ol className="connect-steps">
+                {guide.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
             )}
-
-            {active.id === 'figma' && !active.connected && (
-              <div className="connect-divider">
-                <span>or connect with a personal access token</span>
-              </div>
+            {!active.connected && (
+              <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
+                Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
+              </a>
             )}
-
-            <ol className="connect-steps">
-              {guide.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-            <a className="token-link" href={guide.tokenUrl} target="_blank" rel="noreferrer">
-              Create {guide.tokenLabel.toLowerCase()} <ExternalLink size={14} />
-            </a>
 
             <div className="connect-fields">
               {(active.id === 'github' || active.id === 'figma') && active.connected && (
                 <div className="field-group">
                   <div className="field-label-row">
-                    <label htmlFor="gh-org-select">{active.id === 'figma' ? 'Figma team' : 'GitHub destination'}</label>
+                    <label htmlFor={active.id === 'figma' ? 'figma-team-select' : 'gh-org-select'}>
+                      {active.id === 'figma' ? 'Figma team' : 'GitHub destination'}
+                    </label>
                     <button
                       type="button"
                       className="mini-btn"
@@ -1188,16 +1142,16 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
                     </select>
                   ) : (
                     <>
-                      {githubOrgs.length > 0 && (
+                      {figmaTeams.length > 0 && (
                         <select
-                          id="gh-org-select"
-                          value={githubOrgs.some((org) => org.login === form.organization) ? form.organization : ''}
+                          id="figma-team-select"
+                          value={figmaTeams.some((team) => team.login === form.organization) ? form.organization : ''}
                           onChange={(e) => handleOrgSelect(e.target.value)}
                         >
-                          <option value="">-- Choose Figma team --</option>
-                          {githubOrgs.map((org) => (
-                            <option key={org.login} value={org.login}>
-                              {org.name && org.name !== org.login ? `${org.name} (${org.login})` : org.name || org.login}
+                          <option value="">Choose a Figma team</option>
+                          {figmaTeams.map((team) => (
+                            <option key={team.login} value={team.login}>
+                              {team.name && team.name !== team.login ? `${team.name} (${team.login})` : team.name || team.login}
                             </option>
                           ))}
                         </select>
@@ -1210,15 +1164,15 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
                           setForm((prev) => ({ ...prev, organization: val }))
                           githubOrgRef.current = val
                         }}
-                        placeholder="or paste https://www.figma.com/files/team/123456/Name"
+                        placeholder="Or paste a Figma team URL"
                       />
                     </>
                   )}
                   <span className="field-hint">
                     {active.id === 'figma'
                       ? form.organization
-                        ? `Bound to Figma team ${form.organization}.`
-                        : 'Paste a team URL from the Figma file browser if the list is empty.'
+                        ? `Using Figma team ${form.organization}.`
+                        : 'Paste a team URL if the list is empty.'
                       : form.organization
                         ? `New repositories will be created in ${form.organization}.`
                         : 'New repositories will be created under your personal account.'}
@@ -1401,17 +1355,7 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
                   value={form.token}
                   onChange={(e) => setForm({ ...form, token: e.target.value })}
                   placeholder={
-                    active.id === 'github'
-                      ? active.connected
-                        ? 'Paste a new PAT to reconnect without OAuth'
-                        : 'Paste classic or fine-grained PAT'
-                      : active.id === 'figma'
-                        ? active.connected
-                          ? 'Paste a new Figma PAT to reconnect without OAuth'
-                          : 'Paste a Figma personal access token'
-                        : active.connected
-                          ? 'Enter a new token to reconnect'
-                          : 'Paste token'
+                    active.connected ? 'Paste a new token to reconnect' : 'Paste token'
                   }
                 />
               </div>

@@ -9,7 +9,6 @@ import {
   Folder,
   GitBranch,
   Loader2,
-  Rocket,
   ShieldCheck,
   Workflow,
 } from 'lucide-react'
@@ -350,14 +349,8 @@ export function ShipScreen({
   return (
     <div className="screen shape-screen ship-screen">
       <div className="screen-header">
-        <h2>
-          <Rocket size={22} style={{ verticalAlign: 'middle', marginRight: 8 }} />
-          Ship
-        </h2>
-        <p>
-          After G-PLAN, acknowledge G-BOOTSTRAP, create remotes, commit overlays, authorize, then{' '}
-          <code>/implement-step</code> and advisory <code>/qa-validation</code>. Nothing merges automatically.
-        </p>
+        <h2>Ship</h2>
+        <p>Create remotes and hand off the workspace.</p>
       </div>
 
       <ol className="ship-pipeline" aria-label="Ship progress">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, ShieldAlert, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { fetchStakeholderRoles } from '../api/blink'
 import {
   STAKEHOLDER_ROLES,
@@ -7,6 +7,7 @@ import {
   roleLabel,
   type StakeholderRoleDef,
 } from '../wizard/stakeholders'
+import { LOGIN_ALLOWED_DOMAIN } from '../auth/session'
 import { syncRepositoriesFromArtifact, type WizardState } from '../wizard/types'
 
 interface Props {
@@ -24,6 +25,20 @@ const DESC_COUNT_SHOW_AT = Math.floor(PROJECT_DESCRIPTION_MAX * 0.9)
 
 function slugify(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/_/g, '-')
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
+function avatarTone(name: string): number {
+  const seed = name.trim() || '?'
+  let hash = 0
+  for (let i = 0; i < seed.length; i += 1) hash = (hash + seed.charCodeAt(i)) % 6
+  return hash
 }
 
 function toRoleDef(role: StakeholderRoleDef): StakeholderRoleDef {
@@ -117,8 +132,8 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
         return {
           ...a,
           roleId: value,
-          personName: directory?.defaultName || a.personName,
-          personEmail: directory?.defaultEmail || a.personEmail,
+          personName: a.personName.trim() || directory?.defaultName || '',
+          personEmail: a.personEmail.trim() || directory?.defaultEmail || '',
         }
       }),
     })
@@ -162,47 +177,8 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
     <div className="screen screen-project">
       <div className="screen-header">
         <h2>Project & Stakeholders</h2>
-        <p>Name the project and add the stakeholders who should be in the loop.</p>
+        <p>Name the project and who should be in the loop.</p>
       </div>
-
-      {state.stakeholdersConfirmed ? (
-        <div className="sod-banner is-note" role="status">
-          <ShieldAlert size={18} aria-hidden />
-          <div>
-            <strong>Stakeholders confirmed</strong>
-            <p className="muted small" style={{ margin: 0 }}>
-              Freshness attestation recorded
-              {state.stakeholdersConfirmationDigest
-                ? ` · digest ${state.stakeholdersConfirmationDigest}`
-                : ''}
-              . This is not an approve-gate.
-            </p>
-          </div>
-        </div>
-      ) : null}
-      {state.governanceStatus === 'preparing' && (
-        <div className="sod-banner is-checking" role="status">
-          Checking separation of duties for this roster. You can continue — this finishes in the background.
-        </div>
-      )}
-      {state.governanceStatus === 'failed' && (
-        <div className="sod-banner is-failed" role="status">
-          Could not finish stakeholder checks. You can keep going; save this step again to retry.
-        </div>
-      )}
-      {state.sodWarnings && state.sodWarnings.length > 0 && (
-        <div className="sod-banner is-note" role="status">
-          <ShieldAlert size={18} aria-hidden />
-          <div>
-            <strong>Governance note</strong>
-            <ul>
-              {state.sodWarnings.map((w, idx) => (
-                <li key={idx}>{w}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
 
       <section className="card project-setup-card">
         <div className="field-group">
@@ -263,23 +239,36 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
           {state.stakeholderAssignments.length === 0 ? (
             <p className="stakeholder-empty">Add at least one stakeholder so Blink knows who to ask.</p>
           ) : (
-            <div className="stakeholder-roster" role="group" aria-labelledby="stakeholders-label">
-              <ul className="stakeholder-roster-list">
-                {state.stakeholderAssignments.map((row) => (
-                  <li key={row.id} className="stakeholder-roster-item">
+            <div className="stakeholder-grid" role="group" aria-labelledby="stakeholders-label">
+              {state.stakeholderAssignments.map((row) => (
+                <div key={row.id} className="stakeholder-grid-row">
+                  <span
+                    className={`stakeholder-avatar tone-${avatarTone(row.personName || roleLabel(row.roleId))}`}
+                    aria-hidden="true"
+                  >
+                    {initials(row.personName || roleLabel(row.roleId))}
+                  </span>
+                  <label className="stakeholder-cell">
+                    <span className="stakeholder-cell-label">Name</span>
                     <input
                       placeholder="Full name"
                       value={row.personName}
                       aria-label={`Name for ${roleLabel(row.roleId)}`}
                       onChange={(e) => updateRow(row.id, 'personName', e.target.value)}
                     />
+                  </label>
+                  <label className="stakeholder-cell">
+                    <span className="stakeholder-cell-label">Email</span>
                     <input
                       type="email"
-                      placeholder="email@example.com"
+                      placeholder={`name@${LOGIN_ALLOWED_DOMAIN}`}
                       value={row.personEmail}
                       aria-label={`Email for ${roleLabel(row.roleId)}`}
                       onChange={(e) => updateRow(row.id, 'personEmail', e.target.value)}
                     />
+                  </label>
+                  <label className="stakeholder-cell">
+                    <span className="stakeholder-cell-label">Role</span>
                     <select
                       value={row.roleId}
                       aria-label={`Role for ${row.personName || 'stakeholder'}`}
@@ -291,18 +280,18 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
                         </option>
                       ))}
                     </select>
-                    <button
-                      type="button"
-                      className="icon-btn stakeholder-remove"
-                      onClick={() => requestRemove(row.id)}
-                      title="Remove"
-                      aria-label={`Remove ${row.personName || roleLabel(row.roleId)}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-btn stakeholder-remove"
+                    onClick={() => requestRemove(row.id)}
+                    title="Remove"
+                    aria-label={`Remove ${row.personName || roleLabel(row.roleId)}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

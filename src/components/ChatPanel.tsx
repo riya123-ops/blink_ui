@@ -339,6 +339,9 @@ export function ChatPanel({ projectId, currentStep, onNavigate, open, onOpenChan
     <aside className="chat-panel" aria-label="Blink Chat">
       <header className="chat-panel-head">
         <div className="chat-panel-title">
+          <span className="chat-panel-icon" aria-hidden="true">
+            <MessageSquare size={15} />
+          </span>
           <strong>Blink Chat</strong>
         </div>
         <div className="chat-panel-actions">

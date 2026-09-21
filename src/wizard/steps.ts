@@ -100,7 +100,8 @@ export function canNavigateToStep(
 ): boolean {
   if (unrestricted) return stepIndex(target) >= 0
   if (target === 'welcome') return true
-  if (current === 'welcome') return target === 'welcome'
+  // Leaving welcome is only via Start (unrestricted / completedThrough), not sidebar nav.
+  if (current === 'welcome') return false
   const targetIdx = stepIndex(target)
   const currentIdx = stepIndex(current)
   if (targetIdx < 0) return false

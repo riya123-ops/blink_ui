@@ -7,13 +7,14 @@ export interface AuthSession {
   expiresAt: string
 }
 
-export function isTalentservEmail(value: string): boolean {
+export function isTalentservEmail(value: string, domain = LOGIN_ALLOWED_DOMAIN): boolean {
   const email = value.trim().toLowerCase()
   const at = email.lastIndexOf('@')
   if (at <= 0 || at !== email.indexOf('@')) return false
   const local = email.slice(0, at)
   const host = email.slice(at + 1)
-  return Boolean(local) && !local.includes(' ') && host === LOGIN_ALLOWED_DOMAIN
+  const allowed = (domain || LOGIN_ALLOWED_DOMAIN).trim().toLowerCase().replace(/^@/, '')
+  return Boolean(local) && !local.includes(' ') && host === allowed
 }
 
 export function loadAuthSession(): AuthSession | null {

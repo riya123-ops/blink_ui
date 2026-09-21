@@ -68,6 +68,8 @@ function isInternalAuthDetail(message: string): boolean {
   const lower = message.toLowerCase()
   return (
     lower.includes('smtp') ||
+    lower.includes('gmail') ||
+    lower.includes('oauth2.googleapis') ||
     lower.includes('port 587') ||
     lower.includes('port 465') ||
     lower.includes('office 365') ||

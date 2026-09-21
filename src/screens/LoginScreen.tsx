@@ -22,6 +22,7 @@ export function LoginScreen() {
   const [accessCode, setAccessCode] = useState('')
   const [gateRequired, setGateRequired] = useState(false)
   const [otpReveal, setOtpReveal] = useState(false)
+  const [allowedDomain, setAllowedDomain] = useState(LOGIN_ALLOWED_DOMAIN)
   const [step, setStep] = useState<'email' | 'otp'>('email')
   const [notice, setNotice] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null)
   const [issuedOtp, setIssuedOtp] = useState<string | null>(null)
@@ -34,6 +35,9 @@ export function LoginScreen() {
       .then((config) => {
         setGateRequired(config.gateRequired)
         setOtpReveal(Boolean(config.otpReveal))
+        if (config.allowedDomain?.trim()) {
+          setAllowedDomain(config.allowedDomain.trim().replace(/^@/, ''))
+        }
       })
       .catch(() => {
         setGateRequired(false)
@@ -56,10 +60,10 @@ export function LoginScreen() {
 
   const sendCode = async () => {
     const trimmed = email.trim()
-    if (!isTalentservEmail(trimmed)) {
+    if (!isTalentservEmail(trimmed, allowedDomain)) {
       setNotice({
         type: 'error',
-        message: `Enter a work email at @${LOGIN_ALLOWED_DOMAIN}.`,
+        message: `Enter a work email at @${allowedDomain}.`,
       })
       return
     }
@@ -143,8 +147,8 @@ export function LoginScreen() {
               {step === 'otp'
                 ? publicOtpSentMessage(email, showDeveloperCode)
                 : gateRequired
-                  ? `Enter your @${LOGIN_ALLOWED_DOMAIN} email and access code.`
-                  : `We'll send a 6-digit code to your @${LOGIN_ALLOWED_DOMAIN} inbox.`}
+                  ? `Enter your @${allowedDomain} email and access code.`
+                  : `We'll send a 6-digit code to your @${allowedDomain} inbox.`}
             </p>
           </div>
 
@@ -185,7 +189,7 @@ export function LoginScreen() {
                 type="email"
                 autoComplete="email"
                 inputMode="email"
-                placeholder={`you@${LOGIN_ALLOWED_DOMAIN}`}
+                placeholder={`you@${allowedDomain}`}
                 value={email}
                 disabled={sending || verifying || emailLocked}
                 onChange={(event) => setEmail(event.target.value)}

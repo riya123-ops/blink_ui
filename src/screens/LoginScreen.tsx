@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, ShieldCheck } from 'lucide-react'
 import {
   fetchLoginConfig,
@@ -118,6 +118,14 @@ export function LoginScreen() {
 
   const emailLocked = step === 'otp'
   const showDeveloperCode = Boolean(issuedOtp)
+  const otpInputRef = useRef<HTMLInputElement>(null)
+  const loginBodyRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (step !== 'otp') return
+    loginBodyRef.current?.scrollTo({ top: 0 })
+    otpInputRef.current?.focus({ preventScroll: true })
+  }, [step])
 
   return (
     <div className="app-shell welcome-mode">
@@ -125,7 +133,8 @@ export function LoginScreen() {
       <div className="login-page">
         <AppHeader />
 
-        <div className="welcome-body">
+        <div className="welcome-body" ref={loginBodyRef}>
+          <div className="login-stack">
           <div className="welcome-headline">
             <h1>
               Sign in to <span className="gradient-text">Blink</span>
@@ -203,6 +212,7 @@ export function LoginScreen() {
                 <label htmlFor="login-otp">6-digit code</label>
                 <input
                   id="login-otp"
+                  ref={otpInputRef}
                   className="login-otp-input"
                   type="text"
                   inputMode="numeric"
@@ -212,7 +222,6 @@ export function LoginScreen() {
                   placeholder="000000"
                   value={otp}
                   disabled={verifying}
-                  autoFocus
                   onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
                 />
               </div>
@@ -242,6 +251,7 @@ export function LoginScreen() {
               </div>
             )}
           </form>
+          </div>
         </div>
 
         <footer className="welcome-footer">

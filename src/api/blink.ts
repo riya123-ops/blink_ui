@@ -2,6 +2,7 @@ import { sanitizeDownloadStructure } from '../wizard/defaults'
 import type { ProductScopeData, WizardState } from '../wizard/types'
 import { stripExcludedZipFolders } from './stripZipFolders'
 import { loadAuthSession } from '../auth/session'
+import { isDesktopApp } from '../desktop'
 
 export interface StakeholderRoleDto {
   roleCode: string
@@ -85,11 +86,27 @@ function authHeaders(json = false): HeadersInit {
   return headers
 }
 
-/** API base. In `npm run dev`, `.env.development` can point at Render or `/api` (Vite proxy). */
-const DEFAULT_API_URL = 'https://blink-backend-af7x.onrender.com/api'
+/** Hosted API. The desktop shell always uses this; browser dev may proxy `/api` locally. */
+const HOSTED_API_URL = 'https://blink-backend-af7x.onrender.com/api'
+
+function configuredApiBase(): string {
+  return (import.meta.env.VITE_API_URL ?? HOSTED_API_URL).replace(/\/$/, '')
+}
+
+function isLocalBase(base: string): boolean {
+  return base.startsWith('/') || /localhost|127\.0\.0\.1/.test(base)
+}
+
+/** Desktop talks to the hosted API. A relative `/api` value is only the Vite local proxy. */
+function apiBase(): string {
+  const configured = configuredApiBase()
+  const desktop = Boolean(import.meta.env.TAURI_ENV_PLATFORM) || isDesktopApp()
+  if (desktop && isLocalBase(configured)) return HOSTED_API_URL
+  return configured
+}
 
 export function apiUrl(path: string): string {
-  let base = (import.meta.env.VITE_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
+  let base = apiBase()
   if (/^https?:\/\//.test(base) && !base.endsWith('/api')) {
     base = `${base}/api`
   }
@@ -141,8 +158,7 @@ export function canonicalizeOAuthCallback(url: string): string {
 }
 
 function isLocalApi(): boolean {
-  const base = (import.meta.env.VITE_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
-  return base.startsWith('/') || /localhost|127\.0\.0\.1/.test(base)
+  return isLocalBase(apiBase())
 }
 
 function normalizeGroomQuestions(value: unknown): GroomQuestionDto[] {

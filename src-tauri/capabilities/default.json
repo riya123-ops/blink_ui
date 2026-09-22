@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default window permissions for the Blink desktop shell.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-webview-show",
+    "core:webview:allow-set-webview-focus"
+  ]
+}

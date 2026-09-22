@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { LogOut } from 'lucide-react'
+import { Code2, LogOut } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
+import { useDeveloperMode } from '../developer/DeveloperModeContext'
+import { openDeveloperPopup } from '../developer/window'
 
 function initialsFromEmail(email: string): string {
   const local = email.split('@')[0] || email
@@ -11,6 +13,7 @@ function initialsFromEmail(email: string): string {
 
 export function SessionControls({ compact = false }: { compact?: boolean }) {
   const { session, signOut } = useAuth()
+  const { state: developerState } = useDeveloperMode()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -49,6 +52,17 @@ export function SessionControls({ compact = false }: { compact?: boolean }) {
         <div className="header-session-menu" role="menu">
           <p className="header-session-menu-label">Signed in</p>
           <p className="header-session-menu-email">{session.email}</p>
+          <button
+            type="button"
+            role="menuitem"
+            className={`header-session-menu-dev${developerState.enabled ? ' is-on' : ''}`}
+            onClick={() => {
+              setOpen(false)
+              openDeveloperPopup()
+            }}
+          >
+            <Code2 size={14} /> Developer tools
+          </button>
           <button type="button" role="menuitem" className="header-session-menu-signout" onClick={signOut}>
             <LogOut size={14} /> Sign out
           </button>

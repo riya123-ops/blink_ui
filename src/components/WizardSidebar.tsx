@@ -312,22 +312,20 @@ export function WizardSidebar({
         </nav>
       ) : null}
 
-      {developerState.enabled ? (
-        <div className="account-float is-collapsed">
-          <div className="account-float-collapsed">
-            <button
-              type="button"
-              className={sidebarOpen ? 'account-float-dev is-on' : 'account-dev-btn is-on'}
-              onClick={() => openDeveloperPopup()}
-              title="Developer tools (Ctrl+Shift+D)"
-              aria-label="Open developer tools"
-            >
-              <Code2 size={14} strokeWidth={2.25} />
-              {sidebarOpen ? <span>Developer tools</span> : null}
-            </button>
-          </div>
+      <div className="account-float is-collapsed">
+        <div className="account-float-collapsed">
+          <button
+            type="button"
+            className={`${sidebarOpen ? 'account-float-dev' : 'account-dev-btn'}${developerState.enabled ? ' is-on' : ''}`}
+            onClick={() => openDeveloperPopup()}
+            title="Developer tools (Ctrl+Shift+D)"
+            aria-label="Open developer tools"
+          >
+            <Code2 size={14} strokeWidth={2.25} />
+            {sidebarOpen ? <span>Developer tools</span> : null}
+          </button>
         </div>
-      ) : null}
+      </div>
 
       <div
         className="sidebar-resize-handle"

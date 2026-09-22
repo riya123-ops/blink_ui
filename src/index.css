@@ -6015,6 +6015,7 @@ textarea::placeholder {
   overflow-wrap: anywhere;
 }
 
+.header-session-menu-dev,
 .header-session-menu-signout {
   display: inline-flex;
   align-items: center;
@@ -6032,7 +6033,18 @@ textarea::placeholder {
   cursor: pointer;
 }
 
-.header-session-menu-signout:hover {
+.header-session-menu-dev {
+  margin-bottom: 0.45rem;
+}
+
+.header-session-menu-dev.is-on {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+}
+
+.header-session-menu-signout:hover,
+.header-session-menu-dev:hover {
   background: rgba(37, 99, 235, 0.06);
   border-color: rgba(37, 99, 235, 0.28);
   color: var(--primary);

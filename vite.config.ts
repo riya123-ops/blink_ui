@@ -66,10 +66,18 @@ function apiFallbackProxy(): Plugin {
   }
 }
 
+const desktopDev = Boolean(process.env.TAURI_ENV_PLATFORM)
+
 export default defineConfig({
-  plugins: [react(), apiFallbackProxy()],
+  plugins: [react(), ...(desktopDev ? [] : [apiFallbackProxy()])],
+  clearScreen: false,
+  envPrefix: ['VITE_', 'TAURI_ENV_'],
   server: {
-    host: true,
+    host: desktopDev ? 'localhost' : true,
     port: 5173,
+    strictPort: desktopDev,
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
 })

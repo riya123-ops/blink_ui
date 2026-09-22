@@ -1,4 +1,4 @@
-/** Auto-start helpers for Clarify, Tickets, and late Jira create. */
+/** Auto-start helpers for Clarify and local ticket planning. Jira create is explicit. */
 
 export function shouldAutoStartClarify(input: {
   hasPaste: boolean
@@ -26,18 +26,6 @@ export function shouldAutoStartTickets(input: {
 
 export function isConnectFirstJiraError(message: string | null | undefined): boolean {
   return /connect atlassian/i.test(message || '')
-}
-
-export function shouldAutoCreateJira(input: {
-  jiraReady: boolean
-  pendingCount: number
-  failed: boolean
-  failedMessage?: string | null
-}): boolean {
-  if (!input.jiraReady) return false
-  if (input.pendingCount <= 0) return false
-  if (input.failed && !isConnectFirstJiraError(input.failedMessage)) return false
-  return true
 }
 
 export type JiraPublishState = {

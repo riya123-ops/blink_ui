@@ -1,24 +1,77 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ExternalLink, Layers, Loader2, RefreshCw, Ticket } from 'lucide-react'
+import { CheckCircle2, ChevronRight, ExternalLink, Layers, Loader2, RefreshCw, Ticket, Trash2 } from 'lucide-react'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { deleteJiraIssues } from '../api/blink'
 import type { JiraCreatedIssue, WizardState } from '../wizard/types'
 import {
   beginJiraCreate,
+  createdTicketsOnScreen,
   createJiraIssuesFromState,
+  dropJiraCreatedIssues,
   endJiraCreate,
+  idsForEpicRemoval,
   isJiraReady,
   jiraConnection,
+  jiraKeysCreatedOnScreen,
   markTicketsPipelineBusy,
   mergeJiraCreatedIssues,
   pendingJiraTicketCount,
   planScopeFromWording,
+  removePlannedTickets,
 } from '../wizard/jiraTickets'
-import { shouldAutoCreateJira, shouldAutoStartTickets, type JiraPublishState } from '../wizard/thinking'
+import { shouldAutoStartTickets, type JiraPublishState } from '../wizard/thinking'
 
 interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
   sourceText: string
   jiraPublish?: JiraPublishState | null
+}
+
+type PendingDelete =
+  | { kind: 'item'; itemKind: 'epic' | 'story'; sourceId: string }
+  | { kind: 'all' }
+
+function deleteDialogCopy(
+  pending: PendingDelete,
+  createdBySource: Map<string, JiraCreatedIssue>,
+  ticketCount: number,
+): { title: string; copy: string; confirmLabel: string } {
+  if (pending.kind === 'all') {
+    return {
+      title: 'Delete tickets?',
+      copy: `Delete ${ticketCount} ticket${ticketCount === 1 ? '' : 's'} created on this screen from Jira? Other Jira issues are not deleted.`,
+      confirmLabel: 'Delete',
+    }
+  }
+  const created = createdBySource.get(pending.sourceId)
+  const inJira = created?.status === 'created' && created.jiraKey
+  if (pending.itemKind === 'epic') {
+    if (inJira) {
+      return {
+        title: 'Delete epic?',
+        copy: `Delete ${created.jiraKey} and its stories from this screen in Jira? Other Jira issues are not deleted.`,
+        confirmLabel: 'Delete',
+      }
+    }
+    return {
+      title: 'Remove epic?',
+      copy: 'Remove this epic and its stories from the plan? They will not be created in Jira.',
+      confirmLabel: 'Remove',
+    }
+  }
+  if (inJira) {
+    return {
+      title: 'Delete story?',
+      copy: `Delete ${created.jiraKey} from Jira? Other Jira issues are not deleted.`,
+      confirmLabel: 'Delete',
+    }
+  }
+  return {
+    title: 'Remove story?',
+    copy: 'Remove this story from the plan? It will not be created in Jira.',
+    confirmLabel: 'Remove',
+  }
 }
 
 function jiraBrowseUrl(
@@ -103,8 +156,8 @@ export function JiraPublishStatus({
     return (
       <div className="jira-publish-status" role="status">
         <span>
-          {pendingCount} draft ticket{pendingCount === 1 ? '' : 's'} ready. Connect Atlassian and pick a Jira project —
-          Blink will create them and show progress here.
+          {pendingCount} draft ticket{pendingCount === 1 ? '' : 's'} ready. Connect Atlassian, pick a Jira project,
+          then click Create in Jira.
         </span>
       </div>
     )
@@ -125,6 +178,9 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
   const [scopeError, setScopeError] = useState<string | null>(null)
   const [creatingIssues, setCreatingIssues] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [expandedEpicIds, setExpandedEpicIds] = useState<string[]>([])
 
   const planInFlight = useRef(false)
 
@@ -132,7 +188,8 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
   const epics = state.productScope?.epics || []
   const stories = state.productScope?.stories || []
   const jiraReady = isJiraReady(state)
-  const createdOk = (state.jiraCreatedIssues || []).filter((item) => item.status === 'created').length
+  const createdOnScreen = createdTicketsOnScreen(state)
+  const createdOk = createdOnScreen.length
   const pendingCount = pendingJiraTicketCount(state)
   const wording = sourceText.trim()
   const autoPlan = shouldAutoStartTickets({
@@ -140,13 +197,8 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     epicCount: epics.length,
     failed: Boolean(scopeError),
   })
-  const autoCreate = shouldAutoCreateJira({
-    jiraReady,
-    pendingCount,
-    failed: Boolean(createError),
-    failedMessage: createError,
-  })
   const ticketsBusy = planningScope || creatingIssues || autoPlan || Boolean(jiraPublish?.active)
+  const deleteBusy = deletingId !== null
 
   const createdBySource = useMemo(() => {
     const map = new Map<string, JiraCreatedIssue>()
@@ -220,6 +272,90 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     }
   }, [createdBySource, epics, onUpdate, state, stories])
 
+  const applyLocalRemoval = useCallback(
+    (sourceIds: string[], opts?: { keepOrphanStories?: boolean }) => {
+      const nextScope = removePlannedTickets(state.productScope, sourceIds, opts)
+      onUpdate({
+        productScope: nextScope,
+        jiraCreatedIssues: dropJiraCreatedIssues(state.jiraCreatedIssues, sourceIds),
+      })
+    },
+    [onUpdate, state.jiraCreatedIssues, state.productScope],
+  )
+
+  const runDeleteItem = useCallback(
+    async (kind: 'epic' | 'story', sourceId: string) => {
+      const sourceIds = kind === 'epic' ? idsForEpicRemoval(state.productScope, sourceId) : [sourceId]
+      const createdKeys = sourceIds
+        .map((id) => createdBySource.get(id))
+        .filter((item) => item?.status === 'created' && item.jiraKey)
+        .map((item) => item!.jiraKey as string)
+      const label = kind === 'epic' ? 'epic' : 'story'
+      setDeletingId(sourceId)
+      setCreateError(null)
+      try {
+        if (createdKeys.length > 0 && state.projectId) {
+          const result = await deleteJiraIssues({ projectId: state.projectId, issueKeys: createdKeys })
+          if ((result.deleted || 0) === 0 && (result.errors || []).length > 0) {
+            throw new Error(result.errors.join(' '))
+          }
+          if ((result.errors || []).length > 0) {
+            setCreateError(result.errors.join(' '))
+          }
+        }
+        applyLocalRemoval(sourceIds)
+      } catch (err) {
+        setCreateError(err instanceof Error ? err.message : `Could not delete the ${label}.`)
+      } finally {
+        setDeletingId(null)
+      }
+    },
+    [applyLocalRemoval, createdBySource, state.productScope, state.projectId],
+  )
+
+  const runDeleteAllInJira = useCallback(async () => {
+    const linked = createdTicketsOnScreen(state)
+    const issueKeys = jiraKeysCreatedOnScreen(state)
+    if (linked.length === 0 || issueKeys.length === 0 || !state.projectId) return
+    setDeletingId('*')
+    setCreateError(null)
+    try {
+      const result = await deleteJiraIssues({
+        projectId: state.projectId,
+        issueKeys,
+      })
+      if ((result.deleted || 0) === 0 && (result.errors || []).length > 0) {
+        throw new Error(result.errors.join(' '))
+      }
+      applyLocalRemoval(
+        linked.map((item) => item.sourceId).filter((id): id is string => Boolean(id)),
+        { keepOrphanStories: true },
+      )
+      if ((result.errors || []).length > 0) {
+        setCreateError(result.errors.join(' '))
+      }
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not delete Jira tickets.')
+    } finally {
+      setDeletingId(null)
+    }
+  }, [applyLocalRemoval, state])
+
+  const confirmPendingDelete = useCallback(() => {
+    const pending = pendingDelete
+    setPendingDelete(null)
+    if (!pending) return
+    if (pending.kind === 'all') {
+      void runDeleteAllInJira()
+      return
+    }
+    void runDeleteItem(pending.itemKind, pending.sourceId)
+  }, [pendingDelete, runDeleteAllInJira, runDeleteItem])
+
+  const toggleEpic = useCallback((epicId: string) => {
+    setExpandedEpicIds((ids) => (ids.includes(epicId) ? ids.filter((id) => id !== epicId) : [...ids, epicId]))
+  }, [])
+
   useEffect(() => {
     if (jiraReady && createError && /connect atlassian/i.test(createError)) {
       setCreateError(null)
@@ -231,30 +367,25 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     void runProductScope()
   }, [autoPlan, planningScope, runProductScope])
 
-  useEffect(() => {
-    if (!autoCreate || creatingIssues || planningScope || jiraPublish?.active) return
-    void handleCreateInJira()
-  }, [autoCreate, creatingIssues, planningScope, jiraPublish?.active, handleCreateInJira])
-
-  const canCreate = jiraReady && pendingCount > 0 && !creatingIssues && !planningScope && !jiraPublish?.active
+  const canCreate = jiraReady && pendingCount > 0 && !creatingIssues && !planningScope && !jiraPublish?.active && !deleteBusy
   const itemCount = epics.length + stories.length
   const alreadyCreated = createdOk > 0
+  const pendingCopy = pendingDelete
+    ? deleteDialogCopy(pendingDelete, createdBySource, createdOk)
+    : null
 
   return (
+    <>
     <section className="card ref-card jira-scope-panel">
       <div className="jira-scope-head">
-        <div>
-          <p className="jira-scope-kicker">Product scope</p>
-          <h3>Epics & stories for Jira</h3>
-          <p>
-            Blink proposes these tickets from your cleared requirement and starts as soon as you open Tickets. If you
-            connect Atlassian later, create progress is shown here and on Integrations.
-          </p>
+        <div className="req-section-head">
+          <h3>Epics for Jira</h3>
+          <p>Open an epic to review its stories, then create in Jira when you are ready.</p>
         </div>
         <button
           type="button"
-          className="mini-btn"
-          disabled={planningScope || !wording}
+          className="text-btn"
+          disabled={planningScope || !wording || deleteBusy}
           onClick={() => void runProductScope()}
         >
           {planningScope ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
@@ -316,18 +447,48 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
           {epics.map((epic) => {
             const childStories = stories.filter((story) => story.epicId === epic.id || epic.storyIds?.includes(story.id))
             const epicCreated = createdBySource.get(epic.id)
+            const canExpand = childStories.length > 0 || Boolean(epic.objective)
+            const open = canExpand && expandedEpicIds.includes(epic.id)
+            const storyLabel = `${childStories.length} ${childStories.length === 1 ? 'story' : 'stories'}`
             return (
               <article
                 key={epic.id}
-                className={`jira-epic-card${epicCreated?.status === 'created' ? ' is-linked' : ''}`}
+                className={`jira-epic-card${epicCreated?.status === 'created' ? ' is-linked' : ''}${open ? ' is-open' : ''}`}
               >
                 <header className="jira-row">
-                  <span className="jira-type epic">Epic</span>
-                  <strong className="jira-row-title">{epic.title}</strong>
+                  {canExpand ? (
+                    <button
+                      type="button"
+                      className="jira-epic-toggle"
+                      aria-expanded={open}
+                      aria-label={open ? `Hide stories for ${epic.title}` : `Show stories for ${epic.title}`}
+                      onClick={() => toggleEpic(epic.id)}
+                    >
+                      <ChevronRight size={16} className={open ? 'chevron open' : 'chevron'} aria-hidden />
+                      <span className="jira-type epic">Epic</span>
+                      <strong className="jira-row-title">{epic.title}</strong>
+                      {childStories.length > 0 ? <span className="jira-story-count">{storyLabel}</span> : null}
+                    </button>
+                  ) : (
+                    <div className="jira-epic-toggle is-static">
+                      <span className="jira-type epic">Epic</span>
+                      <strong className="jira-row-title">{epic.title}</strong>
+                    </div>
+                  )}
                   <TicketBadge created={epicCreated} baseUrl={jira?.baseUrl} />
+                  <button
+                    type="button"
+                    className="jira-delete-btn"
+                    disabled={ticketsBusy || deleteBusy}
+                    title={epicCreated?.jiraKey ? `Delete ${epicCreated.jiraKey} from Jira` : 'Remove this epic from the plan'}
+                    aria-label={epicCreated?.jiraKey ? `Delete epic ${epicCreated.jiraKey}` : `Remove epic ${epic.title}`}
+                    onClick={() => setPendingDelete({ kind: 'item', itemKind: 'epic', sourceId: epic.id })}
+                  >
+                    {deletingId === epic.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                  </button>
                 </header>
-                {epic.objective && <p>{epic.objective}</p>}
-                {childStories.length > 0 && (
+                {open && epic.objective ? <p>{epic.objective}</p> : null}
+                {open && childStories.length > 0 && (
                   <ul>
                     {childStories.map((story) => {
                       const storyCreated = createdBySource.get(story.id)
@@ -339,6 +500,16 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
                           <span className="jira-type story">Story</span>
                           <span className="jira-row-title">{story.title}</span>
                           <TicketBadge created={storyCreated} baseUrl={jira?.baseUrl} />
+                          <button
+                            type="button"
+                            className="jira-delete-btn"
+                            disabled={ticketsBusy || deleteBusy}
+                            title={storyCreated?.jiraKey ? `Delete ${storyCreated.jiraKey} from Jira` : 'Remove this story from the plan'}
+                            aria-label={storyCreated?.jiraKey ? `Delete story ${storyCreated.jiraKey}` : `Remove story ${story.title}`}
+                            onClick={() => setPendingDelete({ kind: 'item', itemKind: 'story', sourceId: story.id })}
+                          >
+                            {deletingId === story.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                          </button>
                         </li>
                       )
                     })}
@@ -352,31 +523,50 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
 
       {createError && <p className="connect-error">{createError}</p>}
 
-      {!autoCreate && (alreadyCreated || (epics.length > 0 && !ticketsBusy)) ? (
-        <div className="jira-scope-actions">
-          <button type="button" className="jira-create-btn" disabled={!canCreate} onClick={() => void handleCreateInJira()}>
+      {alreadyCreated || (epics.length > 0 && !ticketsBusy) ? (
+        <div className="card-footer-actions">
+          {createdOk > 0 && (
+            <button
+              type="button"
+              className="danger-btn"
+              title="Delete only the tickets created on this screen"
+              disabled={deleteBusy || creatingIssues || Boolean(jiraPublish?.active)}
+              onClick={() => setPendingDelete({ kind: 'all' })}
+            >
+              {deletingId === '*' ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+              Delete all in Jira
+            </button>
+          )}
+          {createdOk > 0 && (
+            <span className="quiet-hint">
+              <CheckCircle2 size={14} /> {createdOk} from this screen in {jira?.projectKey}
+            </span>
+          )}
+          <span className="action-spacer" />
+          <button type="button" className="primary-btn" disabled={!canCreate} onClick={() => void handleCreateInJira()}>
             {creatingIssues || jiraPublish?.active ? <Loader2 size={16} className="spin" /> : <Ticket size={16} />}
             {creatingIssues || jiraPublish?.active
               ? 'Creating in Jira…'
               : alreadyCreated
                 ? pendingCount > 0
                   ? `Create remaining ${pendingCount}`
-                  : `Recreate / sync ${itemCount || ''} item${itemCount === 1 ? '' : 's'}`
+                  : `All ${itemCount || ''} item${itemCount === 1 ? '' : 's'} are in Jira`
                 : `Create ${itemCount || ''} item${itemCount === 1 ? '' : 's'} in Jira`}
           </button>
-          {createdOk > 0 && (
-            <span className="jira-created-note">
-              <CheckCircle2 size={14} /> {createdOk} linked in {jira?.projectKey}
-            </span>
-          )}
-        </div>
-      ) : createdOk > 0 ? (
-        <div className="jira-scope-actions">
-          <span className="jira-created-note">
-            <CheckCircle2 size={14} /> {createdOk} linked in {jira?.projectKey}
-          </span>
         </div>
       ) : null}
     </section>
+    {pendingCopy && (
+      <ConfirmDialog
+        title={pendingCopy.title}
+        copy={pendingCopy.copy}
+        confirmLabel={pendingCopy.confirmLabel}
+        titleId="jira-delete-title"
+        copyId="jira-delete-copy"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmPendingDelete}
+      />
+    )}
+    </>
   )
 }

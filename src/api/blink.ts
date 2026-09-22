@@ -79,7 +79,10 @@ async function readError(response: Response): Promise<string> {
 
 function authHeaders(json = false): HeadersInit {
   const headers: Record<string, string> = {}
-  if (json) headers['Content-Type'] = 'application/json'
+  if (json) {
+    headers['Content-Type'] = 'application/json'
+    headers.Accept = 'application/json'
+  }
   const session = loadAuthSession()
   if (session?.token) headers.Authorization = `Bearer ${session.token}`
   return headers
@@ -343,6 +346,40 @@ export async function deleteBlinkJiraIssue(projectId: string, issueKey: string):
   const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
   if (!response.ok) throw new Error(await readError(response))
   return response.json() as Promise<BlinkJiraIssueDeleteDto>
+}
+
+export async function deleteJiraIssues(payload: {
+  projectId: string
+  issueKeys: string[]
+}): Promise<BlinkJiraIssueDeleteDto> {
+  const url = apiUrl('/integrations/jira/issues/delete')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      projectId: payload.projectId,
+      issueKeys: payload.issueKeys,
+    }),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const raw = (await response.json()) as BlinkJiraIssueDeleteDto & {
+    deletedCount?: number
+    skippedCount?: number
+    deleted?: number | string[]
+    skipped?: number | string[]
+  }
+  const deletedKeys = Array.isArray(raw.deletedKeys)
+    ? raw.deletedKeys
+    : Array.isArray(raw.deleted)
+      ? raw.deleted
+      : []
+  return {
+    deleted: typeof raw.deleted === 'number' ? raw.deleted : raw.deletedCount || deletedKeys.length,
+    skipped: typeof raw.skipped === 'number' ? raw.skipped : raw.skippedCount || 0,
+    deletedKeys,
+    skippedKeys: raw.skippedKeys || [],
+    errors: raw.errors || [],
+  }
 }
 
 export async function deleteAllBlinkJiraIssues(projectId: string): Promise<BlinkJiraIssueDeleteDto> {

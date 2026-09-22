@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, CloudUpload, FileText, X } from 'lucide-react'
+import { Check, ChevronDown, CloudUpload, FileText, X } from 'lucide-react'
 import type { WizardState, WizardStep } from '../wizard/types'
 import { GroomingPanel } from './GroomRequirementScreen'
 import { JiraScopePanel } from './JiraScopePanel'
@@ -82,6 +82,7 @@ export function RequirementsScreen({
   const zipInputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [wordingOpen, setWordingOpen] = useState(false)
   const hasUploadedFile = Boolean(state.requirementFileName)
   const hasPaste = Boolean(state.requirementsText.trim())
   const pasteLocked =
@@ -395,12 +396,25 @@ export function RequirementsScreen({
           {state.groomConfirmed || state.requirementFileName ? (
             <>
               {confirmedText ? (
-                <section className="card ref-card req-wording-card">
-                  <div className="req-section-head">
-                    <h3>Confirmed wording</h3>
-                    <p>This is the text Blink uses to plan epics and stories.</p>
-                  </div>
-                  <pre className="groom-draft">{confirmedText}</pre>
+                <section className={`card ref-card req-wording-card${wordingOpen ? ' is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className="groom-band-header"
+                    aria-expanded={wordingOpen}
+                    onClick={() => setWordingOpen((open) => !open)}
+                  >
+                    <div className="req-section-head">
+                      <h3>Confirmed wording</h3>
+                      <p>{wordingOpen ? 'Click to hide the saved requirement' : 'Click to view the saved requirement'}</p>
+                    </div>
+                    <span className="groom-band-meta">
+                      {wordingOpen ? 'Hide' : 'Show'}
+                      <span className="groom-band-chevron" aria-hidden>
+                        <ChevronDown size={16} className={wordingOpen ? 'chevron open' : 'chevron'} />
+                      </span>
+                    </span>
+                  </button>
+                  {wordingOpen ? <pre className="groom-draft">{confirmedText}</pre> : null}
                 </section>
               ) : (
                 <section className="card ref-card req-wording-card">

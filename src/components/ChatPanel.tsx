@@ -56,6 +56,12 @@ function suggestionsForStep(step: string): string[] {
       return ['How many repos do I need?', 'When are GitHub remotes created?', 'Should this be a monorepo?']
     case 'technology-per-repo':
       return ['What does setup review mean?', 'Why confirm each stack?', 'Does this affect the work plan?']
+    case 'inbox':
+      return [
+        'What is waiting for my approval?',
+        'What is ConfirmRisky?',
+        'Does attesting a PR merge it?',
+      ]
     default:
       return ['What should I do on this step?', 'Summarize my project so far', 'What is blocking me from continuing?']
   }

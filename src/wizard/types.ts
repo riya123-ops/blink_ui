@@ -37,6 +37,7 @@ export type WizardStep =
   | 'repositories'
   | 'technology-per-repo'
   | 'generation'
+  | 'inbox'
   /** Legacy ids remapped on resume. */
   | 'sdlc-scope'
   | 'sdlc-planning'

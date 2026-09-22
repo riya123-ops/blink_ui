@@ -5,6 +5,7 @@ import {
   FileText,
   GitBranch,
   Home,
+  Inbox,
   Layers,
   Link2,
   MessageSquare,
@@ -37,6 +38,7 @@ export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'technology-per-repo', label: 'Technology (Per Repository)', icon: Cpu, iconColor: '#2563eb' },
   { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
   { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
+  { id: 'inbox', label: 'Inbox', icon: Inbox, iconColor: '#7c3aed' },
 ]
 
 export const WIZARD_PHASES: PhaseDefinition[] = [
@@ -70,6 +72,11 @@ export const WIZARD_PHASES: PhaseDefinition[] = [
     label: 'Ship',
     stepIds: ['generation'],
   },
+  {
+    id: 'run',
+    label: 'Run',
+    stepIds: ['inbox'],
+  },
 ]
 
 export const STEP_ORDER = WIZARD_STEPS.map((s) => s.id)
@@ -100,7 +107,8 @@ export function canNavigateToStep(
 ): boolean {
   if (unrestricted) return stepIndex(target) >= 0
   if (target === 'welcome') return true
-  if (current === 'welcome') return target === 'welcome'
+  if (current === 'welcome') return false
+  if (target === 'inbox') return true
   const targetIdx = stepIndex(target)
   const currentIdx = stepIndex(current)
   if (targetIdx < 0) return false

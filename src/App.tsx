@@ -14,6 +14,7 @@ import {
   TechnologyPerRepoScreen,
 } from './screens/ExtendedScreens'
 import { ShipScreen } from './screens/ShipScreen'
+import { SdlcInboxScreen } from './screens/SdlcInboxScreen'
 import {
   ProjectStakeholdersScreen,
   validateProjectStakeholders,
@@ -2161,11 +2162,35 @@ export default function App() {
             }}
           />
         )
+      case 'inbox':
+        return (
+          <SdlcInboxScreen
+            projectId={state.projectId}
+            requirementText={
+              state.groomDraft?.trim()
+              || state.requirementsText?.trim()
+              || state.productScope?.markdown?.trim()
+              || state.description?.trim()
+              || ''
+            }
+            questions={state.questions}
+            responses={state.responses}
+            onAnswerQuestion={(questionId, text) => handleUpdateResponse(questionId, {
+              status: 'answered',
+              response: text,
+              source: 'manual',
+            })}
+            onNavigate={(s) => {
+              setStatus(null)
+              goToStep(s)
+            }}
+          />
+        )
     }
   }
 
   const showBack = step !== 'welcome'
-  const showNext = step !== 'welcome' && step !== 'generation'
+  const showNext = step !== 'welcome' && step !== 'inbox'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = false
   const generationIdx = stepIndex('generation')

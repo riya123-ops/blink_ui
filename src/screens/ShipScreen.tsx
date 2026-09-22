@@ -355,10 +355,18 @@ export function ShipScreen({
           Ship
         </h2>
         <p>
-          After G-PLAN, acknowledge G-BOOTSTRAP, create remotes, commit overlays, authorize, then{' '}
-          <code>/implement-step</code> and advisory <code>/qa-validation</code>. Nothing merges automatically.
+          Overlay the kit onto GitHub, then run hosted <code>/implement-step</code>. Human gates,
+          ConfirmRisky pauses, and merge attestation live in Inbox. Nothing merges automatically.
         </p>
       </div>
+
+      {onNavigate ? (
+        <div className="ship-actions">
+          <button type="button" className="secondary-btn" onClick={() => onNavigate('inbox')}>
+            Open Inbox
+          </button>
+        </div>
+      ) : null}
 
       <ol className="ship-pipeline" aria-label="Ship progress">
         {pipeline.map((step, index) => (

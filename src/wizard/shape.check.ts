@@ -17,6 +17,7 @@ assert.deepEqual(
   STEP_ORDER.slice(STEP_ORDER.indexOf('stakeholder-qa'), STEP_ORDER.indexOf('generation') + 1),
   ['stakeholder-qa', 'project-shape', 'repositories', 'technology-per-repo', 'sdlc-plan', 'generation'],
 )
+assert.equal(STEP_ORDER[STEP_ORDER.indexOf('generation') + 1], 'inbox')
 assert.equal(STEP_ORDER.includes('sdlc-scope'), false)
 assert.equal(STEP_ORDER.indexOf('requirements') + 1, STEP_ORDER.indexOf('stakeholder-qa'))
 

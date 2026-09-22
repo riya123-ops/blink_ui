@@ -6,7 +6,7 @@ import {
   type CreateJiraIssuesPayload,
   type JiraCreatedIssueResult,
 } from '../api/blink'
-import type { JiraCreatedIssue, WizardState } from './types'
+import type { JiraCreatedIssue, ProductScopeData, WizardState } from './types'
 
 let ticketsPipelineBusy = false
 let jiraCreateBusy = false
@@ -77,6 +77,82 @@ export function mergeJiraCreatedIssues(
     })
   }
   return [...map.values()]
+}
+
+export function dropJiraCreatedIssues(
+  current: JiraCreatedIssue[] | undefined,
+  sourceIds: string[],
+): JiraCreatedIssue[] {
+  const drop = new Set(sourceIds)
+  return (current || []).filter((item) => !item.sourceId || !drop.has(item.sourceId))
+}
+
+/** Tickets created in Jira for epics/stories currently listed on the product-scope screen. */
+export function createdTicketsOnScreen(state: WizardState): JiraCreatedIssue[] {
+  const onScreen = new Set([
+    ...(state.productScope?.epics || []).map((item) => item.id),
+    ...(state.productScope?.stories || []).map((item) => item.id),
+  ])
+  return (state.jiraCreatedIssues || []).filter(
+    (item) =>
+      item.status === 'created' &&
+      Boolean(item.jiraKey) &&
+      Boolean(item.sourceId) &&
+      onScreen.has(item.sourceId as string),
+  )
+}
+
+/** Jira keys for this screen only — stories first so epics are not deleted while their children remain. */
+export function jiraKeysCreatedOnScreen(state: WizardState): string[] {
+  const created = createdTicketsOnScreen(state)
+  const epicIds = new Set((state.productScope?.epics || []).map((item) => item.id))
+  const stories = created.filter((item) => !epicIds.has(item.sourceId as string))
+  const epics = created.filter((item) => epicIds.has(item.sourceId as string))
+  return [...stories, ...epics].map((item) => item.jiraKey as string)
+}
+
+export function idsForEpicRemoval(scope: ProductScopeData | null | undefined, epicId: string): string[] {
+  const epic = scope?.epics?.find((item) => item.id === epicId)
+  const childIds = (scope?.stories || [])
+    .filter((story) => story.epicId === epicId || epic?.storyIds?.includes(story.id))
+    .map((story) => story.id)
+  return [epicId, ...childIds]
+}
+
+export function removePlannedTickets(
+  scope: ProductScopeData | null | undefined,
+  sourceIds: string[],
+  opts?: { keepOrphanStories?: boolean },
+): ProductScopeData | null {
+  if (!scope) return null
+  const drop = new Set(sourceIds)
+  const epics = (scope.epics || [])
+    .filter((epic) => !drop.has(epic.id))
+    .map((epic) => ({
+      ...epic,
+      storyIds: epic.storyIds?.filter((id) => !drop.has(id)),
+    }))
+  const remainingEpicIds = new Set(epics.map((epic) => epic.id))
+  const stories = (scope.stories || [])
+    .filter((story) => {
+      if (drop.has(story.id)) return false
+      if (opts?.keepOrphanStories) return true
+      return !story.epicId || !drop.has(story.epicId)
+    })
+    .map((story) => {
+      if (!opts?.keepOrphanStories) return story
+      if (story.epicId && !remainingEpicIds.has(story.epicId)) {
+        return { ...story, epicId: undefined }
+      }
+      return story
+    })
+  return {
+    ...scope,
+    epics,
+    stories,
+    epicIds: epics.map((epic) => epic.id),
+    storyIds: stories.map((story) => story.id),
+  }
 }
 
 export function toCreateJiraPayload(

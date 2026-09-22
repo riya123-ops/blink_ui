@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { fetchStakeholderRoles } from '../api/blink'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import {
   STAKEHOLDER_ROLES,
   assignmentsFromRoles,
@@ -102,15 +103,6 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
       cancelled = true
     }
   }, [onUpdate])
-
-  useEffect(() => {
-    if (!removeTarget) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setRemoveTarget(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [removeTarget])
 
   const updateField = <K extends keyof WizardState>(key: K, value: WizardState[K]) => {
     let patch: Partial<WizardState> = { [key]: value }
@@ -298,29 +290,15 @@ export function ProjectStakeholdersScreen({ state, onUpdate }: Props) {
       </section>
 
       {removeTarget && (
-        <div className="modal-backdrop" onClick={() => setRemoveTarget(null)}>
-          <div
-            className="confirm-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="remove-stakeholder-title"
-            aria-describedby="remove-stakeholder-copy"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3 id="remove-stakeholder-title">Remove stakeholder?</h3>
-            <p id="remove-stakeholder-copy">
-              Remove {removeTarget.label} from this project? You can add them again later.
-            </p>
-            <div className="confirm-dialog-actions">
-              <button type="button" className="secondary-btn" autoFocus onClick={() => setRemoveTarget(null)}>
-                Cancel
-              </button>
-              <button type="button" className="danger-btn" onClick={confirmRemove}>
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Remove stakeholder?"
+          copy={`Remove ${removeTarget.label} from this project? You can add them again later.`}
+          confirmLabel="Remove"
+          titleId="remove-stakeholder-title"
+          copyId="remove-stakeholder-copy"
+          onCancel={() => setRemoveTarget(null)}
+          onConfirm={confirmRemove}
+        />
       )}
     </div>
   )

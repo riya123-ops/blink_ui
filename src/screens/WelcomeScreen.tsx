@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react'
 import { AppHeader } from '../components/AppHeader'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { SessionControls } from '../components/SessionControls'
 import type { WizardState } from '../wizard/types'
 
@@ -114,34 +115,18 @@ export function WelcomeScreen({ resume, onContinue, onResume, onStartNew }: Prop
       </footer>
 
       {confirmStartOver && (
-        <div className="modal-backdrop" onClick={() => setConfirmStartOver(false)}>
-          <div
-            className="confirm-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="start-over-title"
-            aria-describedby="start-over-copy"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3 id="start-over-title">Start over?</h3>
-            <p id="start-over-copy">This leaves the current draft and starts a new project.</p>
-            <div className="confirm-dialog-actions">
-              <button type="button" className="secondary-btn" autoFocus onClick={() => setConfirmStartOver(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="danger-btn"
-                onClick={() => {
-                  setConfirmStartOver(false)
-                  onStartNew()
-                }}
-              >
-                Start over
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Start over?"
+          copy="This leaves the current draft and starts a new project."
+          confirmLabel="Start over"
+          titleId="start-over-title"
+          copyId="start-over-copy"
+          onCancel={() => setConfirmStartOver(false)}
+          onConfirm={() => {
+            setConfirmStartOver(false)
+            onStartNew()
+          }}
+        />
       )}
     </div>
   )

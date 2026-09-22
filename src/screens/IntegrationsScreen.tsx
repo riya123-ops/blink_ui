@@ -1404,6 +1404,16 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
                         : 'Connect'}
                 </button>
               ) : null}
+              {active.id === 'jira' && active.connected && (
+                <button
+                  type="button"
+                  className="oauth-btn"
+                  disabled={saving || oauthLoading}
+                  onClick={() => void handleStartOAuth()}
+                >
+                  {oauthLoading ? 'Reconnecting…' : 'Reconnect with Atlassian'}
+                </button>
+              )}
               {active.id === 'github' && active.connected && (
                 <button
                   type="button"

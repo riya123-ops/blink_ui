@@ -248,7 +248,9 @@ function Band({
         </span>
         <span className="groom-band-meta">
           {resolved}/{questions.length} resolved
-          <ChevronDown size={16} className={open ? 'chevron open' : 'chevron'} />
+          <span className="groom-band-chevron" aria-hidden>
+            <ChevronDown size={16} className={open ? 'chevron open' : 'chevron'} />
+          </span>
         </span>
       </button>
       {open && (
@@ -297,11 +299,12 @@ export function GroomingPanel({
     isResolvedForWording(question, state.groomAnswers),
   ).length
   const canSave = missingRequired.length === 0 || state.groomStatus === 'error'
+  const [wordingOpen, setWordingOpen] = useState(false)
 
   return (
     <div className="groom-panel">
       <div className="groom-panel-intro">
-        <div>
+        <div className="req-section-head">
           <h3>Make it clearer</h3>
           <p>Answer required questions, or mark Jira later to follow up after tickets exist.</p>
         </div>
@@ -334,25 +337,52 @@ export function GroomingPanel({
       ))}
 
       {showDraft && (
-        <div className="groom-compare">
-          {state.groomOriginal && state.groomOriginal !== state.groomDraft && (
-            <div>
-              <h4>Before</h4>
-              <pre className="groom-draft">{state.groomOriginal}</pre>
+        <section className={`groom-band${wordingOpen ? ' open' : ''}`}>
+          <button
+            type="button"
+            className="groom-band-header"
+            aria-expanded={wordingOpen}
+            onClick={() => setWordingOpen((open) => !open)}
+          >
+            <div className="req-section-head">
+              <h3>{state.groomConfirmed ? 'Confirmed wording' : 'Clearer wording'}</h3>
+              <p>
+                {wordingOpen
+                  ? 'Click to hide the requirement text'
+                  : 'Click to view the requirement text'}
+              </p>
             </div>
-          )}
-          <div>
-            <h4>Clearer wording</h4>
-            <pre className="groom-draft">{state.groomDraft}</pre>
-          </div>
-        </div>
+            <span className="groom-band-meta">
+              {state.groomConfirmed ? 'Saved' : 'Draft'}
+              {wordingOpen ? 'Hide' : 'Show'}
+              <span className="groom-band-chevron" aria-hidden>
+                <ChevronDown size={16} className={wordingOpen ? 'chevron open' : 'chevron'} />
+              </span>
+            </span>
+          </button>
+          {wordingOpen ? (
+            <div className={`groom-compare${state.groomOriginal && state.groomOriginal !== state.groomDraft ? '' : ' is-single'}`}>
+              {state.groomOriginal && state.groomOriginal !== state.groomDraft && (
+                <div>
+                  <h4>Before</h4>
+                  <pre className="groom-draft">{state.groomOriginal}</pre>
+                </div>
+              )}
+              <div>
+                {state.groomOriginal && state.groomOriginal !== state.groomDraft ? <h4>Proposed</h4> : null}
+                <pre className="groom-draft">{state.groomDraft}</pre>
+              </div>
+            </div>
+          ) : null}
+        </section>
       )}
 
       {asked && (
-        <div className="groom-panel-actions">
+        <div className="card-footer-actions">
           <button type="button" className="ghost-btn" disabled={loading} onClick={onStartOver}>
             Start over
           </button>
+          <span className="action-spacer" />
           <button
             type="button"
             className="primary-btn"

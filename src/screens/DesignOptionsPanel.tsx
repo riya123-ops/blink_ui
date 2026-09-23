@@ -57,7 +57,7 @@ function rateLimitWaitMs(message: string): number {
   return Math.min(Math.max(seconds, 5), 1800) * 1000
 }
 
-function ScreenThumb({ url }: { url?: string }) {
+function ScreenThumb({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     setFailed(false)

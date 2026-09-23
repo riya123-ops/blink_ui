@@ -8,6 +8,9 @@ import {
   fetchFigmaOAuthUrl,
   fetchFigmaProjects,
   fetchFigmaTeams,
+  fetchFigmaFiles,
+  fetchFigmaDesign,
+  ingestFigmaDesign,
   fetchGithubOAuthUrl,
   fetchGithubOrgs,
   fetchJiraOAuthUrl,
@@ -18,11 +21,13 @@ import {
   saveIntegrationBinding,
   type GithubOrgItem,
   type JiraProjectItem,
+  type FigmaFileItem,
 } from '../api/blink'
 import type { IntegrationItem } from '../wizard/defaults'
 import { DEFAULT_INTEGRATIONS } from '../wizard/defaults'
 import { mergeSavedIntegrations } from '../wizard/mergeIntegrations'
 import type { WizardState } from '../wizard/types'
+import { designFromBinding, figmaJiraRefs, figmaStoryRefs } from '../wizard/figmaDesign'
 import { isJiraReady, jiraConnection } from '../wizard/jiraTickets'
 import type { JiraPublishState } from '../wizard/thinking'
 import { JiraPublishStatus } from './JiraScopePanel'
@@ -82,7 +87,8 @@ const GUIDES: Record<
     tokenUrl: 'https://www.figma.com/developers/api#access-tokens',
     steps: [
       'Sign in with Figma, or paste an access token if sign-in is blocked.',
-      'Then pick a team, or paste a team URL.',
+      'Then pick a team, project, and the design file Blink should watch.',
+      'Turn on Jira sync so screen changes comment on linked tickets.',
     ],
   },
   jira: {
@@ -128,7 +134,7 @@ const DISPLAY_CARDS = [
     id: 'figma',
     openId: 'figma' as const,
     label: 'Figma',
-    purpose: 'Design files and team libraries',
+    purpose: 'Design files; screen changes can update Jira',
   },
   {
     id: 'bitbucket',
@@ -167,8 +173,11 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
   const [projects, setProjects] = useState<JiraProjectItem[]>([])
   const [githubOrgs, setGithubOrgs] = useState<GithubOrgItem[]>([])
   const [figmaTeams, setFigmaTeams] = useState<GithubOrgItem[]>([])
+  const [figmaFiles, setFigmaFiles] = useState<FigmaFileItem[]>([])
   const [discoveringProjects, setDiscoveringProjects] = useState(false)
   const [discoveringOrgs, setDiscoveringOrgs] = useState(false)
+  const [discoveringFiles, setDiscoveringFiles] = useState(false)
+  const [ingestingDesign, setIngestingDesign] = useState(false)
   const [isCustomProjectKey, setIsCustomProjectKey] = useState(false)
   const [selectedProjectName, setSelectedProjectName] = useState('')
   const oauthRedirectUriRef = useRef<string | undefined>(undefined)
@@ -200,6 +209,13 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
           return Boolean(item.connected) !== Boolean(cur?.connected) || item.account !== cur?.account || item.projectKey !== cur?.projectKey
         })
         if (changed) onUpdate({ integrations: merged })
+        if (state.projectId) {
+          const design = await fetchFigmaDesign(state.projectId)
+          if (cancelled) return
+          if (design.bound) {
+            onUpdate({ figmaDesign: designFromBinding(design, state.figmaDesign) })
+          }
+        }
       } catch {
         /* ignore hydrate errors */
       }
@@ -702,6 +718,9 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
           }).catch(() => {
             // selection is still kept in the wizard; reconnect if the server missed it
           })
+          if (active.id === 'figma' && val) {
+            void handleDiscoverFigmaFiles(val)
+          }
         }
       }
     }
@@ -755,6 +774,71 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
         .catch(() => {
           setProjects([])
         })
+    }
+  }
+
+  const handleDiscoverFigmaFiles = async (figmaProjectId?: string) => {
+    if (!state.projectId) return
+    const projectKey = figmaProjectId || form.projectKey
+    if (!projectKey) return
+    setDiscoveringFiles(true)
+    setError(null)
+    try {
+      const list = await fetchFigmaFiles({ projectId: state.projectId, figmaProjectId: projectKey })
+      setFigmaFiles(list)
+      onUpdate({
+        figmaDesign: {
+          ...(state.figmaDesign || {}),
+          availableFiles: list,
+        },
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not list Figma files.')
+    } finally {
+      setDiscoveringFiles(false)
+    }
+  }
+
+  const handleFigmaFileSelect = (fileKey: string) => {
+    const matched = figmaFiles.find((file) => file.key === fileKey)
+    onUpdate({
+      figmaDesign: {
+        ...(state.figmaDesign || {}),
+        fileKey,
+        fileName: matched?.name,
+        fileUrl: fileKey ? `https://www.figma.com/design/${fileKey}` : undefined,
+        availableFiles: figmaFiles,
+        syncJira: state.figmaDesign?.syncJira !== false,
+      },
+    })
+  }
+
+  const handleIngestFigma = async () => {
+    if (!state.projectId || !state.figmaDesign?.fileKey) {
+      setError('Pick a Figma file first.')
+      return
+    }
+    setIngestingDesign(true)
+    setError(null)
+    try {
+      const result = await ingestFigmaDesign({
+        projectId: state.projectId,
+        fileKey: state.figmaDesign.fileKey,
+        fileUrl: state.figmaDesign.fileUrl,
+        syncJira: state.figmaDesign.syncJira !== false,
+        stories: figmaStoryRefs(state),
+        jiraIssues: figmaJiraRefs(state),
+      })
+      onUpdate({
+        figmaDesign: designFromBinding(result, {
+          ...state.figmaDesign,
+          availableFiles: figmaFiles,
+        }),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not ingest the Figma file.')
+    } finally {
+      setIngestingDesign(false)
     }
   }
 
@@ -1220,6 +1304,81 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
                     </select>
                   ) : (
                     <span className="field-hint">No Figma projects listed yet. Find projects after picking a team.</span>
+                  )}
+                </div>
+              )}
+              {active.id === 'figma' && active.connected && form.projectKey && (
+                <div className="field-group figma-design-bind">
+                  <div className="field-label-row">
+                    <label htmlFor="figma-file-select">Figma file</label>
+                    <button
+                      type="button"
+                      className="mini-btn"
+                      disabled={discoveringFiles}
+                      onClick={() => void handleDiscoverFigmaFiles()}
+                    >
+                      <RefreshCw size={11} className={discoveringFiles ? 'spin' : ''} />
+                      {discoveringFiles ? 'Loading…' : 'Find files'}
+                    </button>
+                  </div>
+                  {figmaFiles.length > 0 || (state.figmaDesign?.availableFiles || []).length > 0 ? (
+                    <select
+                      id="figma-file-select"
+                      value={state.figmaDesign?.fileKey || ''}
+                      onChange={(e) => handleFigmaFileSelect(e.target.value)}
+                    >
+                      <option value="">-- Choose design file --</option>
+                      {(figmaFiles.length > 0 ? figmaFiles : state.figmaDesign?.availableFiles || []).map((file) => (
+                        <option key={file.key} value={file.key}>
+                          {file.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="field-hint">Find files after picking a Figma project.</span>
+                  )}
+                  <label className="figma-sync-toggle">
+                    <input
+                      type="checkbox"
+                      checked={state.figmaDesign?.syncJira !== false}
+                      onChange={(e) =>
+                        onUpdate({
+                          figmaDesign: { ...(state.figmaDesign || {}), syncJira: e.target.checked },
+                        })
+                      }
+                    />
+                    Update linked Jira tickets when this file changes
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    disabled={ingestingDesign || !state.figmaDesign?.fileKey}
+                    onClick={() => void handleIngestFigma()}
+                  >
+                    <RefreshCw size={13} className={ingestingDesign ? 'spin' : ''} />
+                    {ingestingDesign ? 'Syncing…' : 'Ingest design'}
+                  </button>
+                  {state.figmaDesign?.lastSyncSummary ? (
+                    <span className="field-hint">{state.figmaDesign.lastSyncSummary}</span>
+                  ) : (
+                    <span className="field-hint">
+                      Blink snapshots frames, matches them to stories by name, and comments on Jira when a bound screen changes.
+                    </span>
+                  )}
+                  {state.figmaDesign?.webhookStatus ? (
+                    <span className="field-hint">Webhook: {state.figmaDesign.webhookStatus}</span>
+                  ) : null}
+                  {(state.figmaDesign?.screens || []).length > 0 && (
+                    <ul className="figma-screen-list">
+                      {state.figmaDesign?.screens?.slice(0, 8).map((screen) => (
+                        <li key={screen.nodeId}>
+                          <strong>{screen.name}</strong>
+                          <span>
+                            {screen.jiraKey || screen.storyId || 'unbound'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}

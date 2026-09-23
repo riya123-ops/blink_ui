@@ -1,19 +1,21 @@
 /* ═══════════════════════════════════════════════════════════════
    AI-SDLC visual system — cascade-winning overrides
-   Look/feel from ai-sdlc.io (light canvas, #2563eb, airy chrome).
+   Blink logo colors: blue #2563eb, cyan #06b6d4, mint #34d399, ink #1e3a5f.
    Loaded after index.css so one coherent language wins.
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --bg: #f8fafc;
+  --bg: #f7fbfc;
   --surface: rgba(255, 255, 255, 0.9);
   --surface-strong: #ffffff;
-  --glass: rgba(255, 255, 255, 0.82);
-  --glass-border: rgba(15, 23, 42, 0.08);
-  --glass-shadow: 0 20px 50px rgba(15, 23, 42, 0.07), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  --glass: rgba(255, 255, 255, 0.84);
+  --glass-border: rgba(30, 58, 95, 0.08);
+  --glass-shadow: 0 20px 50px rgba(30, 58, 95, 0.07), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
   --blue: #2563eb;
+  --icon: var(--primary);
+  --icon-muted: var(--muted);
   --btn-shadow: 0 8px 22px rgba(37, 99, 235, 0.24);
   --radius: 12px;
   --radius-lg: 18px;
@@ -49,15 +51,15 @@ h3, h4 {
 /* ── Shell atmosphere ── */
 .app-shell {
   background:
-    radial-gradient(980px 520px at 88% -12%, rgba(37, 99, 235, 0.14), transparent 58%),
-    radial-gradient(720px 480px at 8% 108%, rgba(99, 102, 241, 0.08), transparent 55%),
-    radial-gradient(640px 400px at 100% 70%, rgba(14, 165, 233, 0.07), transparent 50%),
-    linear-gradient(180deg, #ffffff 0%, #f5f8ff 42%, #eef4ff 100%);
+    radial-gradient(980px 560px at 94% -6%, rgba(52, 211, 153, 0.22), transparent 58%),
+    radial-gradient(720px 480px at 2% 110%, rgba(37, 99, 235, 0.12), transparent 55%),
+    radial-gradient(640px 400px at 100% 82%, rgba(6, 182, 212, 0.1), transparent 50%),
+    linear-gradient(180deg, #ffffff 0%, #f7fbfc 42%, #eef8f3 100%);
 }
 
 .theme-bg-dots {
   opacity: 0.22;
-  background-image: radial-gradient(circle, rgba(37, 99, 235, 0.2) 1px, transparent 1.2px);
+  background-image: radial-gradient(circle, rgba(20, 52, 90, 0.22) 1px, transparent 1.2px);
 }
 
 .sidebar {
@@ -65,10 +67,25 @@ h3, h4 {
   flex-direction: column;
   min-height: 0;
   padding: 1rem 0.45rem 0.75rem 0.7rem;
-  background: rgba(255, 255, 255, 0.72);
-  border-right: 1px solid rgba(15, 23, 42, 0.06);
+  background:
+    radial-gradient(240px 180px at 100% -10%, rgba(52, 211, 153, 0.2), transparent 62%),
+    radial-gradient(220px 200px at -20% 110%, rgba(37, 99, 235, 0.14), transparent 64%),
+    linear-gradient(180deg, rgba(236, 247, 252, 0.82) 0%, rgba(240, 252, 247, 0.76) 100%);
+  border-right: 1px solid rgba(37, 99, 235, 0.1);
   backdrop-filter: blur(22px) saturate(1.15);
   -webkit-backdrop-filter: blur(22px) saturate(1.15);
+}
+
+.sidebar::after {
+  content: "";
+  position: absolute;
+  inset: auto -30% -18% -40%;
+  height: 46%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 80% 70% at 18% 88%, rgba(37, 99, 235, 0.16), transparent 62%),
+    radial-gradient(ellipse 70% 60% at 92% 30%, rgba(52, 211, 153, 0.18), transparent 58%);
 }
 
 .sidebar-nav-wrap {
@@ -106,7 +123,7 @@ h3, h4 {
 }
 
 .nav-item.active:not(.done) svg {
-  color: var(--primary);
+  color: var(--icon);
 }
 
 .sidebar-session {
@@ -166,8 +183,8 @@ h3, h4 {
   margin-left: auto;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--muted);
+  background: rgba(236, 247, 252, 0.92);
+  color: var(--icon);
   cursor: pointer;
   position: relative;
   z-index: 21;
@@ -252,7 +269,7 @@ h3, h4 {
   border: none;
   border-radius: 12px;
   background: transparent;
-  color: var(--muted);
+  color: var(--icon);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -270,6 +287,10 @@ h3, h4 {
 .sidebar-rail-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.sidebar-rail-btn.skipped:not(.active) {
+  color: var(--icon-muted);
 }
 
 .sidebar-resize-handle {
@@ -464,7 +485,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.94);
-  color: #64748b;
+  color: var(--icon);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
@@ -477,7 +498,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
 
 .account-dev-btn.is-on,
 .account-float-icon-btn.account-dev-btn.is-on {
-  background: #2563eb;
+  background: var(--primary);
   color: #fff;
   border-color: transparent;
 }
@@ -530,7 +551,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #2563eb, #6366f1);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: #fff;
   font-size: 0.68rem;
   font-weight: 700;
@@ -783,7 +804,7 @@ body.is-resizing-sidebar .sidebar-brand-row {
   height: 100%;
   width: 35%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #2563eb, #10b981);
+  background: linear-gradient(90deg, var(--primary), var(--accent));
   transition: width 0.35s ease;
 }
 
@@ -1481,3 +1502,34 @@ body.is-resizing-sidebar .sidebar-brand-row {
     width: auto;
   }
 }
+
+/* Lucide / UI icons share one brand color. Errors stay red. */
+.nav-item svg,
+.sidebar-rail-btn,
+.sidebar-collapse-btn,
+.sidebar-mobile-toggle,
+.project-card-icon,
+.welcome-flow-icon,
+.feature-icon,
+.login-card-icon,
+.ide-icon,
+.shape-screen .topo-icon,
+.card-header svg,
+.req-dropzone svg,
+.req-file-row svg,
+.download-structure-list li svg,
+.dev-popup-head svg,
+.footer-trust,
+.account-dev-btn:not(.is-on),
+.chat-panel-icon,
+.chat-fab,
+.header-chat-btn {
+  color: var(--icon);
+}
+
+.nav-item.skipped svg,
+.nav-item.skipped.active svg,
+.sidebar-rail-btn.skipped:not(.active) {
+  color: var(--icon-muted);
+}
+

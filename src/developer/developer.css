@@ -30,7 +30,7 @@ body {
 }
 
 .dev-popup-head svg {
-  color: #2563eb;
+  color: var(--icon);
   margin-top: 0.15rem;
   flex-shrink: 0;
 }

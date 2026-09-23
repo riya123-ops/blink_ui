@@ -29,14 +29,14 @@ export interface PhaseDefinition {
 export const WIZARD_STEPS: StepDefinition[] = [
   { id: 'welcome', label: 'Home', icon: Home, iconColor: '#2563eb' },
   { id: 'project-stakeholders', label: 'Project & Stakeholders', icon: Users, iconColor: '#2563eb' },
-  { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#0ea5e9' },
+  { id: 'integrations', label: 'Integrations', icon: Link2, iconColor: '#2563eb' },
   { id: 'requirements', label: 'Requirements', icon: FileText, iconColor: '#2563eb' },
-  { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#0f9d4a' },
+  { id: 'stakeholder-qa', label: 'Stakeholder Q&A', icon: MessageSquare, iconColor: '#2563eb' },
   { id: 'project-shape', label: 'Project Shape', icon: Layers, iconColor: '#2563eb' },
-  { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#1d4ed8' },
+  { id: 'repositories', label: 'Repositories', icon: GitBranch, iconColor: '#2563eb' },
   { id: 'technology-per-repo', label: 'Technology', icon: Cpu, iconColor: '#2563eb' },
-  { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#0ea5e9' },
-  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#0f9d4a' },
+  { id: 'sdlc-plan', label: 'Work plan', icon: ClipboardList, iconColor: '#2563eb' },
+  { id: 'generation', label: 'Ship', icon: Rocket, iconColor: '#2563eb' },
 ]
 
 export const WIZARD_PHASES: PhaseDefinition[] = [

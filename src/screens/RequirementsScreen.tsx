@@ -3,6 +3,7 @@ import { Check, ChevronDown, CloudUpload, FileText, X } from 'lucide-react'
 import type { WizardState, WizardStep } from '../wizard/types'
 import { GroomingPanel } from './GroomRequirementScreen'
 import { JiraScopePanel } from './JiraScopePanel'
+import { DesignOptionsPanel } from './DesignOptionsPanel'
 import { ScopeStartStatus, validateSdlcScope } from './SdlcPlanningScreen'
 import { unansweredRequired } from '../wizard/grooming'
 import { shouldAutoStartClarify } from '../wizard/thinking'
@@ -424,6 +425,7 @@ export function RequirementsScreen({
                   </div>
                 </section>
               )}
+              <DesignOptionsPanel state={state} onUpdate={onUpdate} onNavigate={onNavigate} />
               <JiraScopePanel
                 state={state}
                 onUpdate={onUpdate}

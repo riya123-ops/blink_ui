@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ChevronRight, ExternalLink, Layers, Loader2, RefreshCw, Ticket, Trash2 } from 'lucide-react'
-import { ConfirmDialog } from '../components/ConfirmDialog'
-import { deleteJiraIssues } from '../api/blink'
-import type { JiraCreatedIssue, WizardState } from '../wizard/types'
+import { CheckCircle2, ChevronRight, ExternalLink, Layers, Loader2, RefreshCw, Ticket } from 'lucide-react'
+import {
+  fetchJiraIssueStatuses,
+  ingestFigmaDesign,
+  saveFigmaDesign,
+  transitionJiraIssue,
+  type JiraIssueStatusItem,
+} from '../api/blink'
+import type { FigmaScreenBinding, JiraCreatedIssue, WizardState } from '../wizard/types'
+import { autoLinkFigmaScreens, designFromBinding, figmaJiraRefs, figmaStoryRefs } from '../wizard/figmaDesign'
 import {
   beginJiraCreate,
   createdTicketsOnScreen,
   createJiraIssuesFromState,
-  dropJiraCreatedIssues,
   endJiraCreate,
-  idsForEpicRemoval,
   isJiraReady,
   jiraConnection,
-  jiraKeysCreatedOnScreen,
   markTicketsPipelineBusy,
   mergeJiraCreatedIssues,
   pendingJiraTicketCount,
   planScopeFromWording,
-  removePlannedTickets,
 } from '../wizard/jiraTickets'
 import { shouldAutoStartTickets, type JiraPublishState } from '../wizard/thinking'
 
@@ -26,52 +28,6 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
   sourceText: string
   jiraPublish?: JiraPublishState | null
-}
-
-type PendingDelete =
-  | { kind: 'item'; itemKind: 'epic' | 'story'; sourceId: string }
-  | { kind: 'all' }
-
-function deleteDialogCopy(
-  pending: PendingDelete,
-  createdBySource: Map<string, JiraCreatedIssue>,
-  ticketCount: number,
-): { title: string; copy: string; confirmLabel: string } {
-  if (pending.kind === 'all') {
-    return {
-      title: 'Delete tickets?',
-      copy: `Delete ${ticketCount} ticket${ticketCount === 1 ? '' : 's'} created on this screen from Jira? Other Jira issues are not deleted.`,
-      confirmLabel: 'Delete',
-    }
-  }
-  const created = createdBySource.get(pending.sourceId)
-  const inJira = created?.status === 'created' && created.jiraKey
-  if (pending.itemKind === 'epic') {
-    if (inJira) {
-      return {
-        title: 'Delete epic?',
-        copy: `Delete ${created.jiraKey} and its stories from this screen in Jira? Other Jira issues are not deleted.`,
-        confirmLabel: 'Delete',
-      }
-    }
-    return {
-      title: 'Remove epic?',
-      copy: 'Remove this epic and its stories from the plan? They will not be created in Jira.',
-      confirmLabel: 'Remove',
-    }
-  }
-  if (inJira) {
-    return {
-      title: 'Delete story?',
-      copy: `Delete ${created.jiraKey} from Jira? Other Jira issues are not deleted.`,
-      confirmLabel: 'Delete',
-    }
-  }
-  return {
-    title: 'Remove story?',
-    copy: 'Remove this story from the plan? It will not be created in Jira.',
-    confirmLabel: 'Remove',
-  }
 }
 
 function jiraBrowseUrl(
@@ -130,6 +86,82 @@ function TicketBadge({
   return null
 }
 
+function statusTone(item?: JiraIssueStatusItem | null): string {
+  if (!item || item.category === 'missing' || !item.name) return 'is-missing'
+  if (item.name.trim().toLowerCase() === 'closed') return 'is-closed'
+  if (item.category === 'done') return 'is-done'
+  if (item.category === 'in-progress') return 'is-progress'
+  if (item.category === 'todo') return 'is-todo'
+  return 'is-unknown'
+}
+
+function TicketStatus({
+  jiraKey,
+  item,
+  loading,
+  busy,
+  locked,
+  onMark,
+}: {
+  jiraKey?: string | null
+  item?: JiraIssueStatusItem | null
+  loading: boolean
+  busy: boolean
+  locked: boolean
+  onMark: (target: 'done' | 'closed') => void
+}) {
+  if (!jiraKey) {
+    return <span className="jira-status-pill is-draft">Draft</span>
+  }
+  const closed = item?.name?.trim().toLowerCase() === 'closed'
+  const done = item?.name?.trim().toLowerCase() === 'done'
+  const label = busy
+    ? 'Updating…'
+    : loading && !item?.name
+      ? 'Loading…'
+      : item?.name || (item?.category === 'missing' ? 'Not in Jira' : 'Status unavailable')
+  return (
+    <span className="jira-status">
+      <span className={`jira-status-pill ${item?.name ? statusTone(item) : loading ? 'is-draft' : 'is-missing'}`}>{label}</span>
+      {closed ? null : (
+        <select
+          className="jira-status-action"
+          value=""
+          disabled={locked || busy || (loading && !item?.name)}
+          aria-label={`Update status for ${jiraKey}`}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const value = e.target.value
+            e.target.value = ''
+            if (value === 'done' || value === 'closed') onMark(value)
+          }}
+        >
+          <option value="">Update</option>
+          <option value="done" disabled={done}>Mark done</option>
+          <option value="closed">Mark closed</option>
+        </select>
+      )}
+    </span>
+  )
+}
+
+function bindStoryScreen(
+  screens: FigmaScreenBinding[] | undefined,
+  storyId: string,
+  nodeId: string,
+  jiraKey?: string | null,
+): FigmaScreenBinding[] {
+  return (screens || []).map((screen) => {
+    if (nodeId && screen.nodeId === nodeId) {
+      return { ...screen, storyId, jiraKey: jiraKey || screen.jiraKey || null }
+    }
+    if (screen.storyId === storyId) {
+      return { ...screen, storyId: null, jiraKey: null }
+    }
+    return screen
+  })
+}
+
 export function JiraPublishStatus({
   publish,
   jiraReady,
@@ -178,8 +210,10 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
   const [scopeError, setScopeError] = useState<string | null>(null)
   const [creatingIssues, setCreatingIssues] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [issueStatuses, setIssueStatuses] = useState<Record<string, JiraIssueStatusItem>>({})
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [transitionKey, setTransitionKey] = useState<string | null>(null)
   const [expandedEpicIds, setExpandedEpicIds] = useState<string[]>([])
 
   const planInFlight = useRef(false)
@@ -198,7 +232,7 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     failed: Boolean(scopeError),
   })
   const ticketsBusy = planningScope || creatingIssues || autoPlan || Boolean(jiraPublish?.active)
-  const deleteBusy = deletingId !== null
+  const issueKeySig = createdOnScreen.map((item) => item.jiraKey).filter(Boolean).join(',')
 
   const createdBySource = useMemo(() => {
     const map = new Map<string, JiraCreatedIssue>()
@@ -207,6 +241,35 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     }
     return map
   }, [state.jiraCreatedIssues])
+
+  const figmaAutoLinkSig = useRef('')
+  useEffect(() => {
+    if (!state.projectId || !state.figmaDesign?.fileKey) return
+    const screens = state.figmaDesign.screens || []
+    const storyRefs = figmaStoryRefs(state)
+    if (!screens.length || !storyRefs.length) return
+    if (screens.some((screen) => screen.storyId)) return
+    const jiraIssues = (state.jiraCreatedIssues || []).filter(
+      (item) => item.sourceId && item.jiraKey && item.status === 'created',
+    )
+    if (!jiraIssues.length) return
+    const linked = autoLinkFigmaScreens(screens, storyRefs, jiraIssues)
+    const after = linked.map((screen) => `${screen.nodeId}:${screen.storyId || ''}:${screen.jiraKey || ''}`).join('|')
+    const sig = `${state.figmaDesign.fileKey}:${after}`
+    if (figmaAutoLinkSig.current === sig) return
+    figmaAutoLinkSig.current = sig
+    onUpdate({ figmaDesign: { ...state.figmaDesign, screens: linked } })
+    void saveFigmaDesign({
+      projectId: state.projectId,
+      fileKey: state.figmaDesign.fileKey,
+      fileUrl: state.figmaDesign.fileUrl,
+      fileName: state.figmaDesign.fileName,
+      syncJira: state.figmaDesign.syncJira !== false,
+      screens: linked,
+      stories: storyRefs,
+      jiraIssues: jiraIssues.map((item) => ({ sourceId: item.sourceId as string, jiraKey: item.jiraKey as string })),
+    }).catch(() => undefined)
+  }, [onUpdate, state.figmaDesign, state.jiraCreatedIssues, state.productScope, state.projectId])
 
   const runProductScope = useCallback(async () => {
     if (planInFlight.current) return
@@ -263,6 +326,43 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
       onUpdate({ jiraCreatedIssues: mergeJiraCreatedIssues(state.jiraCreatedIssues, result.issues) })
       if (result.status === 'error') {
         setCreateError(result.message || 'Jira did not create the issues.')
+      } else if (state.projectId && state.figmaDesign?.fileKey) {
+        const mergedIssues = mergeJiraCreatedIssues(state.jiraCreatedIssues, result.issues)
+        const stories = figmaStoryRefs(state)
+        const jiraIssues = mergedIssues
+          .filter((item) => item.sourceId && item.jiraKey && item.status === 'created')
+          .map((item) => ({ sourceId: item.sourceId as string, jiraKey: item.jiraKey as string, status: 'created' as const }))
+        try {
+          let screens = state.figmaDesign.screens || []
+          let previous = state.figmaDesign
+          if (screens.length === 0) {
+            const ingested = await ingestFigmaDesign({
+              projectId: state.projectId,
+              fileKey: state.figmaDesign.fileKey,
+              fileUrl: state.figmaDesign.fileUrl,
+              syncJira: state.figmaDesign.syncJira !== false,
+              stories,
+              jiraIssues,
+            })
+            previous = designFromBinding(ingested, state.figmaDesign)
+            screens = previous.screens || []
+          }
+          const linked = autoLinkFigmaScreens(screens, stories, jiraIssues)
+          const saved = await saveFigmaDesign({
+            projectId: state.projectId,
+            fileKey: previous.fileKey || state.figmaDesign.fileKey,
+            fileUrl: previous.fileUrl || state.figmaDesign.fileUrl,
+            fileName: previous.fileName || state.figmaDesign.fileName,
+            syncJira: previous.syncJira !== false,
+            screens: linked,
+            stories,
+            jiraIssues,
+          })
+          onUpdate({ figmaDesign: designFromBinding(saved, { ...previous, screens: linked }) })
+        } catch {
+          const linked = autoLinkFigmaScreens(state.figmaDesign.screens, stories, jiraIssues)
+          onUpdate({ figmaDesign: { ...state.figmaDesign, screens: linked } })
+        }
       }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Could not create Jira issues.')
@@ -272,85 +372,70 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     }
   }, [createdBySource, epics, onUpdate, state, stories])
 
-  const applyLocalRemoval = useCallback(
-    (sourceIds: string[], opts?: { keepOrphanStories?: boolean }) => {
-      const nextScope = removePlannedTickets(state.productScope, sourceIds, opts)
-      onUpdate({
-        productScope: nextScope,
-        jiraCreatedIssues: dropJiraCreatedIssues(state.jiraCreatedIssues, sourceIds),
-      })
-    },
-    [onUpdate, state.jiraCreatedIssues, state.productScope],
-  )
-
-  const runDeleteItem = useCallback(
-    async (kind: 'epic' | 'story', sourceId: string) => {
-      const sourceIds = kind === 'epic' ? idsForEpicRemoval(state.productScope, sourceId) : [sourceId]
-      const createdKeys = sourceIds
-        .map((id) => createdBySource.get(id))
-        .filter((item) => item?.status === 'created' && item.jiraKey)
-        .map((item) => item!.jiraKey as string)
-      const label = kind === 'epic' ? 'epic' : 'story'
-      setDeletingId(sourceId)
-      setCreateError(null)
-      try {
-        if (createdKeys.length > 0 && state.projectId) {
-          const result = await deleteJiraIssues({ projectId: state.projectId, issueKeys: createdKeys })
-          if ((result.deleted || 0) === 0 && (result.errors || []).length > 0) {
-            throw new Error(result.errors.join(' '))
-          }
-          if ((result.errors || []).length > 0) {
-            setCreateError(result.errors.join(' '))
-          }
-        }
-        applyLocalRemoval(sourceIds)
-      } catch (err) {
-        setCreateError(err instanceof Error ? err.message : `Could not delete the ${label}.`)
-      } finally {
-        setDeletingId(null)
-      }
-    },
-    [applyLocalRemoval, createdBySource, state.productScope, state.projectId],
-  )
-
-  const runDeleteAllInJira = useCallback(async () => {
-    const linked = createdTicketsOnScreen(state)
-    const issueKeys = jiraKeysCreatedOnScreen(state)
-    if (linked.length === 0 || issueKeys.length === 0 || !state.projectId) return
-    setDeletingId('*')
-    setCreateError(null)
-    try {
-      const result = await deleteJiraIssues({
-        projectId: state.projectId,
-        issueKeys,
-      })
-      if ((result.deleted || 0) === 0 && (result.errors || []).length > 0) {
-        throw new Error(result.errors.join(' '))
-      }
-      applyLocalRemoval(
-        linked.map((item) => item.sourceId).filter((id): id is string => Boolean(id)),
-        { keepOrphanStories: true },
-      )
-      if ((result.errors || []).length > 0) {
-        setCreateError(result.errors.join(' '))
-      }
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Could not delete Jira tickets.')
-    } finally {
-      setDeletingId(null)
-    }
-  }, [applyLocalRemoval, state])
-
-  const confirmPendingDelete = useCallback(() => {
-    const pending = pendingDelete
-    setPendingDelete(null)
-    if (!pending) return
-    if (pending.kind === 'all') {
-      void runDeleteAllInJira()
+  useEffect(() => {
+    if (!state.projectId || !jiraReady || !issueKeySig) {
+      setIssueStatuses({})
+      setStatusLoading(false)
       return
     }
-    void runDeleteItem(pending.itemKind, pending.sourceId)
-  }, [pendingDelete, runDeleteAllInJira, runDeleteItem])
+    const projectId = state.projectId
+    const issueKeys = issueKeySig.split(',')
+    let cancelled = false
+    const load = async (silent: boolean) => {
+      if (!silent) setStatusLoading(true)
+      try {
+        const result = await fetchJiraIssueStatuses({ projectId, issueKeys })
+        if (cancelled) return
+        const next: Record<string, JiraIssueStatusItem> = {}
+        for (const item of result.issues) {
+          if (item.key) next[item.key.toUpperCase()] = item
+        }
+        setIssueStatuses(next)
+        setStatusError(null)
+      } catch (err) {
+        if (!cancelled && !silent) {
+          setStatusError(err instanceof Error ? err.message : 'Could not load Jira statuses.')
+        }
+      } finally {
+        if (!cancelled) setStatusLoading(false)
+      }
+    }
+    void load(false)
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true)
+    }, 30_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [issueKeySig, jiraReady, state.projectId])
+
+  const markTicket = useCallback(
+    async (issueKey: string, target: 'done' | 'closed') => {
+      if (!state.projectId || transitionKey) return
+      setTransitionKey(issueKey)
+      setStatusError(null)
+      try {
+        const updated = await transitionJiraIssue({ projectId: state.projectId, issueKey, target })
+        setIssueStatuses((prev) => ({ ...prev, [updated.key.toUpperCase()]: updated }))
+      } catch (err) {
+        setStatusError(err instanceof Error ? err.message : `Could not mark ${issueKey} as ${target}.`)
+      } finally {
+        setTransitionKey(null)
+      }
+    },
+    [state.projectId, transitionKey],
+  )
+
+  const statusFor = useCallback(
+    (issueKey?: string | null) => (issueKey ? issueStatuses[issueKey.toUpperCase()] : undefined),
+    [issueStatuses],
+  )
 
   const toggleEpic = useCallback((epicId: string) => {
     setExpandedEpicIds((ids) => (ids.includes(epicId) ? ids.filter((id) => id !== epicId) : [...ids, epicId]))
@@ -367,25 +452,21 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
     void runProductScope()
   }, [autoPlan, planningScope, runProductScope])
 
-  const canCreate = jiraReady && pendingCount > 0 && !creatingIssues && !planningScope && !jiraPublish?.active && !deleteBusy
+  const canCreate = jiraReady && pendingCount > 0 && !creatingIssues && !planningScope && !jiraPublish?.active
   const itemCount = epics.length + stories.length
   const alreadyCreated = createdOk > 0
-  const pendingCopy = pendingDelete
-    ? deleteDialogCopy(pendingDelete, createdBySource, createdOk)
-    : null
 
   return (
-    <>
     <section className="card ref-card jira-scope-panel">
       <div className="jira-scope-head">
         <div className="req-section-head">
           <h3>Epics for Jira</h3>
-          <p>Open an epic to review its stories, then create in Jira when you are ready.</p>
+          <p>Open an epic to review its stories. Status comes from Jira and can be marked done or closed.</p>
         </div>
         <button
           type="button"
           className="text-btn"
-          disabled={planningScope || !wording || deleteBusy}
+          disabled={planningScope || !wording}
           onClick={() => void runProductScope()}
         >
           {planningScope ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
@@ -475,17 +556,21 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
                       <strong className="jira-row-title">{epic.title}</strong>
                     </div>
                   )}
-                  <TicketBadge created={epicCreated} baseUrl={jira?.baseUrl} />
-                  <button
-                    type="button"
-                    className="jira-delete-btn"
-                    disabled={ticketsBusy || deleteBusy}
-                    title={epicCreated?.jiraKey ? `Delete ${epicCreated.jiraKey} from Jira` : 'Remove this epic from the plan'}
-                    aria-label={epicCreated?.jiraKey ? `Delete epic ${epicCreated.jiraKey}` : `Remove epic ${epic.title}`}
-                    onClick={() => setPendingDelete({ kind: 'item', itemKind: 'epic', sourceId: epic.id })}
-                  >
-                    {deletingId === epic.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                  </button>
+                  <div className="jira-row-meta">
+                    <TicketBadge created={epicCreated} baseUrl={jira?.baseUrl} />
+                    {epicCreated?.status === 'creating' || epicCreated?.status === 'failed' ? null : (
+                      <TicketStatus
+                        jiraKey={epicCreated?.status === 'created' ? epicCreated.jiraKey : null}
+                        item={statusFor(epicCreated?.jiraKey)}
+                        loading={statusLoading && Boolean(epicCreated?.jiraKey)}
+                        busy={transitionKey === epicCreated?.jiraKey}
+                        locked={ticketsBusy}
+                        onMark={(target) => {
+                          if (epicCreated?.jiraKey) void markTicket(epicCreated.jiraKey, target)
+                        }}
+                      />
+                    )}
+                  </div>
                 </header>
                 {open && epic.objective ? <p>{epic.objective}</p> : null}
                 {open && childStories.length > 0 && (
@@ -499,17 +584,67 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
                         >
                           <span className="jira-type story">Story</span>
                           <span className="jira-row-title">{story.title}</span>
-                          <TicketBadge created={storyCreated} baseUrl={jira?.baseUrl} />
-                          <button
-                            type="button"
-                            className="jira-delete-btn"
-                            disabled={ticketsBusy || deleteBusy}
-                            title={storyCreated?.jiraKey ? `Delete ${storyCreated.jiraKey} from Jira` : 'Remove this story from the plan'}
-                            aria-label={storyCreated?.jiraKey ? `Delete story ${storyCreated.jiraKey}` : `Remove story ${story.title}`}
-                            onClick={() => setPendingDelete({ kind: 'item', itemKind: 'story', sourceId: story.id })}
-                          >
-                            {deletingId === story.id ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-                          </button>
+                          <div className="jira-row-meta">
+                            <TicketBadge created={storyCreated} baseUrl={jira?.baseUrl} />
+                            {(state.figmaDesign?.screens || []).length > 0 ? (
+                              <label className="figma-story-bind-wrap">
+                                <span className="sr-only">Link a Figma screen to this Jira story</span>
+                                <select
+                                  className={`figma-story-bind${
+                                    state.figmaDesign?.screens?.some((screen) => screen.storyId === story.id)
+                                      ? ' is-linked'
+                                      : ''
+                                  }`}
+                                  value={
+                                    state.figmaDesign?.screens?.find((screen) => screen.storyId === story.id)?.nodeId
+                                    || ''
+                                  }
+                                  title="Link a Figma frame to this Jira story so design changes can update the ticket"
+                                  onChange={(e) => {
+                                    const nodeId = e.target.value
+                                    const screens = bindStoryScreen(
+                                      state.figmaDesign?.screens,
+                                      story.id,
+                                      nodeId,
+                                      storyCreated?.jiraKey,
+                                    )
+                                    onUpdate({ figmaDesign: { ...state.figmaDesign, screens } })
+                                    if (state.projectId && state.figmaDesign?.fileKey) {
+                                      void saveFigmaDesign({
+                                        projectId: state.projectId,
+                                        fileKey: state.figmaDesign.fileKey,
+                                        fileUrl: state.figmaDesign.fileUrl,
+                                        fileName: state.figmaDesign.fileName,
+                                        syncJira: state.figmaDesign.syncJira !== false,
+                                        screens,
+                                        stories: figmaStoryRefs({ ...state, figmaDesign: { ...state.figmaDesign, screens } }),
+                                        jiraIssues: figmaJiraRefs(state),
+                                      }).catch(() => undefined)
+                                    }
+                                  }}
+                                >
+                                  <option value="">Link screen</option>
+                                  {(state.figmaDesign?.screens || []).map((screen) => (
+                                    <option key={screen.nodeId} value={screen.nodeId}>
+                                      {screen.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : null}
+                            {storyCreated?.status === 'creating' || storyCreated?.status === 'failed' ? null : (
+                              <TicketStatus
+                                jiraKey={storyCreated?.status === 'created' ? storyCreated.jiraKey : null}
+                                item={statusFor(storyCreated?.jiraKey)}
+                                loading={statusLoading && Boolean(storyCreated?.jiraKey)}
+                                busy={transitionKey === storyCreated?.jiraKey}
+                                locked={ticketsBusy}
+                                onMark={(target) => {
+                                  if (storyCreated?.jiraKey) void markTicket(storyCreated.jiraKey, target)
+                                }}
+                              />
+                            )}
+                          </div>
                         </li>
                       )
                     })}
@@ -522,21 +657,10 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
       )}
 
       {createError && <p className="connect-error">{createError}</p>}
+      {statusError && <p className="connect-error">{statusError}</p>}
 
       {alreadyCreated || (epics.length > 0 && !ticketsBusy) ? (
         <div className="card-footer-actions">
-          {createdOk > 0 && (
-            <button
-              type="button"
-              className="danger-btn"
-              title="Delete only the tickets created on this screen"
-              disabled={deleteBusy || creatingIssues || Boolean(jiraPublish?.active)}
-              onClick={() => setPendingDelete({ kind: 'all' })}
-            >
-              {deletingId === '*' ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
-              Delete all in Jira
-            </button>
-          )}
           {createdOk > 0 && (
             <span className="quiet-hint">
               <CheckCircle2 size={14} /> {createdOk} from this screen in {jira?.projectKey}
@@ -556,17 +680,5 @@ export function JiraScopePanel({ state, onUpdate, sourceText, jiraPublish = null
         </div>
       ) : null}
     </section>
-    {pendingCopy && (
-      <ConfirmDialog
-        title={pendingCopy.title}
-        copy={pendingCopy.copy}
-        confirmLabel={pendingCopy.confirmLabel}
-        titleId="jira-delete-title"
-        copyId="jira-delete-copy"
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={confirmPendingDelete}
-      />
-    )}
-    </>
   )
 }

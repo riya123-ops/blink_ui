@@ -315,10 +315,9 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
       : 'Figma file'
   const screenLabel = `${screens.length} screen${screens.length === 1 ? '' : 's'}`
   const linkedCount = screens.filter((screen) => screen.jiraKey).length
-  const webhookManual =
-    !design?.webhookId
-    || (design.webhookStatus || '').toLowerCase().includes('localhost')
-    || (design.webhookStatus || '').toLowerCase().includes('manual')
+  const webhookStatus = (design?.webhookStatus || '').toLowerCase()
+  const webhookLocal = webhookStatus.includes('localhost')
+  const webhookManual = webhookLocal || !design?.webhookId || webhookStatus.includes('manual')
   const syncLocked = syncLockUntil > nowTick
   const rateLimited = syncLocked
   const lastGoodSummary = isRateLimitCopy(design?.lastSyncSummary) ? null : design?.lastSyncSummary
@@ -369,9 +368,15 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
           {(rateLimited || isRateLimitCopy(error)) ? (
             <p className="connect-error">{FIGMA_READ_LIMIT}</p>
           ) : null}
-          {rateLimited ? null : webhookManual ? (
+          {rateLimited ? null : webhookStatus.includes('professional') || webhookStatus.includes('starter') ? (
+            <p className="field-hint">{design?.webhookStatus}</p>
+          ) : webhookLocal ? (
             <p className="field-hint">
               Figma cannot reach this computer, so ticket comments are not automatic. After you edit a linked screen, click Sync from Figma.
+            </p>
+          ) : webhookManual ? (
+            <p className="field-hint">
+              After you edit a linked screen, click Sync from Figma. That posts the update on the Jira ticket.
             </p>
           ) : (
             <p className="field-hint">Edits to a linked screen can update its Jira ticket automatically.</p>

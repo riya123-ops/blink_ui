@@ -6883,7 +6883,7 @@ textarea::placeholder {
 .design-screen-thumb {
   width: 72px;
   height: 54px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--glass-border);
   background: #f8fafc;

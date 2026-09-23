@@ -17,14 +17,8 @@ import {
   canNavigateToStep,
   phaseProgressLabel,
   stepAttention,
-  type StepAttention,
 } from '../wizard/steps'
 import type { WizardState, WizardStep } from '../wizard/types'
-
-const ICON_DONE = '#16a34a'
-const ICON_ATTENTION = '#d97706'
-const ICON_PENDING = '#94a3b8'
-const ICON_ACTIVE = '#2563eb'
 
 const SIDEBAR_OPEN_KEY = 'blink.sidebar.open'
 const SIDEBAR_WIDTH_KEY = 'blink.sidebar.width'
@@ -42,13 +36,6 @@ interface Props {
   unrestrictedNav?: boolean
   state: WizardState
   onNavigate: (step: WizardStep) => void
-}
-
-function iconColor(attention: StepAttention): string {
-  if (attention === 'done') return ICON_DONE
-  if (attention === 'attention') return ICON_ATTENTION
-  if (attention === 'active') return ICON_ACTIVE
-  return ICON_PENDING
 }
 
 function readBool(key: string, fallback: boolean): boolean {
@@ -198,7 +185,7 @@ export function WizardSidebar({
               role={clickable ? 'button' : undefined}
               tabIndex={clickable ? 0 : undefined}
             >
-              <Icon size={15} color={iconColor(attention)} strokeWidth={attention === 'done' ? 2.4 : 2} />
+              <Icon size={15} strokeWidth={attention === 'done' ? 2.4 : 2} />
               <span className="nav-label">{step.label}</span>
             </li>
           )
@@ -305,7 +292,7 @@ export function WizardSidebar({
                 disabled={!clickable}
                 onClick={() => clickable && navigate(step.id)}
               >
-                <Icon size={16} color={iconColor(attention)} strokeWidth={attention === 'done' ? 2.4 : 2} />
+                <Icon size={16} strokeWidth={attention === 'done' ? 2.4 : 2} />
               </button>
             )
           })}

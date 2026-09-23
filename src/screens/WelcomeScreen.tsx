@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  ArrowRight,
   ClipboardList,
   FileText,
   FolderPlus,
@@ -50,45 +49,45 @@ export function WelcomeScreen({ resume, onContinue, onResume, onStartNew }: Prop
         </div>
 
         {resume ? (
-          <div className="resume-hero">
-            <p className="resume-kicker">Draft in progress</p>
-            <h2>Continue {resume.projectName}</h2>
-            <p className="resume-hero-copy">Resume at {resume.stepLabel}.</p>
-            <div className="resume-hero-actions">
-              <button type="button" className="primary-btn" onClick={onResume}>
-                Continue <Play size={16} />
-              </button>
-              <button type="button" className="secondary-btn" onClick={() => onContinue('existing')}>
-                Existing project
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => setConfirmStartOver(true)}>
-                Start over
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="project-cards">
-            <article className="project-card">
+          <div className="project-cards is-resume">
+            <button type="button" className="project-card is-featured" onClick={onResume}>
               <div className="project-card-icon">
-                <FolderPlus size={28} strokeWidth={1.75} />
+                <Play size={28} strokeWidth={1.75} />
               </div>
-              <h3>New project</h3>
-              <p>Start from scratch</p>
-              <button type="button" className="primary-btn" onClick={onStartNew}>
-                Start <ArrowRight size={16} />
-              </button>
-            </article>
-
-            <article className="project-card">
+              <h3>Continue {resume.projectName}</h3>
+              <p>Resume at {resume.stepLabel}</p>
+            </button>
+            <button type="button" className="project-card" onClick={() => onContinue('existing')}>
               <div className="project-card-icon">
                 <FolderSearch size={28} strokeWidth={1.75} />
               </div>
               <h3>Existing project</h3>
               <p>Use a project you already have</p>
-              <button type="button" className="secondary-btn" onClick={() => onContinue('existing')}>
-                Open <ArrowRight size={16} />
-              </button>
-            </article>
+            </button>
+            <button type="button" className="project-card" onClick={() => setConfirmStartOver(true)}>
+              <div className="project-card-icon">
+                <FolderPlus size={28} strokeWidth={1.75} />
+              </div>
+              <h3>Start over</h3>
+              <p>Leave this draft and begin a new project</p>
+            </button>
+          </div>
+        ) : (
+          <div className="project-cards">
+            <button type="button" className="project-card" onClick={onStartNew}>
+              <div className="project-card-icon">
+                <FolderPlus size={28} strokeWidth={1.75} />
+              </div>
+              <h3>New project</h3>
+              <p>Start from scratch</p>
+            </button>
+            <button type="button" className="project-card" onClick={() => onContinue('existing')}>
+              <div className="project-card-icon">
+                <FolderSearch size={28} strokeWidth={1.75} />
+              </div>
+              <h3>Existing project</h3>
+              <p>Use a project you already have</p>
+            </button>
           </div>
         )}
 

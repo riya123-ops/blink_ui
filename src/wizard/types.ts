@@ -342,6 +342,8 @@ export interface WizardState extends SetupForm {
   /** Tier≥2 impact-analysis deferred/skipped in Blink MVP. */
   impactAnalysisSkipped?: boolean
   jiraCreatedIssues?: JiraCreatedIssue[]
+  figmaDesign?: FigmaDesignState | null
+  designOptions?: DesignOptionsState | null
 }
 
 export interface JiraCreatedIssue {
@@ -352,6 +354,89 @@ export interface JiraCreatedIssue {
   type?: string
   status?: string
   message?: string
+}
+
+export interface FigmaStoryRef {
+  id: string
+  title: string
+}
+
+export interface FigmaJiraRef {
+  sourceId: string
+  jiraKey: string
+}
+
+export interface FigmaScreenBinding {
+  nodeId: string
+  name: string
+  pageId?: string
+  pageName?: string
+  type?: string
+  storyId?: string | null
+  jiraKey?: string | null
+  fingerprint?: string
+  thumbnailUrl?: string | null
+}
+
+export interface FigmaDesignFile {
+  key: string
+  name: string
+  thumbnailUrl?: string
+  lastModified?: string
+}
+
+export interface FigmaDesignChange {
+  kind?: string
+  nodeId?: string
+  name?: string
+  previousName?: string
+  storyId?: string
+  jiraKey?: string
+  detail?: string
+}
+
+export interface FigmaDesignState {
+  fileKey?: string
+  fileName?: string
+  fileUrl?: string
+  fileVersion?: string | null
+  syncJira?: boolean
+  webhookId?: string | null
+  webhookStatus?: string | null
+  lastSyncedAt?: string | null
+  lastSyncSummary?: string | null
+  markdown?: string | null
+  screens?: FigmaScreenBinding[]
+  availableFiles?: FigmaDesignFile[]
+  changes?: FigmaDesignChange[]
+}
+
+export type DesignLayout = 'linear' | 'hub' | 'split'
+
+export interface DesignOptionScreen {
+  id: string
+  name: string
+  storyId?: string | null
+  storyTitle?: string
+  purpose?: string
+  states?: string[]
+}
+
+export interface DesignOption {
+  id: string
+  name: string
+  summary: string
+  layout: DesignLayout | string
+  screens: DesignOptionScreen[]
+}
+
+export interface DesignOptionsState {
+  status?: 'idle' | 'loading' | 'ready' | 'error'
+  fingerprint?: string
+  chosenId?: string | null
+  message?: string
+  markdown?: string
+  options?: DesignOption[]
 }
 
 function defaultStakeholderAssignments(): StakeholderAssignment[] {
@@ -473,6 +558,8 @@ export const defaultWizardState: WizardState = {
   sdlcStartIssueId: null,
   impactAnalysisSkipped: false,
   jiraCreatedIssues: [],
+  figmaDesign: null,
+  designOptions: null,
 }
 
 function ideCommandsLabel(ideTool: string): string {
@@ -611,6 +698,8 @@ export function clearGroomingPatch(): Partial<WizardState> {
     sdlcStartIssueId: null,
     impactAnalysisSkipped: false,
     jiraCreatedIssues: [],
+    figmaDesign: null,
+    designOptions: null,
   }
 }
 

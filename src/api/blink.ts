@@ -1,5 +1,5 @@
 import { sanitizeDownloadStructure } from '../wizard/defaults'
-import type { ProductScopeData, WizardState } from '../wizard/types'
+import type { DesignOption, ProductScopeData, WizardState } from '../wizard/types'
 import { stripExcludedZipFolders } from './stripZipFolders'
 import { loadAuthSession } from '../auth/session'
 
@@ -380,6 +380,45 @@ export async function deleteJiraIssues(payload: {
     skippedKeys: raw.skippedKeys || [],
     errors: raw.errors || [],
   }
+}
+
+export interface JiraIssueStatusItem {
+  key: string
+  name: string | null
+  category: 'todo' | 'in-progress' | 'done' | 'missing' | 'unknown' | string
+}
+
+export async function fetchJiraIssueStatuses(payload: {
+  projectId: string
+  issueKeys: string[]
+}): Promise<{ issues: JiraIssueStatusItem[] }> {
+  const url = apiUrl('/integrations/jira/issues/statuses')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      projectId: payload.projectId,
+      issueKeys: payload.issueKeys,
+    }),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  const raw = (await response.json()) as { issues?: JiraIssueStatusItem[] }
+  return { issues: raw.issues || [] }
+}
+
+export async function transitionJiraIssue(payload: {
+  projectId: string
+  issueKey: string
+  target: 'done' | 'closed'
+}): Promise<JiraIssueStatusItem> {
+  const url = apiUrl('/integrations/jira/issues/transition')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<JiraIssueStatusItem>
 }
 
 export async function deleteAllBlinkJiraIssues(projectId: string): Promise<BlinkJiraIssueDeleteDto> {
@@ -770,6 +809,141 @@ export async function fetchFigmaProjects(payload: {
   return response.json() as Promise<JiraProjectItem[]>
 }
 
+export interface FigmaFileItem {
+  key: string
+  name: string
+  thumbnailUrl?: string
+  lastModified?: string
+}
+
+export interface FigmaFrameItem {
+  nodeId: string
+  name: string
+  pageId?: string
+  pageName?: string
+  type?: string
+}
+
+export interface FigmaScreenBindingPayload {
+  nodeId: string
+  name: string
+  pageId?: string
+  pageName?: string
+  type?: string
+  storyId?: string | null
+  jiraKey?: string | null
+  fingerprint?: string
+  thumbnailUrl?: string | null
+}
+
+export interface FigmaDesignBindingResult {
+  bound?: boolean
+  projectId?: string
+  fileKey?: string
+  fileName?: string
+  fileUrl?: string
+  fileVersion?: string
+  syncJira?: boolean
+  webhookId?: string
+  webhookStatus?: string
+  lastSyncedAt?: string
+  lastSyncSummary?: string
+  markdown?: string
+  screens?: FigmaScreenBindingPayload[]
+  changes?: {
+    kind?: string
+    nodeId?: string
+    name?: string
+    previousName?: string
+    storyId?: string
+    jiraKey?: string
+    detail?: string
+  }[]
+  jiraUpdates?: { issueKey?: string; status?: string; commentId?: string; message?: string }[]
+}
+
+export async function fetchFigmaFiles(payload: {
+  projectId?: string | null
+  figmaProjectId?: string
+}): Promise<FigmaFileItem[]> {
+  const url = apiUrl('/integrations/figma/files')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaFileItem[]>
+}
+
+export async function fetchFigmaFrames(payload: {
+  projectId?: string | null
+  fileKey?: string
+  fileUrl?: string
+}): Promise<FigmaFrameItem[]> {
+  const url = apiUrl('/integrations/figma/frames')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaFrameItem[]>
+}
+
+export async function fetchFigmaDesign(projectId: string): Promise<FigmaDesignBindingResult> {
+  const url = apiUrl(`/integrations/figma/design?projectId=${encodeURIComponent(projectId)}`)
+  const response = await fetch(url, { headers: authHeaders() })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaDesignBindingResult>
+}
+
+export async function clearFigmaDesign(projectId: string): Promise<FigmaDesignBindingResult> {
+  const url = apiUrl(`/integrations/figma/design?projectId=${encodeURIComponent(projectId)}`)
+  const response = await fetch(url, { method: 'DELETE', headers: authHeaders() })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaDesignBindingResult>
+}
+
+export async function saveFigmaDesign(payload: {
+  projectId: string
+  fileKey?: string
+  fileUrl?: string
+  fileName?: string
+  figmaProjectId?: string
+  syncJira?: boolean
+  screens?: FigmaScreenBindingPayload[]
+  stories?: { id: string; title: string }[]
+  jiraIssues?: { sourceId: string; jiraKey: string }[]
+}): Promise<FigmaDesignBindingResult> {
+  const url = apiUrl('/integrations/figma/design')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaDesignBindingResult>
+}
+
+export async function ingestFigmaDesign(payload: {
+  projectId: string
+  fileKey?: string
+  fileUrl?: string
+  syncJira?: boolean
+  stories?: { id: string; title: string }[]
+  jiraIssues?: { sourceId: string; jiraKey: string }[]
+}): Promise<FigmaDesignBindingResult> {
+  const url = apiUrl('/integrations/figma/ingest')
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new ApiRequestError(await readError(response), response.status)
+  return response.json() as Promise<FigmaDesignBindingResult>
+}
+
 export interface JiraCreatedIssueResult {
   id?: string
   sourceId?: string
@@ -858,7 +1032,7 @@ export async function streamCreateJiraIssues(
     method: 'POST',
     headers: {
       ...authHeaders(true),
-      Accept: 'text/event-stream',
+      Accept: 'application/json, text/event-stream',
     },
     body: JSON.stringify(payload),
     signal,
@@ -1455,6 +1629,14 @@ export interface AdvisoryAgentResponse {
   specification?: SpecificationData
   technicalPlan?: TechnicalPlanData
   issueId?: string
+  designSpec?: {
+    options?: DesignOption[]
+    markdown?: string
+    screens?: unknown
+    changes?: unknown
+    title?: string
+    summary?: string
+  }
 }
 
 export interface WorkClassificationData {
@@ -1528,6 +1710,33 @@ export function classifyWork(
   },
 ) {
   return postAdvisory(projectId, 'classify-work', payload)
+}
+
+export async function proposeDesigns(
+  projectId: string | null | undefined,
+  payload: {
+    projectName?: string
+    requirementText?: string
+    productScope?: ProductScopeData | null
+    issueId?: string
+    actor?: string
+  },
+): Promise<AdvisoryAgentResponse> {
+  const path = projectId ? `/projects/${projectId}/propose-designs` : `/projects/propose-designs`
+  const response = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      projectId: projectId || undefined,
+      projectName: payload.projectName,
+      requirementText: payload.requirementText,
+      productScope: payload.productScope || undefined,
+      issueId: payload.issueId,
+      actor: payload.actor || 'operator',
+    }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return response.json() as Promise<AdvisoryAgentResponse>
 }
 
 export function createSpec(

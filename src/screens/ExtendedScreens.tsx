@@ -1243,7 +1243,7 @@ export function GenerationDownloadScreen({
             <div className="success-actions row">
               <button
                 type="button"
-                className="secondary-btn outline-purple"
+                className="secondary-btn"
                 disabled={!githubReady || exporting}
                 onClick={() => onExportGithub?.()}
               >

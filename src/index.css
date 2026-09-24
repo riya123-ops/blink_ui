@@ -2233,7 +2233,7 @@ textarea::placeholder {
   }
 
   .success-actions.row .primary-btn.xl,
-  .success-actions.row .outline-purple {
+  .success-actions.row .secondary-btn {
     width: 100%;
   }
 }
@@ -2972,7 +2972,7 @@ textarea::placeholder {
   min-width: 220px;
 }
 
-.success-actions.row .outline-purple {
+.success-actions.row .secondary-btn {
   max-width: none;
   flex: 1;
   min-width: 200px;
@@ -3113,12 +3113,10 @@ textarea::placeholder {
   border-radius: 8px;
 }
 
-.outline-purple {
+.success-actions .secondary-btn {
   width: 100%;
   max-width: 320px;
   justify-content: center;
-  border-color: var(--primary);
-  color: var(--primary);
 }
 
 .ghost-btn {
@@ -3408,8 +3406,9 @@ textarea::placeholder {
   text-align: center;
 }
 
-.welcome-page .welcome-headline {
-  margin-bottom: 1.5rem;
+.welcome-page .welcome-headline,
+.welcome-body:has(.project-cards.is-resume) .welcome-headline {
+  margin-bottom: 0.75rem;
 }
 
 .welcome-page .welcome-desc {
@@ -3419,9 +3418,41 @@ textarea::placeholder {
 .welcome-page .welcome-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 0.75rem 1.5rem 1rem;
+  overflow: hidden;
+  padding: 0.35rem 1.5rem 0.5rem;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.welcome-page .welcome-headline h1 {
+  font-size: clamp(2rem, 3.2vw, 2.6rem);
+}
+
+.welcome-page .project-cards {
+  gap: 0.75rem;
+  margin-bottom: 0;
+}
+
+.welcome-page .project-card {
+  padding: 1rem 1.15rem 0.9rem;
+}
+
+.welcome-page .project-card-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 0.65rem;
+}
+
+.welcome-page .welcome-flow {
+  margin-top: 0;
+}
+
+.welcome-page .welcome-footer {
+  padding: 0.45rem 1.5rem 0.65rem;
+}
+
+.welcome-page .app-header {
+  padding: 0.75rem 1.5rem;
 }
 
 .welcome-page .app-header,
@@ -3619,6 +3650,10 @@ textarea::placeholder {
   color: var(--text-navy);
 }
 
+.project-card h3:last-child {
+  margin-bottom: 0;
+}
+
 .project-card p {
   margin: 0;
   color: var(--muted);
@@ -3640,8 +3675,8 @@ textarea::placeholder {
 }
 
 .welcome-page .project-card-icon {
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
 }
 
 .card-cta {

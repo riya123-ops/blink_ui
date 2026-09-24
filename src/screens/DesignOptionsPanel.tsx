@@ -427,7 +427,7 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
           {!showBind ? (
             <div className="card-footer-actions">
               <a
-                className="primary-btn"
+                className="secondary-btn"
                 href={fileHref(design?.fileKey, design?.fileUrl)}
                 target="_blank"
                 rel="noreferrer"
@@ -443,7 +443,7 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
         </>
       ) : (
         <div className="card-footer-actions">
-          <a className="primary-btn" href="https://www.figma.com/files" target="_blank" rel="noreferrer">
+          <a className="secondary-btn" href="https://www.figma.com/files" target="_blank" rel="noreferrer">
             Open Figma
             <ExternalLink size={14} />
           </a>

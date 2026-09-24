@@ -43,9 +43,6 @@ export function WelcomeScreen({ resume, onContinue, onResume, onStartNew }: Prop
           <h1>
             Welcome to <span className="gradient-text">Blink</span>
           </h1>
-          <p className="welcome-desc">
-            Set up the project and stakeholders, then work through a plan you can ship.
-          </p>
         </div>
 
         {resume ? (
@@ -55,21 +52,18 @@ export function WelcomeScreen({ resume, onContinue, onResume, onStartNew }: Prop
                 <Play size={28} strokeWidth={1.75} />
               </div>
               <h3>Continue {resume.projectName}</h3>
-              <p>Resume at {resume.stepLabel}</p>
             </button>
             <button type="button" className="project-card" onClick={() => onContinue('existing')}>
               <div className="project-card-icon">
                 <FolderSearch size={28} strokeWidth={1.75} />
               </div>
               <h3>Existing project</h3>
-              <p>Use a project you already have</p>
             </button>
             <button type="button" className="project-card" onClick={() => setConfirmStartOver(true)}>
               <div className="project-card-icon">
                 <FolderPlus size={28} strokeWidth={1.75} />
               </div>
               <h3>Start over</h3>
-              <p>Leave this draft and begin a new project</p>
             </button>
           </div>
         ) : (
@@ -79,14 +73,12 @@ export function WelcomeScreen({ resume, onContinue, onResume, onStartNew }: Prop
                 <FolderPlus size={28} strokeWidth={1.75} />
               </div>
               <h3>New project</h3>
-              <p>Start from scratch</p>
             </button>
             <button type="button" className="project-card" onClick={() => onContinue('existing')}>
               <div className="project-card-icon">
                 <FolderSearch size={28} strokeWidth={1.75} />
               </div>
               <h3>Existing project</h3>
-              <p>Use a project you already have</p>
             </button>
           </div>
         )}

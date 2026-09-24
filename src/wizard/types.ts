@@ -309,6 +309,8 @@ export interface WizardState extends SetupForm {
   stakeholderPack?: { issueId?: string; markdown?: string; rolesCovered?: string[]; openQuestions?: string[]; generatedAt?: string } | null
   groomingRevision?: { issueId?: string; revisionNumber?: number; requirementMarkdown?: string; revisionSummaryMarkdown?: string; changesApplied?: string[] } | null
   groomingSignOff?: { issueId?: string; markdown?: string; readyForHumanSignOff?: boolean; blockers?: string[]; openQuestions?: string[]; capturedAt?: string } | null
+  /** Stakeholder Q/A fingerprint when pack/revision/sign-off last finished successfully. */
+  groomingLoopFeedbackAt?: string | null
   gitWritten?: boolean
   gitApplyCommit?: { sha?: string; url?: string; branch?: string; owner?: string; repo?: string } | null
   implementStep?: { issueId?: string; commitMessage?: string; summary?: string; files?: { path: string; content: string; repoHint?: string }[]; notes?: string[] } | null
@@ -538,6 +540,7 @@ export const defaultWizardState: WizardState = {
   stakeholderPack: null,
   groomingRevision: null,
   groomingSignOff: null,
+  groomingLoopFeedbackAt: null,
   gitWritten: false,
   gitApplyCommit: null,
   implementStep: null,
@@ -681,6 +684,7 @@ export function clearGroomingPatch(): Partial<WizardState> {
     stakeholderPack: null,
     groomingRevision: null,
     groomingSignOff: null,
+    groomingLoopFeedbackAt: null,
     gitWritten: false,
     gitApplyCommit: null,
     implementStep: null,

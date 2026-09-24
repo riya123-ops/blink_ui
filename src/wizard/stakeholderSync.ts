@@ -122,7 +122,14 @@ export function applyQuestionResponsePatch(
       jiraThreadStale: false,
     }
   })
-  return { ...prev, responses, questions }
+  const loopInvalid =
+    answered && prev.groomingLoopFeedbackAt !== stakeholderFeedbackFromState({ ...prev, responses, questions })
+  return {
+    ...prev,
+    responses,
+    questions,
+    ...(loopInvalid ? invalidateGroomingLoopPatch() : {}),
+  }
 }
 
 export function buildJiraConfirmationComment(questionId: string, answer: string): string {
@@ -207,6 +214,8 @@ export async function applyGroomingRevisionToState(
     requirementsText: draftText || state.requirementsText,
     scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
     nextSdlcCommand: res.nextCommand || '/grooming-sign-off-capture',
+    groomingSignOff: null,
+    groomingLoopFeedbackAt: null,
   }
 }
 
@@ -214,4 +223,20 @@ export function shouldRunGroomingRevisionAfterAnswers(state: WizardState): boole
   const feedback = stakeholderFeedbackFromState(state).trim()
   if (!feedback) return false
   return mandatoryStakeholderQuestionsResolved(state)
+}
+
+export function invalidateGroomingLoopPatch(): Pick<
+  WizardState,
+  'groomingLoopFeedbackAt' | 'groomingSignOff'
+> {
+  return { groomingLoopFeedbackAt: null, groomingSignOff: null }
+}
+
+/** True when background pack / revision / sign-off match the current resolved Q&A. */
+export function groomingLoopSettled(state: WizardState): boolean {
+  const feedback = stakeholderFeedbackFromState(state)
+  if (!state.stakeholderPack || !state.groomingSignOff) return false
+  const revisionNeeded = Boolean(feedback.trim())
+  if (revisionNeeded && !state.groomingRevision) return false
+  return state.groomingLoopFeedbackAt === feedback
 }

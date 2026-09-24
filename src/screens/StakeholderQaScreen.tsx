@@ -159,7 +159,7 @@ export function validateStakeholderQa(state: WizardState): string | null {
   const responses = validateStakeholderResponses(state)
   if (responses) return responses
   if (state.groomRejectPending && !state.groomingRevision) {
-    return 'G-GROOM was rejected — run /grooming-revision, then acknowledge again.'
+    return 'G-GROOM was rejected — wait for grooming to refresh, then acknowledge again.'
   }
   if (!state.groomAcknowledged) {
     return 'Acknowledge G-GROOM before continuing to Project Shape.'

@@ -1,4 +1,5 @@
 import {
+  groomingLoopSettled,
   mandatoryStakeholderQuestionsResolved,
   responsesForStakeholderQuestions,
   stakeholderFeedbackFromState,
@@ -38,6 +39,17 @@ if (!mandatoryStakeholderQuestionsResolved(state)) {
 const feedback = stakeholderFeedbackFromState(state)
 if (!feedback.includes('OAuth2')) {
   throw new Error('stakeholder feedback should include MCQ answer')
+}
+
+const settledState = {
+  ...state,
+  stakeholderPack: { rolesCovered: ['product_owner'] },
+  groomingSignOff: { readyForHumanSignOff: true },
+  groomingRevision: { revisionNumber: 1 },
+  groomingLoopFeedbackAt: feedback,
+} as WizardState
+if (!groomingLoopSettled(settledState)) {
+  throw new Error('groomingLoopSettled should be true when fingerprint matches')
 }
 
 console.log('stakeholderSync.check.ts ok')

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   CheckCircle2,
@@ -18,10 +18,12 @@ import {
   postJiraGateEvidence,
 } from '../api/blink'
 import {
+  groomingLoopSettled,
   mergeScopeOverlays,
   requirementTextFromState,
   stakeholderFeedbackFromState,
 } from '../wizard/stakeholderSync'
+import { useDeveloperMode } from '../developer/DeveloperModeContext'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
 import type { JiraThreadReply, QuestionResponse, StakeholderQuestion, WizardState } from '../wizard/types'
@@ -44,9 +46,6 @@ interface Props {
 
 type Filter = 'all' | 'responded' | 'discussion' | 'pending'
 type GroomBusy = 'pack' | 'revision' | 'signoff' | 'auto' | null
-
-/** Prevents StrictMode / tab remount from kicking the loop twice. */
-const autoGroomStarted = new Set<string>()
 
 function isResolved(response?: QuestionResponse, q?: { jiraReplyBody?: string | null }): boolean {
   const text = response?.response?.trim() || q?.jiraReplyBody?.trim() || ''
@@ -256,10 +255,9 @@ export function StakeholderResponsesScreen({
   const stakeholderFeedback = stakeholderFeedbackFromState(state)
   const revisionNeeded = Boolean(stakeholderFeedback.trim())
   const autoReady = shouldAutoRunGroomingLoop(state)
-  const loopSettled =
-    Boolean(state.stakeholderPack) &&
-    Boolean(state.groomingSignOff) &&
-    (!revisionNeeded || Boolean(state.groomingRevision))
+  const loopSettled = groomingLoopSettled(state)
+  const { state: developerState } = useDeveloperMode()
+  const groomRunInFlightRef = useRef(false)
 
   const runPack = async () => {
     if (!state.projectId || !onUpdate) return
@@ -304,6 +302,7 @@ export function StakeholderResponsesScreen({
         requirementsText: draftText || state.requirementsText,
         scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
         nextSdlcCommand: res.nextCommand || '/grooming-sign-off-capture',
+        groomingLoopFeedbackAt: stakeholderFeedback,
       })
     } catch (e) {
       setGroomError(e instanceof Error ? e.message : 'Could not apply grooming revision.')
@@ -340,6 +339,7 @@ export function StakeholderResponsesScreen({
         groomingSignOff: res.groomingSignOff || null,
         scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
         nextSdlcCommand: res.nextCommand || '/sdlc-next',
+        groomingLoopFeedbackAt: stakeholderFeedback,
       })
       postSignOffEvidence(state.projectId)
     } catch (e) {
@@ -358,8 +358,9 @@ export function StakeholderResponsesScreen({
     let draftText = state.groomDraft || requirementText
     const feedback = stakeholderFeedback.trim()
     const needPack = !pack
-    const needRevision = Boolean(feedback) && !revision
-    const needSignOff = !state.groomingSignOff
+    const needRevision =
+      Boolean(feedback) && (!revision || state.groomingLoopFeedbackAt !== feedback)
+    const needSignOff = !state.groomingSignOff || state.groomingLoopFeedbackAt !== feedback
     if (!needPack && !needRevision && !needSignOff) return
 
     setGroomError(null)
@@ -394,30 +395,33 @@ export function StakeholderResponsesScreen({
         revision = rev.groomingRevision || revision
         draftText = rev.requirementDraft || rev.groomingRevision?.requirementMarkdown || draftText
         overlays = mergeScopeOverlays(overlays, rev.overlayFiles)
-        onUpdate({
-          groomingRevision: revision,
-          groomDraft: draftText,
-          requirementsText: draftText,
-          scopeOverlays: overlays,
-          nextSdlcCommand: rev.nextCommand || '/grooming-sign-off-capture',
-        })
-        if (needSignOff) {
-          setGroomBusy('signoff')
-          const sign = await groomingSignOffCapture(projectId, {
-            requirementText: draftText,
-            stakeholderFeedback: feedback,
-            overlayFiles: overlays,
-            issueId: revision?.issueId || pack?.issueId,
-          })
-          if (sign.status !== 'ok') throw new Error(sign.message || 'Sign-off capture failed')
-          overlays = mergeScopeOverlays(overlays, sign.overlayFiles)
           onUpdate({
-            groomingSignOff: sign.groomingSignOff || null,
+            groomingRevision: revision,
+            groomDraft: draftText,
+            requirementsText: draftText,
             scopeOverlays: overlays,
-            nextSdlcCommand: sign.nextCommand || '/sdlc-next',
+            nextSdlcCommand: rev.nextCommand || '/grooming-sign-off-capture',
           })
-          postSignOffEvidence(projectId)
-        }
+          if (needSignOff) {
+            setGroomBusy('signoff')
+            const sign = await groomingSignOffCapture(projectId, {
+              requirementText: draftText,
+              stakeholderFeedback: feedback,
+              overlayFiles: overlays,
+              issueId: revision?.issueId || pack?.issueId,
+            })
+            if (sign.status !== 'ok') throw new Error(sign.message || 'Sign-off capture failed')
+            overlays = mergeScopeOverlays(overlays, sign.overlayFiles)
+            onUpdate({
+              groomingSignOff: sign.groomingSignOff || null,
+              scopeOverlays: overlays,
+              nextSdlcCommand: sign.nextCommand || '/sdlc-next',
+              groomingLoopFeedbackAt: feedback,
+            })
+            postSignOffEvidence(projectId)
+          } else {
+            onUpdate({ groomingLoopFeedbackAt: feedback })
+          }
         return
       }
 
@@ -456,6 +460,7 @@ export function StakeholderResponsesScreen({
           : {}),
         scopeOverlays: overlays,
         nextSdlcCommand: signRes?.nextCommand || packRes?.nextCommand || '/sdlc-next',
+        groomingLoopFeedbackAt: feedback,
       })
       if (signRes) postSignOffEvidence(projectId)
     } catch (e) {
@@ -466,14 +471,33 @@ export function StakeholderResponsesScreen({
   }
 
   useEffect(() => {
-    if (!autoReady || loopSettled || !state.projectId || !onUpdate || !requirementText) return
-    const key = state.projectId
-    if (autoGroomStarted.has(key)) return
-    autoGroomStarted.add(key)
-    void runAutoGroom()
-    // Snapshot at trigger time; in-flight onUpdate must not restart the loop.
+    if (!autoReady || loopSettled || !state.projectId || !onUpdate || !requirementText || groomBusy) {
+      return
+    }
+    if (groomRunInFlightRef.current) return
+
+    const timer = window.setTimeout(() => {
+      if (groomRunInFlightRef.current || groomingLoopSettled(state)) return
+      groomRunInFlightRef.current = true
+      setGroomError(null)
+      void runAutoGroom().finally(() => {
+        groomRunInFlightRef.current = false
+      })
+    }, 400)
+
+    return () => window.clearTimeout(timer)
+    // Re-run when resolved Q&A changes; not only once per project.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoReady, loopSettled, state.projectId, requirementText])
+  }, [
+    autoReady,
+    loopSettled,
+    stakeholderFeedback,
+    state.projectId,
+    state.groomingLoopFeedbackAt,
+    state.groomingRevision?.revisionNumber,
+    requirementText,
+    groomBusy,
+  ])
 
   return (
     <div className={embedded ? 'stakeholder-qa-pane' : 'screen'}>
@@ -488,77 +512,99 @@ export function StakeholderResponsesScreen({
         <div className="sdlc-panel__head">
           <Sparkles size={18} />
           <div>
-            <h3>Grooming loop</h3>
+            <h3>Requirement grooming</h3>
             <p className="muted">
               {autoReady
-                ? 'Nothing left to choose — pack, revision (if needed), and sign-off run in the background. G-GROOM still needs your acknowledgement.'
-                : 'Build pack, apply feedback, capture G-GROOM readiness (no gate approval).'}
+                ? 'Blink updates the requirement draft from your answers in the background. You only need to acknowledge G-GROOM when ready.'
+                : 'Resolve clarifications first. Grooming agents run automatically when nothing is left to send or answer.'}
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <button
-            type="button"
-            className="primary-btn"
-            disabled={!state.projectId || !requirementText || !!groomBusy}
-            onClick={() => void runPack()}
-          >
-            {groomBusy === 'pack' || groomBusy === 'auto' ? <Loader2 className="spin" size={16} /> : null}
-            {state.stakeholderPack ? 'Rebuild pack' : '1. Stakeholder pack'}
-          </button>
-          <button
-            type="button"
-            className="primary-btn"
-            disabled={!state.projectId || !state.stakeholderPack || !revisionNeeded || !!groomBusy}
-            onClick={() => void runRevision()}
-          >
-            {groomBusy === 'revision' ? <Loader2 className="spin" size={16} /> : null}
-            {state.groomingRevision
-              ? `2. Re-revise (#${state.groomingRevision.revisionNumber})`
-              : '2. Apply revision'}
-          </button>
-          <button
-            type="button"
-            className="primary-btn"
-            disabled={!state.projectId || !state.stakeholderPack || (revisionNeeded && !state.groomingRevision) || !!groomBusy}
-            onClick={() => void runSignOff()}
-          >
-            {groomBusy === 'signoff' || groomBusy === 'auto' ? <Loader2 className="spin" size={16} /> : null}
-            {state.groomingSignOff ? '3. Refresh sign-off' : '3. Sign-off capture'}
-          </button>
+        <div className="grooming-status-block">
+          {groomBusy ? (
+            <p className="muted small grooming-status grooming-status--busy">
+              <Loader2 className="spin" size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              {groomBusy === 'pack'
+                ? 'Building stakeholder pack…'
+                : groomBusy === 'revision'
+                  ? 'Updating requirement from your answers…'
+                  : groomBusy === 'signoff'
+                    ? 'Capturing grooming sign-off summary…'
+                    : 'Finishing grooming steps…'}
+            </p>
+          ) : loopSettled ? (
+            <p className="muted small grooming-status grooming-status--ready">
+              <CheckCircle2 size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              Requirement draft is up to date with your answers.
+              {state.groomingRevision?.revisionNumber
+                ? ` Revision #${state.groomingRevision.revisionNumber}.`
+                : ''}
+            </p>
+          ) : autoReady ? (
+            <p className="muted small grooming-status">Preparing grooming update…</p>
+          ) : (
+            <p className="muted small grooming-status">Waiting for clarifications to be resolved.</p>
+          )}
+          {revisionSkipped && !revisionNeeded && !state.groomingRevision && loopSettled ? (
+            <p className="muted small">No stakeholder feedback to apply — revision skipped.</p>
+          ) : null}
+          {groomError ? (
+            <div className="grooming-status-actions">
+              <p className="error-text">{groomError}</p>
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={!state.projectId || !requirementText || !!groomBusy}
+                onClick={() => {
+                  setGroomError(null)
+                  void runAutoGroom()
+                }}
+              >
+                Retry grooming
+              </button>
+            </div>
+          ) : null}
         </div>
-        {groomBusy ? (
-          <p className="muted small">
-            <Loader2 className="spin" size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            {groomBusy === 'pack'
-              ? 'Building stakeholder pack in the background…'
-              : groomBusy === 'revision'
-                ? 'Applying grooming revision in the background…'
-                : groomBusy === 'signoff'
-                  ? 'Capturing G-GROOM readiness in the background…'
-                  : 'Running stakeholder pack and sign-off in the background…'}
-          </p>
-        ) : null}
-        {revisionSkipped && !revisionNeeded && !state.groomingRevision ? (
-          <p className="muted small">No stakeholder feedback to apply — revision skipped.</p>
-        ) : null}
-        {state.stakeholderPack?.markdown ? (
-          <p className="muted small">
-            Pack ready · {(state.stakeholderPack.rolesCovered || []).join(', ') || 'roles TBD'}
-          </p>
-        ) : null}
-        {state.groomingRevision?.revisionNumber ? (
-          <p className="muted small">
-            Revision #{state.groomingRevision.revisionNumber} applied to requirement draft
-          </p>
-        ) : null}
-        {state.groomingSignOff?.readyForHumanSignOff ? (
-          <p className="muted small">Sign-off summary captured — ready for human G-GROOM review</p>
+        {developerState.enabled ? (
+          <details className="grooming-advanced" style={{ marginTop: '0.75rem' }}>
+            <summary className="muted small">Developer: manual grooming steps</summary>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!state.projectId || !requirementText || !!groomBusy}
+                onClick={() => void runPack()}
+              >
+                Stakeholder pack
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={!state.projectId || !state.stakeholderPack || !revisionNeeded || !!groomBusy}
+                onClick={() => void runRevision()}
+              >
+                Apply revision
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={
+                  !state.projectId ||
+                  !state.stakeholderPack ||
+                  (revisionNeeded && !state.groomingRevision) ||
+                  !!groomBusy
+                }
+                onClick={() => void runSignOff()}
+              >
+                Sign-off capture
+              </button>
+            </div>
+          </details>
         ) : null}
         {(() => {
           const emptyQa = state.questions.length === 0
-          const rejectBlocks = Boolean(state.groomRejectPending && !state.groomingRevision)
-          const canAck = Boolean(onUpdate) && !rejectBlocks && (emptyQa || Boolean(state.groomingSignOff))
+          const rejectBlocks = Boolean(state.groomRejectPending && !loopSettled)
+          const canAck = Boolean(onUpdate) && !rejectBlocks && (emptyQa || loopSettled)
           if (!canAck && !state.groomAcknowledged && !state.groomRejectPending) return null
           const issueKey =
             state.jiraCreatedIssues?.find((i) => i.jiraKey)?.jiraKey
@@ -582,6 +628,7 @@ export function StakeholderResponsesScreen({
                         groomAcknowledged: false,
                         groomRejectPending: true,
                         groomingSignOff: null,
+                        groomingLoopFeedbackAt: null,
                       })
                     }}
                   >
@@ -590,19 +637,22 @@ export function StakeholderResponsesScreen({
                 </>
               ) : rejectBlocks ? (
                 <p className="muted small">
-                  G-GROOM was rejected. Run <code>/grooming-revision</code> above, then acknowledge again.
+                  G-GROOM was rejected. Grooming will re-run from your answers; acknowledge again when the
+                  requirement shows as up to date.
                 </p>
               ) : (
                 <>
                   <p className="muted small" style={{ marginBottom: '0.5rem' }}>
                     {emptyQa
-                      ? 'No leftover clarifications. Acknowledge G-GROOM so classify is not a dead end. Grooming may still be finishing in the background. This is not an approve-gate.'
-                      : 'Human acknowledgement required before /classify-work. This is not an approve-gate — it records that grooming was reviewed.'}
+                      ? 'No leftover clarifications. Acknowledge G-GROOM before classify and planning. This is not an approve-gate.'
+                      : loopSettled
+                        ? 'Acknowledge G-GROOM before continuing to Project Shape and classify. This is not an approve-gate.'
+                        : 'Finish resolving clarifications (or wait for grooming to finish), then acknowledge G-GROOM.'}
                   </p>
                   <button
                     type="button"
                     className="primary-btn"
-                    disabled={!onUpdate}
+                    disabled={!onUpdate || (!emptyQa && !loopSettled)}
                     onClick={() => {
                       onUpdate?.({ groomAcknowledged: true, groomRejectPending: false })
                       if (issueKey && state.projectId) {
@@ -622,7 +672,6 @@ export function StakeholderResponsesScreen({
             </div>
           )
         })()}
-        {groomError ? <p className="error-text">{groomError}</p> : null}
       </section>
 
       {state.questions.length === 0 ? (
@@ -631,8 +680,8 @@ export function StakeholderResponsesScreen({
             <h3>No responses to track</h3>
             <p>
               {groomBusy
-                ? 'There were no leftover clarifications. Grooming is running in the background. Acknowledge G-GROOM when you are ready — that checkbox stays human.'
-                : 'There were no leftover clarifications. Acknowledge G-GROOM above, then continue to Project Shape.'}
+                ? 'Grooming is running in the background. Acknowledge G-GROOM when you are ready.'
+                : 'Acknowledge G-GROOM above, then continue to Project Shape.'}
             </p>
           </div>
         </section>

@@ -16,11 +16,15 @@ import {
   groomingRevision,
   groomingSignOffCapture,
   postJiraGateEvidence,
-  type OverlayFilePayload,
 } from '../api/blink'
+import {
+  mergeScopeOverlays,
+  requirementTextFromState,
+  stakeholderFeedbackFromState,
+} from '../wizard/stakeholderSync'
 import { assigneeForQuestion } from '../wizard/questions'
 import { roleLabel } from '../wizard/stakeholders'
-import type { JiraThreadReply, QuestionResponse, ScopeOverlayFile, StakeholderQuestion, WizardState } from '../wizard/types'
+import type { JiraThreadReply, QuestionResponse, StakeholderQuestion, WizardState } from '../wizard/types'
 
 interface Props {
   state: WizardState
@@ -75,20 +79,6 @@ export function shouldAutoRunGroomingLoop(state: WizardState): boolean {
     const response = state.responses.find((r) => r.questionId === q.id)
     return !isResolved(response, q)
   })
-}
-
-function mergeOverlays(
-  base: ScopeOverlayFile[] | undefined,
-  incoming: OverlayFilePayload[] | undefined,
-): ScopeOverlayFile[] {
-  const map = new Map<string, ScopeOverlayFile>()
-  for (const file of base || []) {
-    if (file?.path) map.set(file.path, file)
-  }
-  for (const file of incoming || []) {
-    if (file?.path) map.set(file.path, { path: file.path, content: file.content })
-  }
-  return [...map.values()]
 }
 
 function statusLabel(
@@ -189,7 +179,7 @@ export function StakeholderResponsesScreen({
   const saveEdit = (questionId: string) => {
     const text = draft.trim()
     if (!text || !onUpdateResponse) return
-    onUpdateResponse(questionId, {
+    void onUpdateResponse(questionId, {
       status: 'answered',
       response: text,
       receivedAt: new Date().toISOString(),
@@ -197,6 +187,16 @@ export function StakeholderResponsesScreen({
     })
     setEditingId(null)
     setDraft('')
+  }
+
+  const applyProposedAnswer = (questionId: string, text: string) => {
+    if (!onUpdateResponse || !text.trim()) return
+    void onUpdateResponse(questionId, {
+      status: 'answered',
+      response: text.trim(),
+      receivedAt: new Date().toISOString(),
+      source: 'mcq',
+    })
   }
 
   const useReply = (questionId: string, reply: JiraThreadReply) => {
@@ -252,19 +252,8 @@ export function StakeholderResponsesScreen({
     }
   }
 
-  const requirementText =
-    state.groomDraft?.trim()
-    || state.requirementsText?.trim()
-    || state.description?.trim()
-    || ''
-
-  const stakeholderFeedback = state.responses
-    .filter((r) => r.status === 'answered' && r.response.trim())
-    .map((r) => {
-      const q = state.questions.find((qq) => qq.id === r.questionId)
-      return `Q: ${q?.question || r.questionId}\nA: ${r.response}`
-    })
-    .join('\n\n')
+  const requirementText = requirementTextFromState(state)
+  const stakeholderFeedback = stakeholderFeedbackFromState(state)
   const revisionNeeded = Boolean(stakeholderFeedback.trim())
   const autoReady = shouldAutoRunGroomingLoop(state)
   const loopSettled =
@@ -285,7 +274,7 @@ export function StakeholderResponsesScreen({
       if (res.status !== 'ok') throw new Error(res.message || 'Stakeholder pack failed')
       onUpdate({
         stakeholderPack: res.stakeholderPack || null,
-        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
         nextSdlcCommand: res.nextCommand || '/grooming-revision',
       })
     } catch (e) {
@@ -313,7 +302,7 @@ export function StakeholderResponsesScreen({
         groomingRevision: res.groomingRevision || null,
         groomDraft: draftText || state.groomDraft,
         requirementsText: draftText || state.requirementsText,
-        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
         nextSdlcCommand: res.nextCommand || '/grooming-sign-off-capture',
       })
     } catch (e) {
@@ -349,7 +338,7 @@ export function StakeholderResponsesScreen({
       if (res.status !== 'ok') throw new Error(res.message || 'Sign-off capture failed')
       onUpdate({
         groomingSignOff: res.groomingSignOff || null,
-        scopeOverlays: res.overlayFiles || state.scopeOverlays || [],
+        scopeOverlays: mergeScopeOverlays(state.scopeOverlays, res.overlayFiles),
         nextSdlcCommand: res.nextCommand || '/sdlc-next',
       })
       postSignOffEvidence(state.projectId)
@@ -386,7 +375,7 @@ export function StakeholderResponsesScreen({
           })
           if (res.status !== 'ok') throw new Error(res.message || 'Stakeholder pack failed')
           pack = res.stakeholderPack || pack
-          overlays = mergeOverlays(overlays, res.overlayFiles)
+          overlays = mergeScopeOverlays(overlays, res.overlayFiles)
           onUpdate({
             stakeholderPack: pack,
             scopeOverlays: overlays,
@@ -404,7 +393,7 @@ export function StakeholderResponsesScreen({
         if (rev.status !== 'ok') throw new Error(rev.message || 'Grooming revision failed')
         revision = rev.groomingRevision || revision
         draftText = rev.requirementDraft || rev.groomingRevision?.requirementMarkdown || draftText
-        overlays = mergeOverlays(overlays, rev.overlayFiles)
+        overlays = mergeScopeOverlays(overlays, rev.overlayFiles)
         onUpdate({
           groomingRevision: revision,
           groomDraft: draftText,
@@ -421,7 +410,7 @@ export function StakeholderResponsesScreen({
             issueId: revision?.issueId || pack?.issueId,
           })
           if (sign.status !== 'ok') throw new Error(sign.message || 'Sign-off capture failed')
-          overlays = mergeOverlays(overlays, sign.overlayFiles)
+          overlays = mergeScopeOverlays(overlays, sign.overlayFiles)
           onUpdate({
             groomingSignOff: sign.groomingSignOff || null,
             scopeOverlays: overlays,
@@ -452,11 +441,11 @@ export function StakeholderResponsesScreen({
       if (packRes) {
         if (packRes.status !== 'ok') throw new Error(packRes.message || 'Stakeholder pack failed')
         pack = packRes.stakeholderPack || pack
-        overlays = mergeOverlays(overlays, packRes.overlayFiles)
+        overlays = mergeScopeOverlays(overlays, packRes.overlayFiles)
       }
       if (signRes) {
         if (signRes.status !== 'ok') throw new Error(signRes.message || 'Sign-off capture failed')
-        overlays = mergeOverlays(overlays, signRes.overlayFiles)
+        overlays = mergeScopeOverlays(overlays, signRes.overlayFiles)
       }
       onUpdate({
         ...(packRes
@@ -939,8 +928,18 @@ export function StakeholderResponsesScreen({
                         <p>
                           {q.jiraCommentStatus === 'posted'
                             ? 'Parent clarification is on Jira. Waiting for child replies in the thread.'
-                            : 'No discussion yet. Post to Jira first, then refresh.'}
+                            : 'No discussion yet. Post to Jira first, then refresh — or use your in-app answer.'}
                         </p>
+                        {onUpdateResponse && q.proposedAnswer?.trim() ? (
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => applyProposedAnswer(q.id, q.proposedAnswer!)}
+                          >
+                            Use in-app answer ({q.proposedAnswer.trim().slice(0, 48)}
+                            {q.proposedAnswer.trim().length > 48 ? '…' : ''})
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>

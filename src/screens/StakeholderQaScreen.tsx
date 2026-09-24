@@ -24,7 +24,7 @@ interface Props {
   onRefreshJira: () => Promise<void>
   onSimulateResponses: () => void | Promise<void>
   onResetSimulatedReplies?: () => void | Promise<void>
-  onUpdateResponse?: (questionId: string, patch: Partial<QuestionResponse>) => void
+  onUpdateResponse?: (questionId: string, patch: Partial<QuestionResponse>) => void | Promise<void>
   onResolveAllLatest?: () => void
   onPatchQuestion?: (questionId: string, patch: Partial<StakeholderQuestion>) => void
   onNavigate?: (step: WizardStep) => void

@@ -114,7 +114,7 @@ export interface QuestionResponse {
   response: string
   receivedAt: string | null
   /** Where the answer came from */
-  source?: 'jira' | 'email' | 'proxy' | 'demo' | 'manual' | 'thread'
+  source?: 'jira' | 'email' | 'proxy' | 'demo' | 'manual' | 'thread' | 'mcq'
   /** Display name of the Jira comment author when sourced from Jira */
   author?: string | null
   jiraIssueKey?: string | null

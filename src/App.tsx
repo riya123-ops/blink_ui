@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, streamClarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, streamClarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -192,6 +192,8 @@ export default function App() {
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
   const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
+  const lastGovernedPayloadRef = useRef<string | null>(null)
+  const stakeholderGovernanceInFlightRef = useRef(false)
   const stepRef = useRef(step)
   const stateRef = useRef(state)
   const completedRef = useRef(completedThrough)
@@ -253,6 +255,70 @@ export default function App() {
     return persistedWizardStep(lastWorkingRef.current, completedRef.current, stateRef.current)
   }, [])
 
+  const scheduleStakeholderGovernance = useCallback(
+    (projectId: string, opts?: { draft?: boolean; force?: boolean }) => {
+      const payload = opts?.draft ? withDraftProjectPayload(projectPayload()) : projectPayload()
+      const payloadStr = JSON.stringify(payload)
+      if (!payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
+        return
+      }
+      if (stakeholderGovernanceInFlightRef.current && !opts?.force) {
+        return
+      }
+      const current = stateRef.current
+      if (
+        !opts?.force &&
+        lastGovernedPayloadRef.current === payloadStr &&
+        current.stakeholdersConfirmed
+      ) {
+        return
+      }
+
+      stakeholderGovernanceInFlightRef.current = true
+      setGovernancePrep('preparing')
+      patch({ governanceStatus: 'preparing' })
+
+      void (async () => {
+        let sodWarnings = current.sodWarnings || []
+        let nextCommand = current.nextSdlcCommand
+        let stakeholdersConfirmed = Boolean(current.stakeholdersConfirmed)
+        let stakeholdersConfirmationDigest = current.stakeholdersConfirmationDigest || null
+        try {
+          const configured = await configureStakeholders(projectId)
+          sodWarnings = configured.sodWarnings?.length ? configured.sodWarnings.map(String) : sodWarnings
+          nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
+          if (!opts?.draft) {
+            try {
+              const confirmed = await confirmStakeholders(projectId)
+              if (confirmed.status === 'ok') {
+                stakeholdersConfirmed = true
+                stakeholdersConfirmationDigest =
+                  confirmed.confirmationDigest || stakeholdersConfirmationDigest
+                nextCommand = confirmed.nextCommand || nextCommand
+              }
+            } catch {
+              /* confirm can retry from Integrations */
+            }
+          }
+          lastGovernedPayloadRef.current = payloadStr
+          patch({
+            sodWarnings,
+            nextSdlcCommand: nextCommand,
+            governanceStatus: 'ready',
+            stakeholdersConfirmed,
+            stakeholdersConfirmationDigest,
+          })
+        } catch {
+          patch({ governanceStatus: 'failed' })
+        } finally {
+          stakeholderGovernanceInFlightRef.current = false
+          setGovernancePrep('idle')
+        }
+      })()
+    },
+    [patch, projectPayload],
+  )
+
   const persistProject = useCallback(async (opts?: { draft?: boolean }): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
@@ -274,20 +340,6 @@ export default function App() {
       } catch {
         // Local draft is still stored; server can catch up on the next save.
       }
-      if (!opts?.draft && !state.stakeholdersConfirmed) {
-        try {
-          const confirmed = await confirmStakeholders(state.projectId)
-          if (confirmed.status === 'ok') {
-            patch({
-              stakeholdersConfirmed: true,
-              stakeholdersConfirmationDigest: confirmed.confirmationDigest || null,
-              nextSdlcCommand: confirmed.nextCommand || state.nextSdlcCommand,
-            })
-          }
-        } catch {
-          /* confirm retries on the next Continue */
-        }
-      }
       return {
         id: state.projectId,
         workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
@@ -299,62 +351,22 @@ export default function App() {
     const saved = await saveProject(withWizard, state.projectId)
     lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
-    let governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
-    let nextCommand = saved.nextCommand || state.nextSdlcCommand
-    let sodWarnings = saved.sodWarnings || []
-    let stakeholdersConfirmed = Boolean(state.stakeholdersConfirmed)
-    let stakeholdersConfirmationDigest = state.stakeholdersConfirmationDigest || null
-
-    // Official handoff: persist people, then hosted /configure-stakeholders (non-blocking on failure).
-    if (payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
-      try {
-        setGovernancePrep('preparing')
-        const configured = await configureStakeholders(id)
-        sodWarnings = configured.sodWarnings?.length ? configured.sodWarnings.map(String) : sodWarnings
-        nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
-        governanceStatus = 'ready'
-        setGovernancePrep('ready')
-        if (!opts?.draft) {
-          try {
-            const confirmed = await confirmStakeholders(id)
-            if (confirmed.status === 'ok') {
-              stakeholdersConfirmed = true
-              stakeholdersConfirmationDigest = confirmed.confirmationDigest || stakeholdersConfirmationDigest
-              nextCommand = confirmed.nextCommand || nextCommand
-            }
-          } catch {
-            /* configure succeeded; confirm can retry on the next Continue */
-          }
-        }
-      } catch {
-        governanceStatus = 'failed'
-        setGovernancePrep('failed')
-      }
-    }
 
     patch({
       projectId: id,
       projectName: payload.projectName,
       description: payload.description,
-      sodWarnings,
-      nextSdlcCommand: nextCommand,
-      governanceStatus,
-      stakeholdersConfirmed,
-      stakeholdersConfirmationDigest,
     })
     setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
-    if (governanceStatus === 'preparing') {
-      setGovernancePrep('preparing')
-    }
     return {
       id,
       workspaceStatus: saved.workspaceStatus,
-      sodWarnings,
-      nextCommand: nextCommand || undefined,
-      governanceStatus,
+      sodWarnings: state.sodWarnings,
+      nextCommand: state.nextSdlcCommand || undefined,
+      governanceStatus: state.governanceStatus,
     }
   }, [projectPayload, state, folderPrep, governancePrep, patch, wizardBookmark])
 
@@ -382,6 +394,8 @@ export default function App() {
     skipRemoteResumeRef.current = true
     freshStartRef.current = true
     lastSavedPayloadRef.current = null
+    lastGovernedPayloadRef.current = null
+    stakeholderGovernanceInFlightRef.current = false
     setFolderPrep('idle')
     setGovernancePrep('idle')
     setFolderQuery(null)
@@ -650,41 +664,6 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [folderPrep])
 
-  useEffect(() => {
-    if (governancePrep !== 'preparing' || !state.projectId) return
-    let cancelled = false
-    const check = async () => {
-      try {
-        const progress = await fetchGovernanceStatus(state.projectId as string)
-        if (cancelled) return
-        const status = progress.status || 'idle'
-        if (status === 'preparing') return
-        if (status === 'ready') {
-          const warnings = progress.sodWarnings || []
-          patch({
-            sodWarnings: warnings,
-            nextSdlcCommand: progress.nextCommand || state.nextSdlcCommand,
-            governanceStatus: 'ready',
-          })
-          setGovernancePrep('idle')
-          return
-        }
-        if (status === 'failed') {
-          patch({ governanceStatus: 'failed' })
-          setGovernancePrep('idle')
-        }
-      } catch {
-        /* keep polling until a later check succeeds */
-      }
-    }
-    void check()
-    const timer = window.setInterval(() => void check(), 1000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [governancePrep, state.projectId, state.nextSdlcCommand, patch])
-
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     if (creatingReposRef.current) return false
     const github = state.integrations?.find((item) => item.id === 'github')
@@ -782,11 +761,14 @@ export default function App() {
         setSaving(true)
         setStatus(null)
       }
+      const draft =
+        skipStepValidation && (!state.projectName.trim() || !state.description.trim())
       try {
-        await persistProject({
-          draft: skipStepValidation && (!state.projectName.trim() || !state.description.trim()),
-        })
+        const saved = await persistProject({ draft })
         setStatus(null)
+        if (!draft && saved.id) {
+          scheduleStakeholderGovernance(saved.id, { draft })
+        }
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
@@ -839,7 +821,13 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) goToStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state, patch, skipStepValidation, goToStep])
+  }, [step, validateCurrentStep, persistProject, scheduleStakeholderGovernance, state, patch, skipStepValidation, goToStep])
+
+  const retryStakeholderGovernance = useCallback(() => {
+    const id = stateRef.current.projectId
+    if (!id) return
+    scheduleStakeholderGovernance(id, { force: true })
+  }, [scheduleStakeholderGovernance])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -1809,7 +1797,9 @@ export default function App() {
       advanceStep('package', 'running')
       let projectId = state.projectId
       if (!projectId) {
-        projectId = (await persistProject()).id
+        const saved = await persistProject()
+        projectId = saved.id
+        scheduleStakeholderGovernance(saved.id)
       }
       const repositories = (
         state.repositoriesTouched
@@ -1936,7 +1926,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [state, patch, persistProject, step, goToStep])
+  }, [state, patch, persistProject, scheduleStakeholderGovernance, step, goToStep])
 
   const handleQuickDownload = useCallback(() => {
     if (loading) return
@@ -1978,6 +1968,8 @@ export default function App() {
             onUpdate={patch}
             onEnsureProject={autoEnsureProject ? ensureDraftProject : undefined}
             jiraPublish={jiraPublish}
+            stakeholderGovernanceBusy={governancePrep === 'preparing'}
+            onRetryStakeholderGovernance={retryStakeholderGovernance}
           />
         )
       case 'repositories':

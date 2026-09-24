@@ -1562,13 +1562,19 @@ export interface PlanProductScopeResponse {
   errors?: string[]
 }
 
+export type PlanProductScopePayload = {
+  projectName?: string
+  requirementText: string
+  actor?: string
+  refresh?: boolean
+  scopeFeedback?: string
+  productScope?: ProductScopeData | null
+  answers?: { questionId: string; optionId: string; optionLabel?: string; otherText?: string }[]
+}
+
 export async function planProductScope(
   projectId?: string | null,
-  payload?: {
-    projectName?: string
-    requirementText: string
-    actor?: string
-  }
+  payload?: PlanProductScopePayload,
 ): Promise<PlanProductScopeResponse> {
   const path = projectId ? `/projects/${projectId}/plan-product-scope` : `/projects/plan-product-scope`
   const url = apiUrl(path)
@@ -1580,6 +1586,10 @@ export async function planProductScope(
       projectName: payload?.projectName,
       requirementText: payload?.requirementText,
       actor: payload?.actor || 'operator',
+      refresh: payload?.refresh || undefined,
+      scopeFeedback: payload?.scopeFeedback,
+      productScope: payload?.productScope || undefined,
+      answers: payload?.answers,
     }),
   })
   if (!response.ok) throw new Error(await readError(response))
@@ -1588,11 +1598,7 @@ export async function planProductScope(
 
 export async function streamPlanProductScope(
   projectId: string | null | undefined,
-  payload: {
-    projectName?: string
-    requirementText: string
-    actor?: string
-  },
+  payload: PlanProductScopePayload,
   handlers: { onThinking?: (text: string) => void },
   signal?: AbortSignal,
 ): Promise<PlanProductScopeResponse> {
@@ -1605,12 +1611,53 @@ export async function streamPlanProductScope(
         projectName: payload.projectName,
         requirementText: payload.requirementText,
         actor: payload.actor || 'operator',
+        refresh: payload.refresh || undefined,
+        scopeFeedback: payload.scopeFeedback,
+        productScope: payload.productScope || undefined,
+        answers: payload.answers,
       },
       { onThinking: handlers.onThinking },
       signal,
     )
   } catch {
     return planProductScope(projectId, payload)
+  }
+}
+
+export interface ClarifyProductScopeResponse {
+  status: string
+  message: string
+  nextCommand?: string
+  questions?: GroomQuestionDto[]
+  errors?: string[]
+}
+
+export async function clarifyProductScope(
+  projectId: string | null | undefined,
+  payload: {
+    projectName?: string
+    requirementText: string
+    productScope?: ProductScopeData | null
+    actor?: string
+  },
+): Promise<ClarifyProductScopeResponse> {
+  const path = projectId ? `/projects/${projectId}/clarify-product-scope` : `/projects/clarify-product-scope`
+  const response = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      projectId: projectId || undefined,
+      projectName: payload.projectName,
+      requirementText: payload.requirementText,
+      productScope: payload.productScope || undefined,
+      actor: payload.actor || 'operator',
+    }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  const parsed = (await response.json()) as ClarifyProductScopeResponse
+  return {
+    ...parsed,
+    questions: normalizeGroomQuestions(parsed.questions),
   }
 }
 

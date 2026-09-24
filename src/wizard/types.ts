@@ -303,6 +303,9 @@ export interface WizardState extends SetupForm {
   productScope?: ProductScopeData | null
   scopeDigest?: string | null
   scopeOverlays?: ScopeOverlayFile[]
+  scopeClarifyStatus?: string | null
+  scopeQuestions?: GroomQuestion[]
+  scopeAnswers?: GroomAnswer[]
   workClassification?: WorkClassificationState | null
   specification?: SpecificationState | null
   technicalPlan?: TechnicalPlanState | null
@@ -534,6 +537,9 @@ export const defaultWizardState: WizardState = {
   productScope: null,
   scopeDigest: null,
   scopeOverlays: [],
+  scopeClarifyStatus: null,
+  scopeQuestions: [],
+  scopeAnswers: [],
   workClassification: null,
   specification: null,
   technicalPlan: null,
@@ -678,6 +684,9 @@ export function clearGroomingPatch(): Partial<WizardState> {
     productScope: null,
     scopeDigest: null,
     scopeOverlays: [],
+    scopeClarifyStatus: null,
+    scopeQuestions: [],
+    scopeAnswers: [],
     workClassification: null,
     specification: null,
     technicalPlan: null,

@@ -5,10 +5,11 @@ import {
   fetchFigmaDesign,
   fetchFigmaFiles,
   ingestFigmaDesign,
+  proposeStitchDesigns,
   saveFigmaDesign,
   type FigmaFileItem,
 } from '../api/blink'
-import type { WizardState, WizardStep } from '../wizard/types'
+import type { DesignOption, WizardState, WizardStep } from '../wizard/types'
 import { autoLinkFigmaScreens, designFromBinding, figmaJiraRefs, figmaStoryRefs } from '../wizard/figmaDesign'
 import { jiraConnection } from '../wizard/jiraTickets'
 
@@ -95,6 +96,10 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [thumbsTried, setThumbsTried] = useState(false)
   const [syncLockUntil, setSyncLockUntil] = useState(0)
+  const [generating, setGenerating] = useState(false)
+  const [stitchOptions, setStitchOptions] = useState<DesignOption[]>(state.designOptions?.options || [])
+  const [chosenId, setChosenId] = useState(state.designOptions?.chosenId || '')
+  const [stitchMessage, setStitchMessage] = useState(state.designOptions?.message || '')
   const [nowTick, setNowTick] = useState(() => Date.now())
   const jira = jiraConnection(state)
   const jiraBrowse = jira?.baseUrl ? jira.baseUrl.replace(/\/$/, '') : ''
@@ -306,6 +311,52 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
     }
   }
 
+  const generateDesigns = async () => {
+    setGenerating(true)
+    setError(null)
+    try {
+      const result = await proposeStitchDesigns({
+        projectName: state.projectName,
+        requirementText: state.groomDraft || state.requirementsText,
+        stories: (state.productScope?.stories || []).map((story) => ({ title: story.title })),
+      })
+      const options = (result.options || []).map((option) => ({
+        ...option,
+        screens: [],
+      }))
+      setStitchOptions(options)
+      setStitchMessage(result.message || '')
+      setChosenId('')
+      onUpdate({
+        designOptions: {
+          status: 'ready',
+          message: result.message,
+          options,
+          chosenId: null,
+        },
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not generate designs.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const chooseDesign = (option: DesignOption) => {
+    setChosenId(option.id)
+    const message = `Chose ${option.name}. In Stitch, export this screen to Figma, then bind that file below.`
+    setStitchMessage(message)
+    onUpdate({
+      designOptions: {
+        ...(state.designOptions || {}),
+        status: 'ready',
+        chosenId: option.id,
+        message,
+        options: stitchOptions,
+      },
+    })
+  }
+
   if (!state.groomConfirmed) return null
 
   const rawName = design?.fileName?.trim() || ''
@@ -323,6 +374,36 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
   const lastGoodSummary = isRateLimitCopy(design?.lastSyncSummary) ? null : design?.lastSyncSummary
 
   return (
+    <>
+    <section className="card ref-card jira-scope-panel">
+      <div className="jira-scope-head">
+        <div className="req-section-head">
+          <h3>Design options</h3>
+          <p>Blink asks Google Stitch for three screens from the groomed requirement. Pick one, export it to Figma, then bind that file.</p>
+        </div>
+        <button type="button" className="text-btn" disabled={generating} onClick={() => void generateDesigns()}>
+          {generating ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
+          {generating ? 'Generating…' : stitchOptions.length ? 'Generate again' : 'Generate designs'}
+        </button>
+      </div>
+      {stitchMessage ? <p className="field-hint">{stitchMessage}</p> : null}
+      {stitchOptions.length ? (
+        <div className="stitch-options">
+          {stitchOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={chosenId === option.id ? 'stitch-option is-chosen' : 'stitch-option'}
+              onClick={() => chooseDesign(option)}
+            >
+              {option.imageUrl ? <img src={option.imageUrl} alt="" /> : <span className="design-screen-thumb is-empty"><Layers size={16} /></span>}
+              <strong>{option.name}</strong>
+              <span>{option.summary}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
     <section className="card ref-card jira-scope-panel">
       <div className="jira-scope-head">
         <div className="req-section-head">
@@ -511,5 +592,6 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
         </div>
       ) : null}
     </section>
+    </>
   )
 }

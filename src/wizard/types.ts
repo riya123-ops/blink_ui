@@ -428,6 +428,8 @@ export interface DesignOption {
   summary: string
   layout: DesignLayout | string
   screens: DesignOptionScreen[]
+  imageUrl?: string
+  stitchScreenId?: string
 }
 
 export interface DesignOptionsState {

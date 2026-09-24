@@ -62,6 +62,15 @@ import {
 import { type JiraPublishState } from './wizard/thinking'
 import { autoMapQuestionsToJira } from './wizard/jiraMatch'
 import {
+  applyGroomingRevisionToState,
+  applyQuestionResponsePatch,
+  patchAfterJiraAnswerSync,
+  responsesForStakeholderQuestions,
+  shouldRunGroomingRevisionAfterAnswers,
+  stakeholderFeedbackFromState,
+  syncStakeholderAnswerToJira,
+} from './wizard/stakeholderSync'
+import {
   allowedStep,
   isWizardHistoryState,
   seedWizardHistory,
@@ -169,6 +178,7 @@ export default function App() {
   const [grooming, setGrooming] = useState(false)
   const jiraPublish: JiraPublishState | null = null
   const groomAskInFlightRef = useRef(false)
+  const lastRevisionFeedbackRef = useRef('')
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [postingJira, setPostingJira] = useState(false)
@@ -804,12 +814,7 @@ export default function App() {
         requirementsText: wording,
         questions,
         requirementsAnalyzed: true,
-        responses: questions.map((q) => ({
-          questionId: q.id,
-          status: 'pending' as const,
-          response: q.proposedAnswer || '',
-          receivedAt: null,
-        })),
+        responses: responsesForStakeholderQuestions(questions, state.responses),
         questionsSent: false,
       }
       const alreadyPlanned = Boolean(state.productScope?.epics?.length)
@@ -1011,15 +1016,24 @@ export default function App() {
       groomStatus: 'draft_ready',
       questions,
       requirementsAnalyzed: true,
-      responses: questions.map((q) => ({
-        questionId: q.id,
-        status: 'pending' as const,
-        response: q.proposedAnswer || '',
-        receivedAt: null,
-      })),
+      responses: responsesForStakeholderQuestions(questions, state.responses),
       questionsSent: false,
     }
     patch(basePatch)
+    const mergedState: WizardState = { ...state, ...basePatch }
+    if (
+      mergedState.projectId &&
+      shouldRunGroomingRevisionAfterAnswers(mergedState) &&
+      stakeholderFeedbackFromState(mergedState) !== lastRevisionFeedbackRef.current
+    ) {
+      const feedback = stakeholderFeedbackFromState(mergedState)
+      lastRevisionFeedbackRef.current = feedback
+      void applyGroomingRevisionToState(mergedState)
+        .then((revisionPatch) => patch(revisionPatch))
+        .catch(() => {
+          lastRevisionFeedbackRef.current = ''
+        })
+    }
     setStatus({ type: 'success', message: 'Requirement wording saved. Tickets will plan next.' })
   }, [state, patch])
 
@@ -1646,60 +1660,72 @@ export default function App() {
   }, [state])
 
   const handleUpdateResponse = useCallback(
-    (questionId: string, patchResponse: Partial<import('./wizard/types').QuestionResponse>) => {
-      setState((prev) => {
-        const body = (patchResponse.response || '').trim()
-        const answered = (patchResponse.status || 'answered') === 'answered' && Boolean(body)
-        const responses = prev.questions.map((q) => {
-          const existing = prev.responses.find((r) => r.questionId === q.id)
-          if (q.id !== questionId) {
-            return (
-              existing ?? {
-                questionId: q.id,
-                status: 'pending' as const,
-                response: q.proposedAnswer || '',
-                receivedAt: null,
-              }
-            )
-          }
-          return {
-            questionId: q.id,
-            status: answered ? ('answered' as const) : patchResponse.status || 'pending',
-            response: body || existing?.response || '',
-            receivedAt: patchResponse.receivedAt || new Date().toISOString(),
-            source: patchResponse.source || existing?.source || 'manual',
-            author: patchResponse.author ?? existing?.author ?? null,
-            jiraIssueKey: patchResponse.jiraIssueKey ?? existing?.jiraIssueKey ?? q.jiraIssueKey ?? null,
-            jiraCommentId: patchResponse.jiraCommentId ?? existing?.jiraCommentId ?? null,
-            resolvedFromCommentId: patchResponse.resolvedFromCommentId ?? existing?.resolvedFromCommentId ?? null,
-          }
-        })
-        const questions = prev.questions.map((q) => {
-          if (q.id !== questionId) return q
-          if (!answered) {
-            return {
-              ...q,
-              jiraCommentStatus:
-                (q.jiraThread?.length || 0) > 0 ? ('discussion' as const) : q.jiraCommentStatus,
-              jiraThreadStale: false,
+    async (questionId: string, patchResponse: Partial<import('./wizard/types').QuestionResponse>) => {
+      const nextState = applyQuestionResponsePatch(stateRef.current, questionId, patchResponse)
+      setState(nextState)
+
+      const body = (patchResponse.response || '').trim()
+      const answered = (patchResponse.status || 'answered') === 'answered' && Boolean(body)
+      if (!answered) {
+        setStatus({ type: 'success', message: 'Answer updated.' })
+        return
+      }
+
+      let working = nextState
+      if (working.projectId) {
+        const mapped = autoMapQuestionsToJira(working.questions, working)
+        const question = mapped.find((q) => q.id === questionId)
+        if (question?.jiraIssueKey) {
+          try {
+            const sync = await syncStakeholderAnswerToJira(working.projectId, question, body)
+            if (sync.posted) {
+              setState((prev) => patchAfterJiraAnswerSync(prev, questionId, sync))
+              working = patchAfterJiraAnswerSync(working, questionId, sync)
             }
+          } catch (e) {
+            setStatus({
+              type: 'error',
+              message: `Answer saved locally. Jira sync failed: ${
+                e instanceof Error ? e.message : 'unknown error'
+              }`,
+            })
           }
-          return {
-            ...q,
-            jiraCommentStatus: 'resolved' as const,
-            jiraCommentMessage: body.length > 140 ? `${body.slice(0, 140)}…` : body,
-            jiraReplyBody: body,
-            jiraReplyAuthor: patchResponse.author ?? q.jiraReplyAuthor ?? null,
-            jiraReplyAt: patchResponse.receivedAt || new Date().toISOString(),
-            jiraReplyCommentId: patchResponse.resolvedFromCommentId || q.jiraReplyCommentId || null,
-            jiraThreadStale: false,
-          }
-        })
-        return { ...prev, responses, questions }
-      })
-      setStatus({ type: 'success', message: 'Answer resolved.' })
+        }
+      }
+
+      const feedback = stakeholderFeedbackFromState(working)
+      if (
+        shouldRunGroomingRevisionAfterAnswers(working) &&
+        feedback !== lastRevisionFeedbackRef.current
+      ) {
+        lastRevisionFeedbackRef.current = feedback
+        try {
+          const revisionPatch = await applyGroomingRevisionToState(working)
+          patch(revisionPatch)
+          setStatus({
+            type: 'success',
+            message: 'Answer saved; Jira updated when linked; requirement revised.',
+          })
+          return
+        } catch (e) {
+          lastRevisionFeedbackRef.current = ''
+          setStatus({
+            type: 'error',
+            message: `Answer saved. Grooming revision failed: ${
+              e instanceof Error ? e.message : 'unknown error'
+            }`,
+          })
+          return
+        }
+      }
+
+      if (!working.projectId || !working.questions.find((q) => q.id === questionId)?.jiraIssueKey) {
+        setStatus({ type: 'success', message: 'Answer resolved.' })
+        return
+      }
+      setStatus({ type: 'success', message: 'Answer resolved and synced to Jira when a ticket was linked.' })
     },
-    [],
+    [patch, setState],
   )
 
   const handleResolveAllLatest = useCallback(() => {

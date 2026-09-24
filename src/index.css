@@ -1732,6 +1732,17 @@ textarea::placeholder {
   font-size: 0.8rem;
 }
 
+.governance-sync-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.governance-sync-banner .spin {
+  flex-shrink: 0;
+}
+
 .status-banner.error {
   background: #fef2f2;
   color: #b91c1c;

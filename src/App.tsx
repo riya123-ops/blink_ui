@@ -8,12 +8,15 @@ import { WizardSidebar, STEP_ORDER } from './components/WizardSidebar'
 import { SessionControls } from './components/SessionControls'
 import { ChatPanel, useChatPanelOpen } from './components/ChatPanel'
 import { ThemeBackground } from './components/ThemeBackground'
+import { JourneyGuide } from './components/JourneyGuide'
 import {
   ProjectShapeScreen,
   RepositoriesScreen,
   TechnologyPerRepoScreen,
 } from './screens/ExtendedScreens'
-import { ShipScreen } from './screens/ShipScreen'
+import { WorkspaceScreen } from './screens/WorkspaceScreen'
+import { ReviewPrScreen } from './screens/ReviewPrScreen'
+import { ReleaseClosureScreen } from './screens/ReleaseClosureScreen'
 import {
   ProjectStakeholdersScreen,
   validateProjectStakeholders,
@@ -29,6 +32,7 @@ import {
   SdlcPlanningScreen,
   validateSdlcPlan,
 } from './screens/SdlcPlanningScreen'
+import { ImplementationReadinessScreen } from './screens/ImplementationReadinessScreen'
 import { WelcomeScreen } from './screens/WelcomeScreen'
 import {
   assigneeForQuestion,
@@ -2043,7 +2047,7 @@ export default function App() {
         return <TechnologyPerRepoScreen state={state} onUpdate={patch} />
       case 'generation':
         return (
-          <ShipScreen
+          <WorkspaceScreen
             state={state}
             onUpdate={patch}
             loading={loading}
@@ -2057,11 +2061,44 @@ export default function App() {
             }}
           />
         )
+      case 'implementation':
+        return (
+          <ImplementationReadinessScreen
+            state={state}
+            onUpdate={patch}
+            onNavigate={(next) => {
+              setStatus(null)
+              goToStep(next)
+            }}
+          />
+        )
+      case 'review-pr':
+        return (
+          <ReviewPrScreen
+            state={state}
+            onUpdate={patch}
+            onNavigate={(next) => {
+              setStatus(null)
+              goToStep(next)
+            }}
+          />
+        )
+      case 'release':
+        return (
+          <ReleaseClosureScreen
+            state={state}
+            onUpdate={patch}
+            onNavigate={(next) => {
+              setStatus(null)
+              goToStep(next)
+            }}
+          />
+        )
     }
   }
 
   const showBack = step !== 'welcome'
-  const showNext = step !== 'welcome' && step !== 'generation'
+  const showNext = step !== 'welcome' && step !== 'implementation' && step !== 'review-pr' && step !== 'release'
   const isWelcome = step === 'welcome'
   const isSuccessScreen = false
   const generationIdx = stepIndex('generation')
@@ -2167,6 +2204,16 @@ export default function App() {
 
         <div className={`content${isSuccessScreen ? ' content-fill' : ''}${isWelcome ? ' content-welcome' : ''}${currentSkipped ? ' content-skipped' : ''}`}>
           {status && !isWelcome && <div className={`status-banner ${status.type}`}>{status.message}</div>}
+          {!isWelcome ? (
+            <JourneyGuide
+              state={state}
+              step={step}
+              onNavigate={(next) => {
+                setStatus(null)
+                goToStep(next)
+              }}
+            />
+          ) : null}
           {renderScreen()}
         </div>
 

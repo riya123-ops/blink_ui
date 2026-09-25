@@ -5,6 +5,7 @@ import {
   fetchFigmaDesign,
   fetchFigmaFiles,
   ingestFigmaDesign,
+  apiUrl,
   proposeStitchDesigns,
   saveFigmaDesign,
   type FigmaFileItem,
@@ -17,6 +18,13 @@ interface Props {
   state: WizardState
   onUpdate: (patch: Partial<WizardState>) => void
   onNavigate?: (step: WizardStep) => void
+}
+
+function designImageSrc(url?: string): string {
+  if (!url) return ''
+  if (url.startsWith('data:') || /^https?:\/\//i.test(url)) return url
+  const path = url.startsWith('/api/') ? url.slice(4) : url
+  return apiUrl(path.startsWith('/') ? path : `/${path}`)
 }
 
 function parseFigmaFileKey(raw: string): string | undefined {
@@ -100,6 +108,12 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
   const [stitchOptions, setStitchOptions] = useState<DesignOption[]>(state.designOptions?.options || [])
   const [chosenId, setChosenId] = useState(state.designOptions?.chosenId || '')
   const [stitchMessage, setStitchMessage] = useState(state.designOptions?.message || '')
+
+  useEffect(() => {
+    setStitchOptions(state.designOptions?.options || [])
+    setChosenId(state.designOptions?.chosenId || '')
+    setStitchMessage(state.designOptions?.message || '')
+  }, [state.designOptions])
   const [nowTick, setNowTick] = useState(() => Date.now())
   const jira = jiraConnection(state)
   const jiraBrowse = jira?.baseUrl ? jira.baseUrl.replace(/\/$/, '') : ''
@@ -396,7 +410,7 @@ export function DesignOptionsPanel({ state, onUpdate, onNavigate }: Props) {
               className={chosenId === option.id ? 'stitch-option is-chosen' : 'stitch-option'}
               onClick={() => chooseDesign(option)}
             >
-              {option.imageUrl ? <img src={option.imageUrl} alt="" /> : <span className="design-screen-thumb is-empty"><Layers size={16} /></span>}
+              {option.imageUrl ? <img src={designImageSrc(option.imageUrl)} alt="" referrerPolicy="no-referrer" /> : <span className="design-screen-thumb is-empty"><Layers size={16} /></span>}
               <strong>{option.name}</strong>
               <span>{option.summary}</span>
             </button>

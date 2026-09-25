@@ -1,7 +1,5 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, ChevronLeft, Download, ExternalLink, FolderGit2, GitBranch, Loader2 } from 'lucide-react'
-import { gitApply } from '../api/blink'
-import { githubRepoSlug } from '../wizard/defaults'
 import type { WizardState, WizardStep } from '../wizard/types'
 
 interface Props {
@@ -25,66 +23,13 @@ export function WorkspaceScreen({
   onNavigate,
   onBack,
 }: Props) {
-  const [applying, setApplying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [showRepositoryGuide, setShowRepositoryGuide] = useState(false)
   const planAcknowledged = Boolean(state.planAcknowledged || state.shipPlanAcknowledged)
+  const repositoryNames = state.repositories.map((repository) => repository.name.trim()).filter(Boolean)
   const repositoriesCreated = state.repositories.some(
-    (repository) =>
-      repository.createStatus === 'created' ||
-      repository.createStatus === 'exists' ||
-      Boolean(repository.htmlUrl),
+    (repository) => Boolean(repository.htmlUrl),
   )
-  const githubConnected = Boolean(state.integrations.find((item) => item.id === 'github')?.connected)
-  const workspaceCommitted = Boolean(state.gitWritten)
-  const workspaceRepository = state.repositories.find(
-    (repository) => /workspace/i.test(repository.name) || /workspace/i.test(repository.purpose),
-  )
-  const canExport = planAcknowledged && state.bootstrapAcknowledged && githubConnected && !exporting
-  const canCommit = Boolean(
-    state.projectId &&
-      planAcknowledged &&
-      state.bootstrapAcknowledged &&
-      repositoriesCreated &&
-      (state.scopeOverlays || []).length &&
-      !applying,
-  )
-
-  const commitWorkspace = useCallback(async () => {
-    if (!state.projectId) return
-    if (!window.confirm('Commit the Blink workspace overlay to the workspace repository?')) return
-    setApplying(true)
-    setError(null)
-    try {
-      const slug = githubRepoSlug(state.projectName || state.artifactName || 'project')
-      const result = await gitApply(state.projectId, {
-        confirm: true,
-        overlayFiles: state.scopeOverlays || [],
-        repositories: state.repositories.map((repository) => ({
-          name: repository.name,
-          htmlUrl: repository.htmlUrl,
-          purpose: repository.purpose,
-        })),
-        workspaceRepo: workspaceRepository?.htmlUrl || workspaceRepository?.name || `${slug}-workspace`,
-        issueKey:
-          state.sdlcStartIssueId ||
-          state.specification?.issueId ||
-          state.workClassification?.issueId ||
-          state.productScope?.storyIds?.[0],
-      })
-      if (result.status !== 'ok') {
-        throw new Error(result.message || result.errors?.join('; ') || 'Could not commit the workspace overlay.')
-      }
-      onUpdate({
-        gitWritten: true,
-        gitApplyCommit: result.commit || null,
-        nextSdlcCommand: '/sdlc-next',
-      })
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not commit the workspace overlay.')
-    } finally {
-      setApplying(false)
-    }
-  }, [onUpdate, state, workspaceRepository])
+  const canExport = planAcknowledged && state.bootstrapAcknowledged && !exporting
 
   return (
     <div className="screen shape-screen workspace-screen">
@@ -92,7 +37,7 @@ export function WorkspaceScreen({
         <div>
           <p className="shape-kicker">Workspace</p>
           <h2>Prepare the workspace for Cursor</h2>
-          <p>Create the repositories and commit Blink’s workspace guidance. Implementation happens in the next area.</p>
+          <p>Plan repositories and download workspace guidance. GitHub changes remain under your control.</p>
         </div>
       </div>
 
@@ -114,7 +59,7 @@ export function WorkspaceScreen({
                 <GitBranch size={18} />
                 <div>
                   <h3>Confirm repository setup</h3>
-                  <p className="muted">Confirm that Blink may create or export the repository structure.</p>
+                  <p className="muted">Confirm that you will create or connect the repository structure manually.</p>
                 </div>
                 {state.bootstrapAcknowledged ? <CheckCircle2 className="ok" size={18} /> : null}
               </div>
@@ -124,7 +69,7 @@ export function WorkspaceScreen({
                 disabled={Boolean(state.bootstrapAcknowledged)}
                 onClick={() => onUpdate({ bootstrapAcknowledged: true })}
               >
-                {state.bootstrapAcknowledged ? 'Repository setup confirmed' : 'Confirm repository setup'}
+                {state.bootstrapAcknowledged ? 'Manual repository setup confirmed' : 'Confirm manual repository setup'}
               </button>
             </article>
 
@@ -132,53 +77,73 @@ export function WorkspaceScreen({
               <div className="sdlc-panel__head">
                 <FolderGit2 size={18} />
                 <div>
-                  <h3>Create or export repositories</h3>
-                  <p className="muted">Create the selected repositories in GitHub, including the workspace repository.</p>
+                  <h3>Create repositories manually</h3>
+                  <p className="muted">Optionally use Blink’s guided handoff, or create repositories outside Blink and return their URLs here.</p>
                 </div>
                 {repositoriesCreated ? <CheckCircle2 className="ok" size={18} /> : null}
               </div>
-              <button type="button" className="primary-btn" disabled={!canExport} onClick={() => onExportGithub?.()}>
+              <button
+                type="button"
+                className="primary-btn"
+                disabled={!canExport}
+                onClick={() => {
+                  setShowRepositoryGuide(true)
+                  onExportGithub?.()
+                }}
+              >
                 {exporting ? <Loader2 className="spin" size={16} /> : <ExternalLink size={16} />}
-                {exporting ? 'Creating repositories…' : 'Create or export repositories'}
+                {exporting ? 'Preparing instructions…' : 'Guide me through GitHub setup'}
               </button>
-              {!githubConnected ? <p className="muted small">Connect GitHub in Integrations first.</p> : null}
+              {showRepositoryGuide ? (
+                <div className="workspace-screen__manual-guide">
+                  <p className="muted small">
+                    This is optional. Blink does not submit anything to GitHub or use your token to create repositories.
+                  </p>
+                  {repositoryNames.length ? (
+                    <>
+                      <p className="muted small">Create these repositories, then paste their URLs back into Blink:</p>
+                      <ul className="muted small">
+                        {repositoryNames.map((name) => <li key={name}>{name}</li>)}
+                      </ul>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => window.open(`https://github.com/new?name=${encodeURIComponent(repositoryNames[0])}`, '_blank', 'noopener,noreferrer')}
+                      >
+                        Open GitHub repository form <ExternalLink size={14} aria-hidden />
+                      </button>
+                    </>
+                  ) : (
+                    <p className="muted small">Add repository names first, then reopen this guide.</p>
+                  )}
+                </div>
+              ) : null}
+              {!repositoriesCreated ? <p className="muted small">Repository URLs are required before the workspace can be reconciled.</p> : null}
             </article>
 
-            <article className={`card shape-section workspace-screen__card ${workspaceCommitted ? 'is-done' : ''}`}>
+            <article className={`card shape-section workspace-screen__card ${state.generationComplete ? 'is-done' : ''}`}>
               <div className="sdlc-panel__head">
                 <GitBranch size={18} />
                 <div>
-                  <h3>Commit workspace guidance</h3>
-                  <p className="muted">Commit the approved Blink guidance to the workspace repository.</p>
+                  <h3>Download workspace guidance</h3>
+                  <p className="muted">Blink does not commit guidance. Download it and apply it locally after framework readiness is available.</p>
                 </div>
-                {workspaceCommitted ? <CheckCircle2 className="ok" size={18} /> : null}
+                {state.generationComplete ? <CheckCircle2 className="ok" size={18} /> : null}
               </div>
-              {workspaceCommitted && state.gitApplyCommit?.sha ? (
-                <p className="muted small">
-                  Commit {state.gitApplyCommit.sha.slice(0, 7)}
-                  {state.gitApplyCommit.url ? (
-                    <>
-                      {' · '}
-                      <a href={state.gitApplyCommit.url} target="_blank" rel="noreferrer">Open commit</a>
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
-              <button type="button" className="primary-btn" disabled={!canCommit} onClick={() => void commitWorkspace()}>
-                {applying ? <Loader2 className="spin" size={16} /> : <GitBranch size={16} />}
-                {workspaceCommitted ? 'Commit updated guidance' : 'Commit workspace guidance'}
+              <button type="button" className="primary-btn" disabled={loading} onClick={() => onGenerateKit?.()}>
+                <Download size={16} />
+                {state.generationComplete ? 'Download updated guidance' : 'Generate workspace guidance'}
               </button>
               {!state.scopeOverlays?.length ? (
-                <p className="muted small">Generate the workspace kit before committing the workspace guidance.</p>
+                <p className="muted small">Generate the workspace kit before downloading the workspace guidance.</p>
               ) : null}
-              {error ? <p className="error-text">{error}</p> : null}
             </article>
           </section>
 
           <section className="card shape-section workspace-screen__next">
             <h3>Next: Implementation</h3>
             <p className="muted">
-              Once workspace guidance is committed, continue to Implementation to prepare the Cursor handoff.
+              Phase 6 will replace this local handoff with framework-authoritative implementation readiness. Do not use Blink to create branches or pull requests.
             </p>
             <button type="button" className="secondary-btn" onClick={() => onNavigate('implementation')}>
               Go to Implementation <ExternalLink size={14} aria-hidden />

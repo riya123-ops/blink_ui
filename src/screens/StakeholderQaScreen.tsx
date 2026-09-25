@@ -24,7 +24,7 @@ interface Props {
   onRefreshJira: () => Promise<void>
   onSimulateResponses: () => void | Promise<void>
   onResetSimulatedReplies?: () => void | Promise<void>
-  onUpdateResponse?: (questionId: string, patch: Partial<QuestionResponse>) => void
+  onUpdateResponse?: (questionId: string, patch: Partial<QuestionResponse>) => void | Promise<void>
   onResolveAllLatest?: () => void
   onPatchQuestion?: (questionId: string, patch: Partial<StakeholderQuestion>) => void
   onNavigate?: (step: WizardStep) => void
@@ -159,7 +159,7 @@ export function validateStakeholderQa(state: WizardState): string | null {
   const responses = validateStakeholderResponses(state)
   if (responses) return responses
   if (state.groomRejectPending && !state.groomingRevision) {
-    return 'G-GROOM was rejected — run /grooming-revision, then acknowledge again.'
+    return 'G-GROOM was rejected — wait for grooming to refresh, then acknowledge again.'
   }
   if (!state.groomAcknowledged) {
     return 'Acknowledge G-GROOM before continuing to Project Shape.'

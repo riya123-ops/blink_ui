@@ -114,7 +114,7 @@ export interface QuestionResponse {
   response: string
   receivedAt: string | null
   /** Where the answer came from */
-  source?: 'jira' | 'email' | 'proxy' | 'demo' | 'manual' | 'thread'
+  source?: 'jira' | 'email' | 'proxy' | 'demo' | 'manual' | 'thread' | 'mcq'
   /** Display name of the Jira comment author when sourced from Jira */
   author?: string | null
   jiraIssueKey?: string | null
@@ -303,12 +303,17 @@ export interface WizardState extends SetupForm {
   productScope?: ProductScopeData | null
   scopeDigest?: string | null
   scopeOverlays?: ScopeOverlayFile[]
+  scopeClarifyStatus?: string | null
+  scopeQuestions?: GroomQuestion[]
+  scopeAnswers?: GroomAnswer[]
   workClassification?: WorkClassificationState | null
   specification?: SpecificationState | null
   technicalPlan?: TechnicalPlanState | null
   stakeholderPack?: { issueId?: string; markdown?: string; rolesCovered?: string[]; openQuestions?: string[]; generatedAt?: string } | null
   groomingRevision?: { issueId?: string; revisionNumber?: number; requirementMarkdown?: string; revisionSummaryMarkdown?: string; changesApplied?: string[] } | null
   groomingSignOff?: { issueId?: string; markdown?: string; readyForHumanSignOff?: boolean; blockers?: string[]; openQuestions?: string[]; capturedAt?: string } | null
+  /** Stakeholder Q/A fingerprint when pack/revision/sign-off last finished successfully. */
+  groomingLoopFeedbackAt?: string | null
   gitWritten?: boolean
   gitApplyCommit?: { sha?: string; url?: string; branch?: string; owner?: string; repo?: string } | null
   implementStep?: { issueId?: string; commitMessage?: string; summary?: string; files?: { path: string; content: string; repoHint?: string }[]; notes?: string[] } | null
@@ -534,12 +539,16 @@ export const defaultWizardState: WizardState = {
   productScope: null,
   scopeDigest: null,
   scopeOverlays: [],
+  scopeClarifyStatus: null,
+  scopeQuestions: [],
+  scopeAnswers: [],
   workClassification: null,
   specification: null,
   technicalPlan: null,
   stakeholderPack: null,
   groomingRevision: null,
   groomingSignOff: null,
+  groomingLoopFeedbackAt: null,
   gitWritten: false,
   gitApplyCommit: null,
   implementStep: null,
@@ -677,12 +686,16 @@ export function clearGroomingPatch(): Partial<WizardState> {
     productScope: null,
     scopeDigest: null,
     scopeOverlays: [],
+    scopeClarifyStatus: null,
+    scopeQuestions: [],
+    scopeAnswers: [],
     workClassification: null,
     specification: null,
     technicalPlan: null,
     stakeholderPack: null,
     groomingRevision: null,
     groomingSignOff: null,
+    groomingLoopFeedbackAt: null,
     gitWritten: false,
     gitApplyCommit: null,
     implementStep: null,

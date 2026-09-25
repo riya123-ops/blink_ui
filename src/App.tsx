@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Download, MessageSquare } from 'lucide-react'
-import { downloadWorkspace, fetchWorkspaceStatus, fetchGovernanceStatus, saveProject, createRepositories, streamClarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
+import { downloadWorkspace, fetchWorkspaceStatus, saveProject, createRepositories, streamClarifyRequirement, createJiraComment, pollJiraComments, resetSimulatedJiraReplies, fetchMyProject, fetchMyIntegrations, fetchProjectIntegrations, applyMyIntegrationsToProject, configureStakeholders, confirmStakeholders, postJiraGateEvidence, apiUrl, type ProjectPayload } from './api/blink'
 import { useAuth } from './auth/AuthContext'
 import { publishDeveloperSession, useDeveloperCapability } from './developer'
 import { sendStakeholderQuestions } from './api/email'
@@ -61,6 +61,15 @@ import {
 } from './wizard/jiraTickets'
 import { type JiraPublishState } from './wizard/thinking'
 import { autoMapQuestionsToJira } from './wizard/jiraMatch'
+import {
+  applyGroomingRevisionToState,
+  applyQuestionResponsePatch,
+  patchAfterJiraAnswerSync,
+  responsesForStakeholderQuestions,
+  shouldRunGroomingRevisionAfterAnswers,
+  stakeholderFeedbackFromState,
+  syncStakeholderAnswerToJira,
+} from './wizard/stakeholderSync'
 import {
   allowedStep,
   isWizardHistoryState,
@@ -169,6 +178,7 @@ export default function App() {
   const [grooming, setGrooming] = useState(false)
   const jiraPublish: JiraPublishState | null = null
   const groomAskInFlightRef = useRef(false)
+  const lastRevisionFeedbackRef = useRef('')
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [postingJira, setPostingJira] = useState(false)
@@ -182,6 +192,8 @@ export default function App() {
   const [folderQuery, setFolderQuery] = useState<{ name: string; id?: string } | null>(null)
   const [governancePrep, setGovernancePrep] = useState<'idle' | 'preparing' | 'ready' | 'failed'>('idle')
   const lastSavedPayloadRef = useRef<string | null>(null)
+  const lastGovernedPayloadRef = useRef<string | null>(null)
+  const stakeholderGovernanceInFlightRef = useRef(false)
   const stepRef = useRef(step)
   const stateRef = useRef(state)
   const completedRef = useRef(completedThrough)
@@ -243,6 +255,70 @@ export default function App() {
     return persistedWizardStep(lastWorkingRef.current, completedRef.current, stateRef.current)
   }, [])
 
+  const scheduleStakeholderGovernance = useCallback(
+    (projectId: string, opts?: { draft?: boolean; force?: boolean }) => {
+      const payload = opts?.draft ? withDraftProjectPayload(projectPayload()) : projectPayload()
+      const payloadStr = JSON.stringify(payload)
+      if (!payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
+        return
+      }
+      if (stakeholderGovernanceInFlightRef.current && !opts?.force) {
+        return
+      }
+      const current = stateRef.current
+      if (
+        !opts?.force &&
+        lastGovernedPayloadRef.current === payloadStr &&
+        current.stakeholdersConfirmed
+      ) {
+        return
+      }
+
+      stakeholderGovernanceInFlightRef.current = true
+      setGovernancePrep('preparing')
+      patch({ governanceStatus: 'preparing' })
+
+      void (async () => {
+        let sodWarnings = current.sodWarnings || []
+        let nextCommand = current.nextSdlcCommand
+        let stakeholdersConfirmed = Boolean(current.stakeholdersConfirmed)
+        let stakeholdersConfirmationDigest = current.stakeholdersConfirmationDigest || null
+        try {
+          const configured = await configureStakeholders(projectId)
+          sodWarnings = configured.sodWarnings?.length ? configured.sodWarnings.map(String) : sodWarnings
+          nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
+          if (!opts?.draft) {
+            try {
+              const confirmed = await confirmStakeholders(projectId)
+              if (confirmed.status === 'ok') {
+                stakeholdersConfirmed = true
+                stakeholdersConfirmationDigest =
+                  confirmed.confirmationDigest || stakeholdersConfirmationDigest
+                nextCommand = confirmed.nextCommand || nextCommand
+              }
+            } catch {
+              /* confirm can retry from Integrations */
+            }
+          }
+          lastGovernedPayloadRef.current = payloadStr
+          patch({
+            sodWarnings,
+            nextSdlcCommand: nextCommand,
+            governanceStatus: 'ready',
+            stakeholdersConfirmed,
+            stakeholdersConfirmationDigest,
+          })
+        } catch {
+          patch({ governanceStatus: 'failed' })
+        } finally {
+          stakeholderGovernanceInFlightRef.current = false
+          setGovernancePrep('idle')
+        }
+      })()
+    },
+    [patch, projectPayload],
+  )
+
   const persistProject = useCallback(async (opts?: { draft?: boolean }): Promise<{
     id: string
     workspaceStatus?: 'preparing' | 'ready' | 'failed' | null
@@ -264,20 +340,6 @@ export default function App() {
       } catch {
         // Local draft is still stored; server can catch up on the next save.
       }
-      if (!opts?.draft && !state.stakeholdersConfirmed) {
-        try {
-          const confirmed = await confirmStakeholders(state.projectId)
-          if (confirmed.status === 'ok') {
-            patch({
-              stakeholdersConfirmed: true,
-              stakeholdersConfirmationDigest: confirmed.confirmationDigest || null,
-              nextSdlcCommand: confirmed.nextCommand || state.nextSdlcCommand,
-            })
-          }
-        } catch {
-          /* confirm retries on the next Continue */
-        }
-      }
       return {
         id: state.projectId,
         workspaceStatus: folderPrep === 'idle' ? null : folderPrep,
@@ -289,62 +351,22 @@ export default function App() {
     const saved = await saveProject(withWizard, state.projectId)
     lastSavedPayloadRef.current = payloadStr
     const id = String(saved.id)
-    let governanceStatus = saved.governanceStatus || (saved.sodWarnings?.length ? 'ready' : 'idle')
-    let nextCommand = saved.nextCommand || state.nextSdlcCommand
-    let sodWarnings = saved.sodWarnings || []
-    let stakeholdersConfirmed = Boolean(state.stakeholdersConfirmed)
-    let stakeholdersConfirmationDigest = state.stakeholdersConfirmationDigest || null
-
-    // Official handoff: persist people, then hosted /configure-stakeholders (non-blocking on failure).
-    if (payload.stakeholders.some((s) => s.name?.trim() || s.email?.trim())) {
-      try {
-        setGovernancePrep('preparing')
-        const configured = await configureStakeholders(id)
-        sodWarnings = configured.sodWarnings?.length ? configured.sodWarnings.map(String) : sodWarnings
-        nextCommand = configured.nextCommand || nextCommand || '/plan-product-scope'
-        governanceStatus = 'ready'
-        setGovernancePrep('ready')
-        if (!opts?.draft) {
-          try {
-            const confirmed = await confirmStakeholders(id)
-            if (confirmed.status === 'ok') {
-              stakeholdersConfirmed = true
-              stakeholdersConfirmationDigest = confirmed.confirmationDigest || stakeholdersConfirmationDigest
-              nextCommand = confirmed.nextCommand || nextCommand
-            }
-          } catch {
-            /* configure succeeded; confirm can retry on the next Continue */
-          }
-        }
-      } catch {
-        governanceStatus = 'failed'
-        setGovernancePrep('failed')
-      }
-    }
 
     patch({
       projectId: id,
       projectName: payload.projectName,
       description: payload.description,
-      sodWarnings,
-      nextSdlcCommand: nextCommand,
-      governanceStatus,
-      stakeholdersConfirmed,
-      stakeholdersConfirmationDigest,
     })
     setFolderQuery({ name: saved.projectName || payload.projectName, id })
     if (saved.workspaceStatus === 'preparing' || saved.workspaceStatus === 'ready' || saved.workspaceStatus === 'failed') {
       setFolderPrep(saved.workspaceStatus)
     }
-    if (governanceStatus === 'preparing') {
-      setGovernancePrep('preparing')
-    }
     return {
       id,
       workspaceStatus: saved.workspaceStatus,
-      sodWarnings,
-      nextCommand: nextCommand || undefined,
-      governanceStatus,
+      sodWarnings: state.sodWarnings,
+      nextCommand: state.nextSdlcCommand || undefined,
+      governanceStatus: state.governanceStatus,
     }
   }, [projectPayload, state, folderPrep, governancePrep, patch, wizardBookmark])
 
@@ -372,6 +394,8 @@ export default function App() {
     skipRemoteResumeRef.current = true
     freshStartRef.current = true
     lastSavedPayloadRef.current = null
+    lastGovernedPayloadRef.current = null
+    stakeholderGovernanceInFlightRef.current = false
     setFolderPrep('idle')
     setGovernancePrep('idle')
     setFolderQuery(null)
@@ -640,41 +664,6 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [folderPrep])
 
-  useEffect(() => {
-    if (governancePrep !== 'preparing' || !state.projectId) return
-    let cancelled = false
-    const check = async () => {
-      try {
-        const progress = await fetchGovernanceStatus(state.projectId as string)
-        if (cancelled) return
-        const status = progress.status || 'idle'
-        if (status === 'preparing') return
-        if (status === 'ready') {
-          const warnings = progress.sodWarnings || []
-          patch({
-            sodWarnings: warnings,
-            nextSdlcCommand: progress.nextCommand || state.nextSdlcCommand,
-            governanceStatus: 'ready',
-          })
-          setGovernancePrep('idle')
-          return
-        }
-        if (status === 'failed') {
-          patch({ governanceStatus: 'failed' })
-          setGovernancePrep('idle')
-        }
-      } catch {
-        /* keep polling until a later check succeeds */
-      }
-    }
-    void check()
-    const timer = window.setInterval(() => void check(), 1000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [governancePrep, state.projectId, state.nextSdlcCommand, patch])
-
   const handleCreateGithubRepos = useCallback(async (): Promise<boolean> => {
     if (creatingReposRef.current) return false
     const github = state.integrations?.find((item) => item.id === 'github')
@@ -772,11 +761,14 @@ export default function App() {
         setSaving(true)
         setStatus(null)
       }
+      const draft =
+        skipStepValidation && (!state.projectName.trim() || !state.description.trim())
       try {
-        await persistProject({
-          draft: skipStepValidation && (!state.projectName.trim() || !state.description.trim()),
-        })
+        const saved = await persistProject({ draft })
         setStatus(null)
+        if (!draft && saved.id) {
+          scheduleStakeholderGovernance(saved.id, { draft })
+        }
       } catch (e) {
         setStatus({ type: 'error', message: e instanceof Error ? e.message : 'Could not save project.' })
         return
@@ -804,12 +796,7 @@ export default function App() {
         requirementsText: wording,
         questions,
         requirementsAnalyzed: true,
-        responses: questions.map((q) => ({
-          questionId: q.id,
-          status: 'pending' as const,
-          response: q.proposedAnswer || '',
-          receivedAt: null,
-        })),
+        responses: responsesForStakeholderQuestions(questions, state.responses),
         questionsSent: false,
       }
       const alreadyPlanned = Boolean(state.productScope?.epics?.length)
@@ -834,7 +821,13 @@ export default function App() {
     setCompletedThrough((prev) => Math.max(prev, idx))
     const nextStep = STEP_ORDER[idx + 1]
     if (nextStep) goToStep(nextStep)
-  }, [step, validateCurrentStep, persistProject, state, patch, skipStepValidation, goToStep])
+  }, [step, validateCurrentStep, persistProject, scheduleStakeholderGovernance, state, patch, skipStepValidation, goToStep])
+
+  const retryStakeholderGovernance = useCallback(() => {
+    const id = stateRef.current.projectId
+    if (!id) return
+    scheduleStakeholderGovernance(id, { force: true })
+  }, [scheduleStakeholderGovernance])
 
   const goBack = useCallback(() => {
     setStatus(null)
@@ -1011,15 +1004,24 @@ export default function App() {
       groomStatus: 'draft_ready',
       questions,
       requirementsAnalyzed: true,
-      responses: questions.map((q) => ({
-        questionId: q.id,
-        status: 'pending' as const,
-        response: q.proposedAnswer || '',
-        receivedAt: null,
-      })),
+      responses: responsesForStakeholderQuestions(questions, state.responses),
       questionsSent: false,
     }
     patch(basePatch)
+    const mergedState: WizardState = { ...state, ...basePatch }
+    if (
+      mergedState.projectId &&
+      shouldRunGroomingRevisionAfterAnswers(mergedState) &&
+      stakeholderFeedbackFromState(mergedState) !== lastRevisionFeedbackRef.current
+    ) {
+      const feedback = stakeholderFeedbackFromState(mergedState)
+      lastRevisionFeedbackRef.current = feedback
+      void applyGroomingRevisionToState(mergedState)
+        .then((revisionPatch) => patch(revisionPatch))
+        .catch(() => {
+          lastRevisionFeedbackRef.current = ''
+        })
+    }
     setStatus({ type: 'success', message: 'Requirement wording saved. Tickets will plan next.' })
   }, [state, patch])
 
@@ -1646,60 +1648,72 @@ export default function App() {
   }, [state])
 
   const handleUpdateResponse = useCallback(
-    (questionId: string, patchResponse: Partial<import('./wizard/types').QuestionResponse>) => {
-      setState((prev) => {
-        const body = (patchResponse.response || '').trim()
-        const answered = (patchResponse.status || 'answered') === 'answered' && Boolean(body)
-        const responses = prev.questions.map((q) => {
-          const existing = prev.responses.find((r) => r.questionId === q.id)
-          if (q.id !== questionId) {
-            return (
-              existing ?? {
-                questionId: q.id,
-                status: 'pending' as const,
-                response: q.proposedAnswer || '',
-                receivedAt: null,
-              }
-            )
-          }
-          return {
-            questionId: q.id,
-            status: answered ? ('answered' as const) : patchResponse.status || 'pending',
-            response: body || existing?.response || '',
-            receivedAt: patchResponse.receivedAt || new Date().toISOString(),
-            source: patchResponse.source || existing?.source || 'manual',
-            author: patchResponse.author ?? existing?.author ?? null,
-            jiraIssueKey: patchResponse.jiraIssueKey ?? existing?.jiraIssueKey ?? q.jiraIssueKey ?? null,
-            jiraCommentId: patchResponse.jiraCommentId ?? existing?.jiraCommentId ?? null,
-            resolvedFromCommentId: patchResponse.resolvedFromCommentId ?? existing?.resolvedFromCommentId ?? null,
-          }
-        })
-        const questions = prev.questions.map((q) => {
-          if (q.id !== questionId) return q
-          if (!answered) {
-            return {
-              ...q,
-              jiraCommentStatus:
-                (q.jiraThread?.length || 0) > 0 ? ('discussion' as const) : q.jiraCommentStatus,
-              jiraThreadStale: false,
+    async (questionId: string, patchResponse: Partial<import('./wizard/types').QuestionResponse>) => {
+      const nextState = applyQuestionResponsePatch(stateRef.current, questionId, patchResponse)
+      setState(nextState)
+
+      const body = (patchResponse.response || '').trim()
+      const answered = (patchResponse.status || 'answered') === 'answered' && Boolean(body)
+      if (!answered) {
+        setStatus({ type: 'success', message: 'Answer updated.' })
+        return
+      }
+
+      let working = nextState
+      if (working.projectId) {
+        const mapped = autoMapQuestionsToJira(working.questions, working)
+        const question = mapped.find((q) => q.id === questionId)
+        if (question?.jiraIssueKey) {
+          try {
+            const sync = await syncStakeholderAnswerToJira(working.projectId, question, body)
+            if (sync.posted) {
+              setState((prev) => patchAfterJiraAnswerSync(prev, questionId, sync))
+              working = patchAfterJiraAnswerSync(working, questionId, sync)
             }
+          } catch (e) {
+            setStatus({
+              type: 'error',
+              message: `Answer saved locally. Jira sync failed: ${
+                e instanceof Error ? e.message : 'unknown error'
+              }`,
+            })
           }
-          return {
-            ...q,
-            jiraCommentStatus: 'resolved' as const,
-            jiraCommentMessage: body.length > 140 ? `${body.slice(0, 140)}…` : body,
-            jiraReplyBody: body,
-            jiraReplyAuthor: patchResponse.author ?? q.jiraReplyAuthor ?? null,
-            jiraReplyAt: patchResponse.receivedAt || new Date().toISOString(),
-            jiraReplyCommentId: patchResponse.resolvedFromCommentId || q.jiraReplyCommentId || null,
-            jiraThreadStale: false,
-          }
-        })
-        return { ...prev, responses, questions }
-      })
-      setStatus({ type: 'success', message: 'Answer resolved.' })
+        }
+      }
+
+      const feedback = stakeholderFeedbackFromState(working)
+      if (
+        shouldRunGroomingRevisionAfterAnswers(working) &&
+        feedback !== lastRevisionFeedbackRef.current
+      ) {
+        lastRevisionFeedbackRef.current = feedback
+        try {
+          const revisionPatch = await applyGroomingRevisionToState(working)
+          patch(revisionPatch)
+          setStatus({
+            type: 'success',
+            message: 'Answer saved; Jira updated when linked; requirement revised.',
+          })
+          return
+        } catch (e) {
+          lastRevisionFeedbackRef.current = ''
+          setStatus({
+            type: 'error',
+            message: `Answer saved. Grooming revision failed: ${
+              e instanceof Error ? e.message : 'unknown error'
+            }`,
+          })
+          return
+        }
+      }
+
+      if (!working.projectId || !working.questions.find((q) => q.id === questionId)?.jiraIssueKey) {
+        setStatus({ type: 'success', message: 'Answer resolved.' })
+        return
+      }
+      setStatus({ type: 'success', message: 'Answer resolved and synced to Jira when a ticket was linked.' })
     },
-    [],
+    [patch, setState],
   )
 
   const handleResolveAllLatest = useCallback(() => {
@@ -1783,7 +1797,9 @@ export default function App() {
       advanceStep('package', 'running')
       let projectId = state.projectId
       if (!projectId) {
-        projectId = (await persistProject()).id
+        const saved = await persistProject()
+        projectId = saved.id
+        scheduleStakeholderGovernance(saved.id)
       }
       const repositories = (
         state.repositoriesTouched
@@ -1910,7 +1926,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [state, patch, persistProject, step, goToStep])
+  }, [state, patch, persistProject, scheduleStakeholderGovernance, step, goToStep])
 
   const handleQuickDownload = useCallback(() => {
     if (loading) return
@@ -1952,6 +1968,8 @@ export default function App() {
             onUpdate={patch}
             onEnsureProject={autoEnsureProject ? ensureDraftProject : undefined}
             jiraPublish={jiraPublish}
+            stakeholderGovernanceBusy={governancePrep === 'preparing'}
+            onRetryStakeholderGovernance={retryStakeholderGovernance}
           />
         )
       case 'repositories':

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { ExternalLink, RefreshCw, X } from 'lucide-react'
+import { ExternalLink, Loader2, RefreshCw, X } from 'lucide-react'
 import {
   connectIntegration,
   exchangeFigmaOAuth,
@@ -46,6 +46,8 @@ interface Props {
   onUpdate: (patch: Partial<WizardState>) => void
   onEnsureProject?: () => Promise<{ id: string; created: boolean }>
   jiraPublish?: JiraPublishState | null
+  stakeholderGovernanceBusy?: boolean
+  onRetryStakeholderGovernance?: () => void
 }
 
 interface ConnectForm {
@@ -162,7 +164,14 @@ function formFromItem(item: IntegrationItem, jira?: IntegrationItem): ConnectFor
   }
 }
 
-export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPublish = null }: Props) {
+export function IntegrationsScreen({
+  state,
+  onUpdate,
+  onEnsureProject,
+  jiraPublish = null,
+  stakeholderGovernanceBusy = false,
+  onRetryStakeholderGovernance,
+}: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [form, setForm] = useState<ConnectForm>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
@@ -971,6 +980,33 @@ export function IntegrationsScreen({ state, onUpdate, onEnsureProject, jiraPubli
       {error && !active && (
         <p className="status-banner error" role="alert">
           {error}
+        </p>
+      )}
+
+      {(stakeholderGovernanceBusy || state.governanceStatus === 'preparing') && (
+        <p className="status-banner info governance-sync-banner" role="status">
+          <Loader2 size={16} className="spin" aria-hidden />
+          <span>
+            Saving stakeholder roles and governance in the background. You can connect integrations while this finishes.
+          </span>
+        </p>
+      )}
+
+      {state.governanceStatus === 'failed' && !stakeholderGovernanceBusy && (
+        <div className="status-banner error governance-sync-banner" role="alert">
+          <span>Stakeholder governance did not finish. Requirements planning may be missing role overlays.</span>
+          {onRetryStakeholderGovernance ? (
+            <button type="button" className="secondary-btn" onClick={onRetryStakeholderGovernance}>
+              <RefreshCw size={14} aria-hidden />
+              Retry governance
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {state.governanceStatus === 'ready' && (state.sodWarnings?.length || 0) > 0 && (
+        <p className="status-banner info governance-sync-banner" role="status">
+          Separation-of-duties notes: {state.sodWarnings.join(' · ')}
         </p>
       )}
 
